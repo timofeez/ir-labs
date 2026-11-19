@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тесты — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html" class=on>Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#googletest-ctest">GoogleTest + CTest</a><ul>
+<li><a href="#_2">Как тестируются функции, а не только вывод</a></li>
+<li><a href="#_3">Группы тестов</a></li>
+<li><a href="#_4">Проверка на полном корпусе — почему ей можно верить</a></li>
+</ul>
+</li>
+<li><a href="#_5">Полный файл тестов</a></li>
+<li><a href="#1-2-python-unittest">Тесты ЛР1 и ЛР2 (Python, unittest)</a></li>
+</ul>
+</div>
+</aside><h1 id="_1">Тесты<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
+<p>Требование курса: план тестирования, автотесты и результат их прогона, где легко отделить тест-кейсы.
+Требование преподавателя: тесты для C++ — <strong>на C++</strong> с нормальной полнотой (фреймворк — любой).</p>
+<table>
+<thead>
+<tr>
+<th>Проект</th>
+<th>Фреймворк</th>
+<th>Запуск</th>
+<th>Тест-кейсов</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean</code> (ЛР3–8, C++)</td>
+<td><strong>GoogleTest 1.15.2</strong>, запуск через <strong>CTest</strong></td>
+<td><code>ctest --preset default</code></td>
+<td>29</td>
+</tr>
+<tr>
+<td><code>lab1</code> (Python)</td>
+<td>unittest</td>
+<td><code>python tests/test_extract.py</code>, <code>python tests/test_cli.py</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><code>lab2</code> (Python)</td>
+<td>unittest, нужен кластер</td>
+<td><code>python tests/test_robot.py</code></td>
+<td>29</td>
+</tr>
+</tbody>
+</table>
+<h2 id="googletest-ctest">GoogleTest + CTest<a class="headerlink" href="#googletest-ctest" title="Permanent link">#</a></h2>
+<p><strong>GoogleTest</strong> — фреймворк юнит-тестов от Google: тест описывается макросом <code>TEST(Группа, Имя)</code>,
+проверки — <code>EXPECT_EQ</code>, <code>EXPECT_TRUE</code>, <code>ASSERT_TRUE</code> (ASSERT прерывает тест при неудаче, EXPECT —
+нет), <code>GTEST_SKIP()</code> пропускает тест (например, если нет полного корпуса).</p>
+<p><strong>CTest</strong> — запускатель тестов из CMake. В <code>CMakeLists.txt</code> строка <code>gtest_discover_tests(gtests …)</code>
+регистрирует <strong>каждый</strong> <code>TEST</code> отдельным тестом CTest — в выводе видно каждый тест-кейс:</p>
+<pre><code> 1/29 Test  #1: Lab3_Tokenizer.utf8_decode_ascii_cyrillic_and_broken ...   Passed    0.01 sec
+ ...
+28/29 Test #28: FullCorpus.PlainIndexMatchesReferenceOn300Queries ......   Passed   35.18 sec
+29/29 Test #29: FullCorpus.StemIndexMatchesReferenceOn300Queries .......   Passed    9.86 sec
+100% tests passed out of 29
+</code></pre>
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(40 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
+#
+#   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
+#   cmake --build --preset default  (сборка программ и тестов)
+#   ctest --preset default          (запуск всех 29 тестов GoogleTest)
+#   ctest --preset default -R Lab8  (только тесты одной лабораторной)
+#
+# Пресет &quot;gcc&quot; — то же самое с системным компилятором (g++, clang, MSVC).
+cmake_minimum_required(VERSION 3.16)
+project(ir_boolean_search CXX C)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Программы поисковой системы (без STL)
+foreach(prog indexer search tokenize termfreq stemtest)
+  add_executable(${prog} src/${prog}.cpp)
+  set_target_properties(${prog} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+endforeach()
+
+# GoogleTest (исходники лежат в third_party/googletest, версия 1.15.2)
+set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL &quot;&quot; FORCE)
+add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
+
+add_executable(gtests tests/gtests.cpp)
+target_link_libraries(gtests GTest::gtest_main)
+set_target_properties(gtests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+
+enable_testing()
+include(GoogleTest)
+# каждый TEST из gtests.cpp становится отдельным тестом CTest; рабочая папка — lab_boolean
+# (тесты читают tests/mini.tsv и, для FullCorpus, data/corpus.tsv + индексы)
+gtest_discover_tests(gtests WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_TIMEOUT 60
+                     PROPERTIES TIMEOUT 600)
+</code></pre></details>
+
+<p>Сборка и запуск — только CMake и CTest, без каких-либо скриптов-обёрток:</p>
+<pre><code>cmake --preset default            # настройка (Ninja, C++17)
+cmake --build --preset default    # сборка программ и bin/gtests.exe
+ctest --preset default            # все 29 тестов -&gt; 100% tests passed out of 29
+ctest --preset default -R Lab8    # только тесты поиска
+ctest --preset default -N         # список тестов
+bin\gtests.exe --gtest_filter=Lab3_*   # прямой запуск GoogleTest с подробным выводом
+</code></pre>
+<p>Пресеты описаны в <code>CMakePresets.json</code>. Пресет <code>default</code> использует компилятор clang из пакета
+<code>ziglang</code> (файлы <code>toolchain/zig-*.cmd</code>), т.к. на машине не установлены Visual Studio/MinGW; пресет <code>gcc</code>
+берёт системный компилятор.</p>
+<details class="file"><summary>lab_boolean/CMakePresets.json <span class="ln">(34 строк)</span></summary><pre><code class="language-plaintext">﻿{
+  &quot;version&quot;: 3,
+  &quot;configurePresets&quot;: [
+    {
+      &quot;name&quot;: &quot;default&quot;,
+      &quot;displayName&quot;: &quot;Ninja + zig (clang) C++17&quot;,
+      &quot;generator&quot;: &quot;Ninja&quot;,
+      &quot;binaryDir&quot;: &quot;${sourceDir}/build&quot;,
+      &quot;cacheVariables&quot;: {
+        &quot;CMAKE_BUILD_TYPE&quot;: &quot;Release&quot;,
+        &quot;CMAKE_C_COMPILER&quot;: &quot;${sourceDir}/toolchain/zig-cc.cmd&quot;,
+        &quot;CMAKE_CXX_COMPILER&quot;: &quot;${sourceDir}/toolchain/zig-cxx.cmd&quot;,
+        &quot;CMAKE_AR&quot;: &quot;${sourceDir}/toolchain/zig-ar.cmd&quot;,
+        &quot;CMAKE_RANLIB&quot;: &quot;${sourceDir}/toolchain/zig-ranlib.cmd&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;gcc&quot;,
+      &quot;displayName&quot;: &quot;Ninja + системный g++/clang/MSVC&quot;,
+      &quot;generator&quot;: &quot;Ninja&quot;,
+      &quot;binaryDir&quot;: &quot;${sourceDir}/build-native&quot;,
+      &quot;cacheVariables&quot;: { &quot;CMAKE_BUILD_TYPE&quot;: &quot;Release&quot; }
+    }
+  ],
+  &quot;buildPresets&quot;: [
+    { &quot;name&quot;: &quot;default&quot;, &quot;configurePreset&quot;: &quot;default&quot; },
+    { &quot;name&quot;: &quot;gcc&quot;, &quot;configurePreset&quot;: &quot;gcc&quot; }
+  ],
+  &quot;testPresets&quot;: [
+    { &quot;name&quot;: &quot;default&quot;, &quot;configurePreset&quot;: &quot;default&quot;, &quot;output&quot;: { &quot;outputOnFailure&quot;: true } },
+    { &quot;name&quot;: &quot;gcc&quot;, &quot;configurePreset&quot;: &quot;gcc&quot;, &quot;output&quot;: { &quot;outputOnFailure&quot;: true } }
+  ]
+}
+</code></pre></details>
+
+<h3 id="_2">Как тестируются функции, а не только вывод<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
+<p>Исходники программ подключаются в тест напрямую, а их <code>main</code> переименовываются макросом:</p>
+<pre><code class="language-cpp">#define main indexer_main
+#include &quot;../src/indexer.cpp&quot;
+#undef main
+</code></pre>
+<p>Так тест вызывает <code>next_token</code>, <code>stem::stem</code>, <code>TermTable::get_or_add</code>, <code>merge_sort_terms</code>, <code>op_and</code>,
+<code>Parser</code>… и даже весь индексатор (<code>indexer_main(argc, argv)</code>) для мини-корпуса.</p>
+<h3 id="_3">Группы тестов<a class="headerlink" href="#_3" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Группа</th>
+<th>Что проверяется</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Lab3_Tokenizer</code> (7)</td>
+<td>UTF-8, классы символов, регистр и ё, правила, неудачные случаи, ограничение длины</td>
+</tr>
+<tr>
+<td><code>DataStructures</code> (3)</td>
+<td><code>Vec</code>, хеш-таблица на 100 000 термов с перехешированием, сравнение строк</td>
+</tr>
+<tr>
+<td><code>Lab4_Stemming</code> (4)</td>
+<td>русский и английский стемминг, неизменяемые термы, индекс основ + поиск</td>
+</tr>
+<tr>
+<td><code>Lab5_TermFreq</code> (1)</td>
+<td>сортировка по убыванию частоты</td>
+</tr>
+<tr>
+<td><code>Lab7_Index</code> (6)</td>
+<td>заголовок, словарь отсортирован, двоичный поиск, списки и df, прямой индекс, нормализация</td>
+</tr>
+<tr>
+<td><code>Lab8_Search</code> (6)</td>
+<td>И/ИЛИ/И-НЕ/НЕ, лексер, одиночные термы, операторы и приоритет, токенизатор в запросе, толерантность</td>
+</tr>
+<tr>
+<td><code>FullCorpus</code> (2)</td>
+<td>сверка индекса и поиска с независимым эталоном <strong>на всех 65 509 документах</strong>, 300 запросов, для обоих индексов</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_4">Проверка на полном корпусе — почему ей можно верить<a class="headerlink" href="#_4" title="Permanent link">#</a></h3>
+<p>Эталон устроен <strong>совсем иначе</strong>, чем индекс: для каждого документа хранится отсортированный массив
+его термов; ответ на запрос — <strong>перебор всех документов</strong>, для каждого дерево запроса вычисляется
+рекурсивно, наличие терма — двоичным поиском. В эталоне нет ни списков документов, ни операций
+пересечения/объединения, поэтому ошибка в индексе или поиске не может «совпасть» с ошибкой эталона.
+Проверено, что тест <strong>умеет падать</strong>: на подменённом индексе совпало только 17 из 50 запросов.</p>
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — full_corpus <span class="ln">строки 485–568</span></div><pre><code class="language-cpp">static int full_corpus(const char *corpus, const char *indexPath, bool useStem, int nq) {
+    int g_checks = 0, g_failed_checks = 0;
+    printf(&quot;Full-corpus check: %s vs %s%s, %d random queries\n&quot;, corpus, indexPath,
+           useStem ? &quot; (stemmed)&quot; : &quot;&quot;, nq);
+    double t0 = now_sec();
+    FILE *in = fopen(corpus, &quot;rb&quot;);
+    if (!in) { printf(&quot;cannot open %s\n&quot;, corpus); return 1; }
+    FullCtx c;
+    {
+        LineReader lr(in);
+        Vec&lt;uint32_t&gt; cur;
+        char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
+        bool isNew;
+        while (lr.next()) {
+            char *s = lr.line.a; size_t n = lr.line.n;
+            if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
+            char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
+            for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++)
+                if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
+            if (k &lt; 5) continue;
+            cur.clear();
+            for (int part = 2; part &lt;= 4; part += 2) {           // заголовок и текст — как в индексаторе
+                size_t pos = 0; int chars, len;
+                while ((len = next_token(f[part], fl[part], pos, tok, chars)) &gt; 0) {
+                    uint32_t w = c.words.get_or_add(tok, len, isNew);
+                    if (isNew) {
+                        uint32_t key;
+                        if (useStem) { int sl = stem::stem(tok, len, sb); key = c.keys.get_or_add(sb, sl, isNew); }
+                        else key = c.keys.get_or_add(tok, len, isNew);
+                        if (isNew) { c.keyWord.push(w); c.df.push(0); }
+                        c.wordKey.push(key);
+                    }
+                    cur.push(c.wordKey[w]);
+                }
+            }
+            qsort(cur.a, cur.n, 4, cmp_u32);
+            size_t u = 0;
+            for (size_t i = 0; i &lt; cur.n; i++) if (!u || cur[u - 1] != cur[i]) cur[u++] = cur[i];
+            DocTerms d; d.n = (uint32_t)u; d.t = (uint32_t *)malloc(u * 4 + 4);
+            if (u) memcpy(d.t, cur.a, u * 4);
+            for (size_t i = 0; i &lt; u; i++) c.df[d.t[i]]++;
+            c.docs.push(d);
+        }
+        cur.release();
+    }
+    fclose(in);
+    printf(&quot;reference: %zu docs, %zu distinct keys, built in %.1f s\n&quot;, c.docs.n, c.keys.size, now_sec() - t0);
+
+    Vec&lt;uint32_t&gt; order; order.resize(c.keys.size);
+    for (uint32_t i = 0; i &lt; c.keys.size; i++) order[i] = i;
+    g_df = c.df.a;
+    qsort(order.a, order.n, 4, cmp_df_desc);
+    for (size_t i = 0; i &lt; 300 &amp;&amp; i &lt; order.n; i++) c.frequent.push(order[i]);
+
+    Index idx;
+    if (!idx.load(indexPath)) return 1;
+    EXPECT_EQ(idx.nDocs, c.docs.n);
+    EXPECT_EQ(idx.stemmed, useStem);
+    EXPECT_EQ(idx.nTerms, c.keys.size);
+    int okCount = 0, bad = g_failed_checks;
+    Vec&lt;char&gt; q; Vec&lt;uint32_t&gt; got, exp;
+    double tq = 0;
+    for (int i = 0; i &lt; nq; i++) {
+        q.clear(); c.nodes.clear();
+        int root = gen_query(c, 0, q);
+        exp.clear();
+        for (uint32_t d = 0; d &lt; c.docs.n; d++) if (eval_doc(c, root, c.docs[d])) exp.push(d);
+        q.push(0);
+        double ts = now_sec();
+        run_query(idx, q.a, got);
+        tq += now_sec() - ts;
+        bool same = got.n == exp.n &amp;&amp; (got.n == 0 || memcmp(got.a, exp.a, got.n * 4) == 0);
+        g_checks++;
+        if (same) okCount++;
+        else {
+            bad++; g_failed_checks++;
+            if (bad &lt;= 5) printf(&quot;    FAIL query \&quot;%s\&quot;: index %zu docs, reference %zu\n&quot;, q.a, got.n, exp.n);
+        }
+    }
+    printf(&quot;%d/%d random queries match the reference over all %zu documents (search time %.3f s total)\n&quot;,
+           okCount, nq, c.docs.n, tq);
+    printf(bad ? &quot;FULL-CORPUS CHECK FAILED\n&quot; : &quot;FULL-CORPUS CHECK PASSED\n&quot;);
+    return bad ? 1 : 0;
+}</code></pre></div>
+
+<h2 id="_5">Полный файл тестов<a class="headerlink" href="#_5" title="Permanent link">#</a></h2>
+<details class="file"><summary>lab_boolean/tests/gtests.cpp <span class="ln">(583 строк)</span></summary><pre><code class="language-cpp">// Юнит-тесты на C++ (GoogleTest) для поисковой системы: ЛР3 токенизация, ЛР4 стемминг,
+// ЛР5 подсчёт частот, ЛР7 индекс, ЛР8 поиск + проверка на ПОЛНОМ корпусе.
+//
+// Исходники программ подключаются напрямую (их main() переименовываются), поэтому тестируются
+// сами функции: next_token, stem::stem, TermTable, merge_sort_terms, op_and/op_or, парсер запросов...
+// STL используется только в тестах (GoogleTest сам на нём построен); код поисковой системы — без STL.
+//
+// Сборка и запуск — CMake + CTest (см. CMakeLists.txt):
+//   cmake -S . -B build -G Ninja   &amp;&amp;   cmake --build build   &amp;&amp;   ctest --test-dir build -V
+// или просто:  python lab_tests.py
+// Отдельные тесты:  build\gtests.exe --gtest_filter=Lab3_*      (только токенизатор)
+// Полный корпус:    build\gtests.exe --gtest_filter=FullCorpus.*  (нужны data\corpus.tsv и индексы)
+#include &lt;gtest/gtest.h&gt;
+#include &lt;string&gt;
+
+#define main indexer_main
+#include &quot;../src/indexer.cpp&quot;
+#undef main
+#define main search_main
+#include &quot;../src/search.cpp&quot;
+#undef main
+#define main termfreq_main
+#include &quot;../src/termfreq.cpp&quot;
+#undef main
+
+// Макросы старого набора тестов -&gt; проверки GoogleTest
+#define CHECK(cond) EXPECT_TRUE(cond) &lt;&lt; #cond
+#define CHECK_EQ(a, b) EXPECT_EQ((long long)(a), (long long)(b))
+#define CHECK_STR(got, gotLen, expected) EXPECT_EQ(std::string((got), (size_t)(gotLen)), std::string(expected))
+
+// ================================================================ вспомогательные функции
+// Все токены строки, через пробел (для удобного сравнения).
+static int tokens_joined(const char *s, char *out) {
+    size_t pos = 0; int chars, len, n = 0;
+    char tok[MAX_TERM_BYTES + 4];
+    while ((len = next_token(s, strlen(s), pos, tok, chars)) &gt; 0) {
+        if (n) out[n++] = &#x27; &#x27;;
+        memcpy(out + n, tok, len); n += len;
+    }
+    out[n] = 0;
+    return n;
+}
+
+static int stem_of(const char *w, char *out) { return stem::stem(w, (int)strlen(w), out); }
+
+// Полный цикл поиска как в search.exe: лексер -&gt; парсер -&gt; вычисление. Результат — номера документов.
+static void run_query(const Index &amp;idx, const char *q, Vec&lt;uint32_t&gt; &amp;res) {
+    Vec&lt;QTok&gt; toks;
+    lex(idx, q, strlen(q), toks);
+    Parser p(toks);
+    int root = p.parse();
+    res.clear();
+    if (root &gt;= 0) eval(idx, p.nodes, root, res);
+}
+
+// Сравнивает результат запроса с ожидаемым списком документов (отсортированный, через запятую).
+static bool same_docs(const Vec&lt;uint32_t&gt; &amp;r, const uint32_t *exp, size_t n) {
+    if (r.n != n) return false;
+    for (size_t i = 0; i &lt; n; i++) if (r[i] != exp[i]) return false;
+    return true;
+}
+// Ожидаемый список документов сравнивается с выдачей поиска; при ошибке gtest печатает оба списка.
+static std::string docs_str(const uint32_t *a, size_t n) {
+    std::string s = &quot;[&quot;;
+    for (size_t i = 0; i &lt; n; i++) { if (i) s += &quot;,&quot;; s += std::to_string(a[i]); }
+    return s + &quot;]&quot;;
+}
+#define CHECK_QUERY(idx, q, ...) do { uint32_t _e[] = {__VA_ARGS__}; Vec&lt;uint32_t&gt; _r; run_query(idx, q, _r); \
+    size_t _n = (sizeof(_e) / sizeof(_e[0])) - 1; \
+    EXPECT_EQ(docs_str(_r.a, _r.n), docs_str(_e + 1, _n)) &lt;&lt; &quot;query: &quot; &lt;&lt; q; \
+    _r.release(); } while (0)
+// Первый элемент в CHECK_QUERY — фиктивный 0 (чтобы можно было записать пустой ожидаемый список).
+
+static const char *MINI = &quot;tests/mini.tsv&quot;;
+static const char *TMP_PLAIN = &quot;tests/_unit_index.bin&quot;;
+static const char *TMP_STEM = &quot;tests/_unit_index_stem.bin&quot;;
+
+#ifdef _WIN32
+#include &lt;io.h&gt;
+#define DUP _dup
+#define DUP2 _dup2
+#define FILENO _fileno
+#define NULDEV &quot;NUL&quot;
+#else
+#include &lt;unistd.h&gt;
+#define DUP dup
+#define DUP2 dup2
+#define FILENO fileno
+#define NULDEV &quot;/dev/null&quot;
+#endif
+
+static bool build_index(const char *out, bool withStem) {
+    char a0[] = &quot;indexer&quot;, a3[] = &quot;--stem&quot;;
+    char *argv[] = {a0, (char *)MINI, (char *)out, a3, nullptr};
+    fflush(stdout);                     // статистику индексатора в вывод тестов не печатаем
+    int saved = DUP(FILENO(stdout));
+    FILE *nul = fopen(NULDEV, &quot;w&quot;);
+    if (nul) DUP2(FILENO(nul), FILENO(stdout));
+    int rc = indexer_main(withStem ? 4 : 3, argv);
+    fflush(stdout);
+    DUP2(saved, FILENO(stdout));
+    if (nul) fclose(nul);
+    return rc == 0;
+}
+
+// Индексы мини-корпуса строятся один раз, при первом обращении (тесты можно запускать по фильтру).
+static bool g_plain_built = false, g_stem_built = false;
+static const char *plain_index() { if (!g_plain_built) g_plain_built = build_index(TMP_PLAIN, false); return TMP_PLAIN; }
+static const char *stem_index() { if (!g_stem_built) g_stem_built = build_index(TMP_STEM, true); return TMP_STEM; }
+
+// ================================================================ ЛР3: UTF-8 и токенизация
+TEST(Lab3_Tokenizer, utf8_decode_ascii_cyrillic_and_broken) {
+    const unsigned char s[] = {&#x27;A&#x27;, 0xD0, 0x96, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x9A, 0x82, 0x80};
+    size_t i = 0;
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), &#x27;A&#x27;);      CHECK_EQ(i, 1);
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x416);    CHECK_EQ(i, 3);   // Ж — 2 байта
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x20AC);   CHECK_EQ(i, 6);   // € — 3 байта
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x1F682);  CHECK_EQ(i, 10);  // эмодзи — 4 байта
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0xFFFD);   CHECK_EQ(i, 11);  // одиночный байт продолжения
+}
+
+TEST(Lab3_Tokenizer, utf8_encode_roundtrip) {
+    uint32_t cps[] = {&#x27;z&#x27;, 0x44F, 0x20AC, 0x1F682};
+    for (uint32_t c : cps) {
+        char buf[4]; int n = utf8_encode(c, buf);
+        size_t i = 0;
+        CHECK_EQ(utf8_decode((const unsigned char *)buf, n, i), c);
+        CHECK_EQ(i, (size_t)n);
+    }
+}
+
+TEST(Lab3_Tokenizer, char_class_rules) {
+    CHECK_EQ(char_class(&#x27;a&#x27;), 1); CHECK_EQ(char_class(&#x27;Z&#x27;), 1); CHECK_EQ(char_class(&#x27;7&#x27;), 1);
+    CHECK_EQ(char_class(0x416), 1);   // Ж
+    CHECK_EQ(char_class(0x3B1), 1);   // α
+    CHECK_EQ(char_class(0xE9), 1);    // é
+    CHECK_EQ(char_class(0x301), 2);   // знак ударения
+    CHECK_EQ(char_class(&#x27; &#x27;), 0); CHECK_EQ(char_class(&#x27;-&#x27;), 0); CHECK_EQ(char_class(&#x27;.&#x27;), 0);
+    CHECK_EQ(char_class(0xD7), 0);    // ×
+    CHECK_EQ(char_class(0x65B0), 0);  // 新 — иероглифы не входят в слова (известный недостаток)
+}
+
+TEST(Lab3_Tokenizer, to_lower_and_yo) {
+    CHECK_EQ(to_lower(&#x27;Q&#x27;), &#x27;q&#x27;);
+    CHECK_EQ(to_lower(0x416), 0x436);  // Ж -&gt; ж
+    CHECK_EQ(to_lower(0x401), 0x435);  // Ё -&gt; е
+    CHECK_EQ(to_lower(0x451), 0x435);  // ё -&gt; е
+    CHECK_EQ(to_lower(0x391), 0x3B1);  // Α -&gt; α
+    CHECK_EQ(to_lower(&#x27;5&#x27;), &#x27;5&#x27;);
+}
+
+TEST(Lab3_Tokenizer, tokenizer_basic_rules) {
+    char out[512]; int n;
+    n = tokens_joined(&quot;Электровоз ВЛ80 едет.&quot;, out);          CHECK_STR(out, n, &quot;электровоз вл80 едет&quot;);
+    n = tokens_joined(&quot;  ,,, &quot;, out);                          CHECK_EQ(n, 0);
+    n = tokens_joined(&quot;&quot;, out);                                CHECK_EQ(n, 0);
+    n = tokens_joined(&quot;Ёлка и ЁЖ&quot;, out);                       CHECK_STR(out, n, &quot;елка и еж&quot;);
+    n = tokens_joined(&quot;Железнодоро\xCC\x81жный&quot;, out);         CHECK_STR(out, n, &quot;железнодорожный&quot;);  // ударение
+    n = tokens_joined(&quot;Rail transport, 1520 mm&quot;, out);         CHECK_STR(out, n, &quot;rail transport 1520 mm&quot;);
+}
+
+TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {   // поведение, описанное в отчёте ЛР3 как недостатки
+    char out[512]; int n;
+    n = tokens_joined(&quot;ВЛ-80&quot;, out);             CHECK_STR(out, n, &quot;вл 80&quot;);
+    n = tokens_joined(&quot;Санкт-Петербург&quot;, out);   CHECK_STR(out, n, &quot;санкт петербург&quot;);
+    n = tokens_joined(&quot;14,4&quot;, out);              CHECK_STR(out, n, &quot;14 4&quot;);
+    n = tokens_joined(&quot;т. е.&quot;, out);             CHECK_STR(out, n, &quot;т е&quot;);
+    n = tokens_joined(&quot;info@gudok.ru&quot;, out);     CHECK_STR(out, n, &quot;info gudok ru&quot;);
+    n = tokens_joined(&quot;world&#x27;s&quot;, out);           CHECK_STR(out, n, &quot;world s&quot;);
+    n = tokens_joined(&quot;新幹線&quot;, out);             CHECK_EQ(n, 0);
+}
+
+TEST(Lab3_Tokenizer, tokenizer_length_limit_and_char_count) {
+    char text[300]; for (int i = 0; i &lt; 200; i++) text[i] = &#x27;a&#x27;; text[200] = 0;
+    size_t pos = 0; int chars; char tok[MAX_TERM_BYTES + 4];
+    int len = next_token(text, 200, pos, tok, chars);
+    CHECK(len &lt;= MAX_TERM_BYTES);
+    CHECK_EQ(pos, 200);                           // остаток длинного слова не даёт новых токенов
+    pos = 0;
+    len = next_token(&quot;поезд&quot;, strlen(&quot;поезд&quot;), pos, tok, chars);
+    CHECK_EQ(len, 10);                            // 5 букв кириллицы = 10 байт
+    CHECK_EQ(chars, 5);
+}
+
+// ================================================================ свои структуры данных
+TEST(DataStructures, vec_push_grow_append) {
+    Vec&lt;int&gt; v;
+    for (int i = 0; i &lt; 1000; i++) v.push(i * 2);
+    CHECK_EQ(v.n, 1000);
+    CHECK(v.cap &gt;= 1000);
+    CHECK_EQ(v[999], 1998);
+    int extra[] = {7, 8, 9};
+    v.append(extra, 3);
+    CHECK_EQ(v.n, 1003); CHECK_EQ(v[1002], 9);
+    v.clear(); CHECK_EQ(v.n, 0);
+    v.release(); CHECK(v.a == nullptr);
+}
+
+TEST(DataStructures, term_table_hash_and_rehash) {
+    TermTable tt; bool isNew;
+    uint32_t a = tt.get_or_add(&quot;поезд&quot;, 10, isNew);   CHECK(isNew);
+    uint32_t b = tt.get_or_add(&quot;вагон&quot;, 10, isNew);   CHECK(isNew);
+    uint32_t a2 = tt.get_or_add(&quot;поезд&quot;, 10, isNew);  CHECK(!isNew);
+    CHECK_EQ(a, a2); CHECK(a != b);
+    char w[16]; long newCount = 0;
+    for (int i = 0; i &lt; 100000; i++) {             // больше начальной ёмкости 65536 -&gt; несколько rehash
+        int n = snprintf(w, sizeof(w), &quot;t%d&quot;, i);
+        tt.get_or_add(w, n, isNew);
+        if (!isNew) newCount = -1;
+        else if (newCount &gt;= 0) newCount++;
+    }
+    CHECK_EQ(newCount, 100000);                    // каждый из 100000 термов был новым
+    CHECK_EQ(tt.size, 100002);
+    uint32_t again = tt.get_or_add(&quot;поезд&quot;, 10, isNew);
+    CHECK(!isNew); CHECK_EQ(again, a);             // после rehash термы на месте
+    int n = snprintf(w, sizeof(w), &quot;t%d&quot;, 77777);
+    tt.get_or_add(w, n, isNew); CHECK(!isNew);
+}
+
+TEST(DataStructures, cmp_bytes_order) {
+    CHECK(cmp_bytes(&quot;abc&quot;, 3, &quot;abd&quot;, 3) &lt; 0);
+    CHECK(cmp_bytes(&quot;ab&quot;, 2, &quot;abc&quot;, 3) &lt; 0);
+    CHECK(cmp_bytes(&quot;abc&quot;, 3, &quot;abc&quot;, 3) == 0);
+    CHECK(cmp_bytes(&quot;z&quot;, 1, &quot;\xD0\xB0&quot;, 2) &lt; 0);   // латиница раньше кириллицы (по байтам UTF-8)
+}
+
+TEST(Lab7_Index, merge_sort_terms_sorted_and_stable) {
+    TermTable tt; bool isNew;
+    const char *words[] = {&quot;поезд&quot;, &quot;абв&quot;, &quot;zeta&quot;, &quot;alpha&quot;, &quot;вагон&quot;, &quot;alp&quot;, &quot;яма&quot;, &quot;1520&quot;};
+    const int N = 8;
+    uint32_t ids[N];
+    for (int i = 0; i &lt; N; i++) ids[i] = tt.get_or_add(words[i], (int)strlen(words[i]), isNew);
+    merge_sort_terms(ids, N, tt);
+    for (int i = 1; i &lt; N; i++)
+        CHECK(cmp_bytes(tt.pool.a + tt.off[ids[i - 1]], tt.len[ids[i - 1]],
+                        tt.pool.a + tt.off[ids[i]], tt.len[ids[i]]) &lt; 0);
+    CHECK_STR(tt.pool.a + tt.off[ids[0]], tt.len[ids[0]], &quot;1520&quot;);
+    CHECK_STR(tt.pool.a + tt.off[ids[N - 1]], tt.len[ids[N - 1]], &quot;яма&quot;);
+}
+
+TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
+    uint64_t freq[] = {5, 100, 1, 42, 100, 7};
+    uint32_t ids[] = {0, 1, 2, 3, 4, 5};
+    g_freq = freq;
+    sort_by_freq(ids, 6);
+    for (int i = 1; i &lt; 6; i++) CHECK(freq[ids[i - 1]] &gt;= freq[ids[i]]);
+    CHECK_EQ(freq[ids[0]], 100); CHECK_EQ(ids[5], 2);
+}
+
+// ================================================================ ЛР4: стемминг
+TEST(Lab4_Stemming, stem_russian) {
+    char out[128]; int n;
+    n = stem_of(&quot;электровозы&quot;, out);   CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;электровозов&quot;, out);  CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;станциями&quot;, out);     CHECK_STR(out, n, &quot;станц&quot;);
+    n = stem_of(&quot;руками&quot;, out);        CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;руки&quot;, out);          CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;автомобилем&quot;, out);   CHECK_STR(out, n, &quot;автомобил&quot;);
+    n = stem_of(&quot;автомобиль&quot;, out);    CHECK_STR(out, n, &quot;автомобил&quot;);
+}
+
+TEST(Lab4_Stemming, stem_english_porter) {
+    char out[128]; int n;
+    n = stem_of(&quot;locomotives&quot;, out);   CHECK_STR(out, n, &quot;locomot&quot;);
+    n = stem_of(&quot;running&quot;, out);       CHECK_STR(out, n, &quot;run&quot;);
+    n = stem_of(&quot;railways&quot;, out);      CHECK_STR(out, n, &quot;railwai&quot;);
+    n = stem_of(&quot;news&quot;, out);          CHECK_STR(out, n, &quot;new&quot;);      // пересечение, разобрано в отчёте ЛР4
+}
+
+TEST(Lab4_Stemming, stem_mixed_and_numbers_unchanged) {
+    char out[128]; int n;
+    n = stem_of(&quot;вл80&quot;, out);          CHECK_STR(out, n, &quot;вл80&quot;);
+    n = stem_of(&quot;2026&quot;, out);          CHECK_STR(out, n, &quot;2026&quot;);
+}
+
+// ================================================================ ЛР7: индекс (на мини-корпусе tests/mini.tsv)
+// Документы мини-корпуса: 0 МАИ, 1 Красный автомобиль, 2 Жёлтый автомобиль (+руки),
+// 3 Руки и ноги, 4 Electric locomotive ВЛ-80 / ВЛ80, 5 Красный трамвай (+руки).
+TEST(Lab7_Index, index_build_and_header) {
+    CHECK(build_index(TMP_PLAIN, false)); g_plain_built = true;
+    Index idx;
+    ASSERT_TRUE(idx.load(plain_index()));
+    CHECK(memcmp(idx.data, INDEX_MAGIC, 4) == 0);
+    CHECK_EQ(rd32(idx.data + 4), INDEX_VERSION);
+    CHECK_EQ(idx.nDocs, 6);
+    CHECK(!idx.stemmed);
+    CHECK(idx.nTerms &gt; 20);
+}
+
+TEST(Lab7_Index, index_dictionary_sorted_and_binary_search) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    for (uint32_t i = 1; i &lt; idx.nTerms; i++) {
+        const char *a = idx.dict + 4 + (size_t)(i - 1) * DICT_ENTRY_SIZE, *b = a + DICT_ENTRY_SIZE;
+        CHECK(cmp_bytes(idx.termstr + rd32(a), rd16(a + 4), idx.termstr + rd32(b), rd16(b + 4)) &lt; 0);
+    }
+    CHECK(idx.find_term(&quot;автомобиль&quot;, (int)strlen(&quot;автомобиль&quot;)) &gt;= 0);
+    CHECK(idx.find_term(&quot;нетсловa&quot;, 15) &lt; 0);
+}
+
+TEST(Lab7_Index, index_postings_sorted_with_df) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    Vec&lt;uint32_t&gt; p;
+    idx.postings_of(idx.find_term(&quot;руки&quot;, (int)strlen(&quot;руки&quot;)), p);
+    CHECK_EQ(p.n, 3); CHECK_EQ(p[0], 2); CHECK_EQ(p[1], 3); CHECK_EQ(p[2], 5);
+    for (uint32_t t = 0; t &lt; idx.nTerms; t++) {      // все списки строго возрастают
+        idx.postings_of(t, p);
+        CHECK(p.n &gt;= 1);
+        for (size_t i = 1; i &lt; p.n; i++) CHECK(p[i - 1] &lt; p[i]);
+    }
+}
+
+TEST(Lab7_Index, index_forward_index_titles) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    const char *t, *u; int tl, ul;
+    idx.doc_info(1, t, tl, u, ul);
+    CHECK_STR(t, tl, &quot;Красный автомобиль&quot;); CHECK_STR(u, ul, &quot;u2&quot;);
+    idx.doc_info(5, t, tl, u, ul);
+    CHECK_STR(t, tl, &quot;Красный трамвай&quot;);
+}
+
+TEST(Lab7_Index, index_normalization_lowercase_yo_accent) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK(idx.find_term(&quot;желтый&quot;, (int)strlen(&quot;желтый&quot;)) &gt;= 0);    // ЖЕЛТЫЙ / Жёлтый
+    CHECK(idx.find_term(&quot;габарит&quot;, (int)strlen(&quot;габарит&quot;)) &gt;= 0);  // Габари́т
+    CHECK(idx.find_term(&quot;Красный&quot;, (int)strlen(&quot;Красный&quot;)) &lt; 0);   // в индексе только нижний регистр
+}
+
+// ================================================================ ЛР8: операции над списками и поиск
+TEST(Lab8_Search, list_operations) {
+    Vec&lt;uint32_t&gt; a, b, r;
+    uint32_t A[] = {1, 3, 5, 7, 9}, B[] = {3, 4, 5, 10};
+    a.append(A, 5); b.append(B, 4);
+    op_and(a, b, r);      CHECK_EQ(r.n, 2); CHECK_EQ(r[0], 3); CHECK_EQ(r[1], 5);
+    op_or(a, b, r);       CHECK_EQ(r.n, 7); CHECK_EQ(r[0], 1); CHECK_EQ(r[6], 10);
+    for (size_t i = 1; i &lt; r.n; i++) CHECK(r[i - 1] &lt; r[i]);
+    op_and_not(a, b, r);  CHECK_EQ(r.n, 3); CHECK_EQ(r[0], 1); CHECK_EQ(r[1], 7); CHECK_EQ(r[2], 9);
+    op_not(a, 12, r);     CHECK_EQ(r.n, 7); CHECK_EQ(r[0], 0); CHECK_EQ(r[6], 11);
+    Vec&lt;uint32_t&gt; e;
+    op_and(a, e, r);      CHECK_EQ(r.n, 0);
+    op_or(e, b, r);       CHECK_EQ(r.n, 4);
+}
+
+TEST(Lab8_Search, lexer_tokens) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    Vec&lt;QTok&gt; t;
+    const char *q = &quot;(красный || !ноги) &amp;&amp; вл-80&quot;;
+    lex(idx, q, strlen(q), t);
+    // ( TERM OR NOT TERM ) AND TERM AND(неявное) TERM
+    TokType exp[] = {T_LP, T_TERM, T_OR, T_NOT, T_TERM, T_RP, T_AND, T_TERM, T_AND, T_TERM};
+    CHECK_EQ(t.n, 10);
+    for (size_t i = 0; i &lt; t.n &amp;&amp; i &lt; 10; i++) CHECK_EQ(t[i].type, exp[i]);
+}
+
+TEST(Lab8_Search, search_single_terms) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;автомобиль&quot;, 0, 1, 2);
+    CHECK_QUERY(idx, &quot;руки&quot;, 0, 2, 3, 5);
+    CHECK_QUERY(idx, &quot;Красный&quot;, 0, 1, 5);          // регистр запроса не важен
+    CHECK_QUERY(idx, &quot;желтый&quot;, 0, 2);              // ё -&gt; е
+    CHECK_QUERY(idx, &quot;нетакогослова&quot;, 0);
+}
+
+TEST(Lab8_Search, search_boolean_operators) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;красный автомобиль&quot;, 0, 1);              // пробел = И
+    CHECK_QUERY(idx, &quot;красный &amp;&amp; автомобиль&quot;, 0, 1);
+    CHECK_QUERY(idx, &quot;красный || ноги&quot;, 0, 1, 3, 5);
+    CHECK_QUERY(idx, &quot;руки &amp;&amp; !ноги&quot;, 0, 2, 5);                 // вычитание
+    CHECK_QUERY(idx, &quot;!руки&quot;, 0, 0, 1, 4);                      // дополнение
+    CHECK_QUERY(idx, &quot;ноги || красный автомобиль&quot;, 0, 1, 3);   // приоритет: И сильнее ИЛИ
+    CHECK_QUERY(idx, &quot;(красный || желтый) автомобиль&quot;, 0, 1, 2);
+    CHECK_QUERY(idx, &quot;!(руки || красный)&quot;, 0, 0, 4);
+}
+
+TEST(Lab8_Search, search_tokenizer_in_query) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;ВЛ-80&quot;, 0, 4);       // два терма с неявным И
+    CHECK_QUERY(idx, &quot;вл80&quot;, 0, 4);
+    CHECK_QUERY(idx, &quot;габари\xCC\x81т&quot;, 0, 4);
+}
+
+TEST(Lab8_Search, search_tolerant_parser) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;((красный&quot;, 0, 1, 5);                  // незакрытые скобки
+    CHECK_QUERY(idx, &quot;красный ) автомобиль&quot;, 0, 1);          // лишняя скобка
+    CHECK_QUERY(idx, &quot;красный &amp;&amp; &amp;&amp; автомобиль&quot;, 0, 1);      // повтор оператора
+    CHECK_QUERY(idx, &quot;|| руки ||&quot;, 0, 2, 3, 5);              // оператор без операнда
+    CHECK_QUERY(idx, &quot;   &quot;, 0);                              // пустой запрос
+    CHECK_QUERY(idx, &quot;!&quot;, 0);
+}
+
+// ================================================================ ЛР4: индекс основ + поиск
+TEST(Lab4_Stemming, stem_index_flag_and_search) {
+    CHECK(build_index(TMP_STEM, true)); g_stem_built = true;
+    Index idx; ASSERT_TRUE(idx.load(stem_index()));
+    CHECK(idx.stemmed);
+    CHECK_EQ(rd32(idx.data + 12) &amp; FLAG_STEMMED, FLAG_STEMMED);
+    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);   // другая словоформа находит те же документы
+    CHECK_QUERY(idx, &quot;руками&quot;, 0, 2, 3, 5);
+    CHECK_QUERY(idx, &quot;руками &amp;&amp; !ногами&quot;, 0, 2, 5);
+    CHECK(idx.find_term(&quot;автомобил&quot;, (int)strlen(&quot;автомобил&quot;)) &gt;= 0);
+}
+
+// ================================================================ проверка на ПОЛНОМ корпусе
+// unit_tests --full data\corpus.tsv data\index.bin [--stem] [N]
+// Эталон строится независимо от индекса: для каждого документа — отсортированный массив его термов
+// (qsort из стандартной библиотеки C). Ожидаемый ответ вычисляется перебором ВСЕХ документов:
+// дерево запроса вычисляется для каждого документа рекурсивно, наличие терма — двоичным поиском.
+// Списков документов и операций И/ИЛИ над ними в эталоне нет, поэтому ошибка индекса или поиска
+// не может «совпасть» с ошибкой эталона.
+struct DocTerms { uint32_t *t; uint32_t n; };
+static int cmp_u32(const void *a, const void *b) {
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b; return x &lt; y ? -1 : x &gt; y;
+}
+static const uint32_t *g_df = nullptr;
+static int cmp_df_desc(const void *a, const void *b) {
+    uint32_t i = *(const uint32_t *)a, j = *(const uint32_t *)b;
+    if (g_df[i] != g_df[j]) return g_df[i] &gt; g_df[j] ? -1 : 1;
+    return i &lt; j ? -1 : i &gt; j;
+}
+static bool doc_has(const DocTerms &amp;d, uint32_t term) {
+    long lo = 0, hi = (long)d.n - 1;
+    while (lo &lt;= hi) {
+        long m = (lo + hi) / 2;
+        if (d.t[m] == term) return true;
+        if (d.t[m] &lt; term) lo = m + 1; else hi = m - 1;
+    }
+    return false;
+}
+
+enum QType { Q_TERM, Q_AND, Q_OR, Q_NOT };
+struct QNode { QType type; int l, r; uint32_t term; };
+struct Rng {
+    uint64_t s;
+    uint32_t next() { s ^= s &lt;&lt; 13; s ^= s &gt;&gt; 7; s ^= s &lt;&lt; 17; return (uint32_t)s; }
+    double uni() { return (next() &amp; 0xFFFFFF) / 16777216.0; }
+};
+
+struct FullCtx {
+    TermTable words;              // словоформы корпуса
+    TermTable keys;               // ключи эталона: словоформы или их основы (--stem)
+    Vec&lt;uint32_t&gt; wordKey;        // словоформа -&gt; ключ
+    Vec&lt;uint32_t&gt; keyWord;        // ключ -&gt; одна из его словоформ (её и пишем в запрос)
+    Vec&lt;uint32_t&gt; df;             // в скольких документах встречается ключ
+    Vec&lt;DocTerms&gt; docs;
+    Vec&lt;uint32_t&gt; frequent;       // 300 самых частых ключей — чтобы пересечения были непустыми
+    Vec&lt;QNode&gt; nodes;
+    Rng rng{2026};
+};
+
+static int gen_query(FullCtx &amp;c, int depth, Vec&lt;char&gt; &amp;q) {
+    double r = c.rng.uni();
+    if (depth &gt; 2 || r &lt; 0.35) {
+        uint32_t k = c.rng.uni() &lt; 0.7 ? c.frequent[c.rng.next() % c.frequent.n]
+                                       : (uint32_t)(c.rng.next() % c.keys.size);
+        uint32_t w = c.keyWord[k];
+        q.append(c.words.pool.a + c.words.off[w], c.words.len[w]);
+        c.nodes.push({Q_TERM, -1, -1, k}); return (int)c.nodes.n - 1;
+    }
+    if (r &lt; 0.45) {
+        q.append(&quot;!(&quot;, 2); int x = gen_query(c, depth + 1, q); q.push(&#x27;)&#x27;);
+        c.nodes.push({Q_NOT, x, -1, 0}); return (int)c.nodes.n - 1;
+    }
+    static const char *ops[] = {&quot; &quot;, &quot; &amp;&amp; &quot;, &quot;&amp;&amp;&quot;, &quot;   &quot;, &quot; || &quot;, &quot;||&quot;};
+    bool isAnd = r &lt; 0.75;
+    q.push(&#x27;(&#x27;);
+    int a = gen_query(c, depth + 1, q);
+    const char *op = isAnd ? ops[c.rng.next() % 4] : ops[4 + c.rng.next() % 2];
+    q.append(op, strlen(op));
+    int b = gen_query(c, depth + 1, q);
+    q.push(&#x27;)&#x27;);
+    c.nodes.push({isAnd ? Q_AND : Q_OR, a, b, 0}); return (int)c.nodes.n - 1;
+}
+
+static bool eval_doc(const FullCtx &amp;c, int v, const DocTerms &amp;d) {
+    const QNode &amp;n = c.nodes[v];
+    switch (n.type) {
+        case Q_TERM: return doc_has(d, n.term);
+        case Q_NOT:  return !eval_doc(c, n.l, d);
+        case Q_AND:  return eval_doc(c, n.l, d) &amp;&amp; eval_doc(c, n.r, d);
+        default:     return eval_doc(c, n.l, d) || eval_doc(c, n.r, d);
+    }
+}
+
+static int full_corpus(const char *corpus, const char *indexPath, bool useStem, int nq) {
+    int g_checks = 0, g_failed_checks = 0;
+    printf(&quot;Full-corpus check: %s vs %s%s, %d random queries\n&quot;, corpus, indexPath,
+           useStem ? &quot; (stemmed)&quot; : &quot;&quot;, nq);
+    double t0 = now_sec();
+    FILE *in = fopen(corpus, &quot;rb&quot;);
+    if (!in) { printf(&quot;cannot open %s\n&quot;, corpus); return 1; }
+    FullCtx c;
+    {
+        LineReader lr(in);
+        Vec&lt;uint32_t&gt; cur;
+        char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
+        bool isNew;
+        while (lr.next()) {
+            char *s = lr.line.a; size_t n = lr.line.n;
+            if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
+            char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
+            for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++)
+                if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
+            if (k &lt; 5) continue;
+            cur.clear();
+            for (int part = 2; part &lt;= 4; part += 2) {           // заголовок и текст — как в индексаторе
+                size_t pos = 0; int chars, len;
+                while ((len = next_token(f[part], fl[part], pos, tok, chars)) &gt; 0) {
+                    uint32_t w = c.words.get_or_add(tok, len, isNew);
+                    if (isNew) {
+                        uint32_t key;
+                        if (useStem) { int sl = stem::stem(tok, len, sb); key = c.keys.get_or_add(sb, sl, isNew); }
+                        else key = c.keys.get_or_add(tok, len, isNew);
+                        if (isNew) { c.keyWord.push(w); c.df.push(0); }
+                        c.wordKey.push(key);
+                    }
+                    cur.push(c.wordKey[w]);
+                }
+            }
+            qsort(cur.a, cur.n, 4, cmp_u32);
+            size_t u = 0;
+            for (size_t i = 0; i &lt; cur.n; i++) if (!u || cur[u - 1] != cur[i]) cur[u++] = cur[i];
+            DocTerms d; d.n = (uint32_t)u; d.t = (uint32_t *)malloc(u * 4 + 4);
+            if (u) memcpy(d.t, cur.a, u * 4);
+            for (size_t i = 0; i &lt; u; i++) c.df[d.t[i]]++;
+            c.docs.push(d);
+        }
+        cur.release();
+    }
+    fclose(in);
+    printf(&quot;reference: %zu docs, %zu distinct keys, built in %.1f s\n&quot;, c.docs.n, c.keys.size, now_sec() - t0);
+
+    Vec&lt;uint32_t&gt; order; order.resize(c.keys.size);
+    for (uint32_t i = 0; i &lt; c.keys.size; i++) order[i] = i;
+    g_df = c.df.a;
+    qsort(order.a, order.n, 4, cmp_df_desc);
+    for (size_t i = 0; i &lt; 300 &amp;&amp; i &lt; order.n; i++) c.frequent.push(order[i]);
+
+    Index idx;
+    if (!idx.load(indexPath)) return 1;
+    EXPECT_EQ(idx.nDocs, c.docs.n);
+    EXPECT_EQ(idx.stemmed, useStem);
+    EXPECT_EQ(idx.nTerms, c.keys.size);
+    int okCount = 0, bad = g_failed_checks;
+    Vec&lt;char&gt; q; Vec&lt;uint32_t&gt; got, exp;
+    double tq = 0;
+    for (int i = 0; i &lt; nq; i++) {
+        q.clear(); c.nodes.clear();
+        int root = gen_query(c, 0, q);
+        exp.clear();
+        for (uint32_t d = 0; d &lt; c.docs.n; d++) if (eval_doc(c, root, c.docs[d])) exp.push(d);
+        q.push(0);
+        double ts = now_sec();
+        run_query(idx, q.a, got);
+        tq += now_sec() - ts;
+        bool same = got.n == exp.n &amp;&amp; (got.n == 0 || memcmp(got.a, exp.a, got.n * 4) == 0);
+        g_checks++;
+        if (same) okCount++;
+        else {
+            bad++; g_failed_checks++;
+            if (bad &lt;= 5) printf(&quot;    FAIL query \&quot;%s\&quot;: index %zu docs, reference %zu\n&quot;, q.a, got.n, exp.n);
+        }
+    }
+    printf(&quot;%d/%d random queries match the reference over all %zu documents (search time %.3f s total)\n&quot;,
+           okCount, nq, c.docs.n, tq);
+    printf(bad ? &quot;FULL-CORPUS CHECK FAILED\n&quot; : &quot;FULL-CORPUS CHECK PASSED\n&quot;);
+    return bad ? 1 : 0;
+}
+
+
+// ================================================================ полный корпус (65 509 документов)
+static bool exists(const char *p) { FILE *f = fopen(p, &quot;rb&quot;); if (f) fclose(f); return f != nullptr; }
+
+TEST(FullCorpus, PlainIndexMatchesReferenceOn300Queries) {
+    if (!exists(&quot;data/corpus.tsv&quot;) || !exists(&quot;data/index.bin&quot;)) GTEST_SKIP() &lt;&lt; &quot;нет data/corpus.tsv или data/index.bin&quot;;
+    EXPECT_EQ(full_corpus(&quot;data/corpus.tsv&quot;, &quot;data/index.bin&quot;, false, 300), 0);
+}
+
+TEST(FullCorpus, StemIndexMatchesReferenceOn300Queries) {
+    if (!exists(&quot;data/corpus.tsv&quot;) || !exists(&quot;data/index_stem.bin&quot;)) GTEST_SKIP() &lt;&lt; &quot;нет data/index_stem.bin&quot;;
+    EXPECT_EQ(full_corpus(&quot;data/corpus.tsv&quot;, &quot;data/index_stem.bin&quot;, true, 300), 0);
+}
+</code></pre></details>
+
+<h2 id="1-2-python-unittest">Тесты ЛР1 и ЛР2 (Python, unittest)<a class="headerlink" href="#1-2-python-unittest" title="Permanent link">#</a></h2>
+<p>ЛР1 и ЛР2 написаны на Python (курс разрешает интерпретируемые языки для выкачки и обвязки), поэтому
+и их тесты — на стандартном <code>unittest</code>. ЛР2 проверяется на <strong>локальных тестовых сайтах</strong> (сеть не
+нужна) и на настоящем кластере CockroachDB.</p>
+<details class="file"><summary>lab1/tests/test_extract.py <span class="ln">(92 строк)</span></summary><pre><code class="language-python">import os, sys, unittest
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;src&#x27;))
+from extract import clean, clean_html
+
+
+class TestClean(unittest.TestCase):
+
+    def test_plain_text_unchanged(self):
+        self.assertEqual(clean(&#x27;Электровоз ВЛ80 — грузовой.&#x27;), &#x27;Электровоз ВЛ80 — грузовой.&#x27;)
+
+    def test_internal_link_with_label(self):
+        self.assertEqual(clean(&#x27;по [[Транссибирская магистраль|Транссибу]]&#x27;), &#x27;по Транссибу&#x27;)
+
+    def test_internal_link_without_label(self):
+        self.assertEqual(clean(&#x27;[[Локомотив]]&#x27;), &#x27;Локомотив&#x27;)
+
+    def test_bold_italic(self):
+        self.assertEqual(clean(&quot;&#x27;&#x27;&#x27;ВЛ80&#x27;&#x27;&#x27; и &#x27;&#x27;ЧС2&#x27;&#x27;&quot;), &#x27;ВЛ80 и ЧС2&#x27;)
+
+    def test_nested_templates_removed(self):
+        self.assertEqual(clean(&#x27;A {{Карточка|x={{флаг|Россия}}}} B&#x27;), &#x27;A  B&#x27;)
+
+    def test_refs_removed(self):
+        self.assertEqual(clean(&#x27;Текст&lt;ref name=&quot;a&quot;&gt;Источник&lt;/ref&gt; и&lt;ref name=&quot;b&quot;/&gt; конец&#x27;), &#x27;Текст и конец&#x27;)
+
+    def test_comment_removed(self):
+        self.assertEqual(clean(&#x27;A&lt;!-- скрыто --&gt;B&#x27;), &#x27;AB&#x27;)
+
+    def test_heading_kept_as_text(self):
+        self.assertEqual(clean(&#x27;== История ==&#x27;), &#x27;История&#x27;)
+
+    def test_table_removed(self):
+        self.assertEqual(clean(&#x27;до\n{| class=&quot;wikitable&quot;\n| 1 || 2\n|}\nпосле&#x27;), &#x27;до\n\nпосле&#x27;)
+
+    def test_files_and_categories_removed(self):
+        self.assertEqual(clean(&#x27;[[Файл:VL80.jpg|thumb|Фото [[ВЛ80]]]]Текст[[Категория:Электровозы]]&#x27;), &#x27;Текст&#x27;)
+
+    def test_tail_sections_cut(self):
+        self.assertEqual(clean(&#x27;Основной текст\n== Примечания ==\n{{примечания}}&#x27;), &#x27;Основной текст&#x27;)
+        self.assertEqual(clean(&#x27;Body\n== References ==\nx&#x27;), &#x27;Body&#x27;)
+
+    def test_external_link(self):
+        self.assertEqual(clean(&#x27;[https://rzd.ru сайт РЖД]&#x27;), &#x27;сайт РЖД&#x27;)
+
+    def test_list_markers(self):
+        self.assertEqual(clean(&#x27;* первый\n# второй&#x27;), &#x27;первый\nвторой&#x27;)
+
+
+PAGE = &#x27;&#x27;&#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;Меню сайта Новости Газета&lt;/nav&gt;
+&lt;div class=&quot;article-header&quot;&gt;&lt;h2&gt;&lt;a href=&quot;/newspaper/?archive=2026.10.21&quot;&gt;Выпуск: № 160 (28371) &lt;span&gt;21.10.2026&lt;/span&gt;&lt;/a&gt;&lt;br&gt;1 полоса&lt;/h2&gt;
+&lt;div class=&quot;article-header__description-2&quot;&gt;&lt;p&gt;Миллион за профессионализм&lt;/p&gt;&lt;/div&gt;
+&lt;div class=&quot;article-header__img&quot;&gt;&lt;img src=&quot;/upload/x.jpg&quot;&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;article class=&quot;article-block__main-body&quot;&gt;&lt;h3&gt;Кадры | Первое место занял машинист Дамир Насыров.&lt;/h3&gt;&lt;br&gt;
+Второе место – у депо Новокузнецк.&lt;br&gt;&lt;br&gt;&lt;b&gt;В НОВОМ СТАТУСЕ&lt;/b&gt;&lt;br&gt;&lt;br&gt;Конкурс стал частью нацпроекта.&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Владимир Андреев,&lt;/b&gt;&lt;i&gt; корреспондент газеты «Уральская магистраль», Екатеринбург&lt;/i&gt;&lt;/article&gt;
+&lt;div class=&quot;link-block&quot;&gt;Ещё больше интересных новостей в нашем телеграм-канале&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;&#x27;&#x27;&#x27;
+
+
+class TestCleanHtml(unittest.TestCase):
+
+    def setUp(self):
+        self.text, self.meta = clean_html(PAGE)
+
+    def test_only_article_text(self):
+        self.assertNotIn(&#x27;Меню сайта&#x27;, self.text)
+        self.assertNotIn(&#x27;телеграм&#x27;, self.text)
+        self.assertIn(&#x27;Второе место – у депо Новокузнецк.&#x27;, self.text)
+
+    def test_rubric_removed_from_text(self):
+        self.assertTrue(self.text.startswith(&#x27;Первое место занял машинист&#x27;))
+        self.assertTrue(self.meta[&#x27;rubric&#x27;])
+
+    def test_author_signature(self):
+        self.assertNotIn(&#x27;Андреев&#x27;, self.text)
+        self.assertTrue(self.meta[&#x27;author&#x27;])
+
+    def test_subheading_and_paragraphs(self):
+        self.assertIn(&#x27;\n\nВ НОВОМ СТАТУСЕ\n\n&#x27;, self.text)
+        self.assertTrue(self.meta[&#x27;subheadings&#x27;])
+
+    def test_header_meta(self):
+        self.assertTrue(self.meta[&#x27;issue&#x27;])
+        self.assertTrue(self.meta[&#x27;photo&#x27;])
+
+    def test_page_without_article(self):
+        text, meta = clean_html(&#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;Меню&lt;/nav&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
+        self.assertEqual(text, &#x27;&#x27;)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    unittest.main(verbosity=2)
+</code></pre></details>
+<details class="file"><summary>lab1/tests/test_cli.py <span class="ln">(93 строк)</span></summary><pre><code class="language-python">import gzip, json, os, subprocess, sys, tempfile, unittest, warnings
+
+warnings.simplefilter(&#x27;ignore&#x27;, ResourceWarning)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SRC = os.path.join(HERE, &#x27;..&#x27;, &#x27;src&#x27;)
+PY = sys.executable
+
+
+def gudok_page(title, body):
+    return (f&#x27;&lt;html&gt;&lt;head&gt;&lt;meta property=&quot;og:title&quot; content=&quot;{title}&quot;&gt;&lt;/head&gt;&lt;body&gt;&lt;nav&gt;Меню&lt;/nav&gt;&#x27;
+            f&#x27;&lt;div class=&quot;article-header&quot;&gt;&lt;h2&gt;Выпуск: № 1 &lt;span&gt;01.10.2026&lt;/span&gt;&lt;br&gt;2 полоса&lt;/h2&gt;&lt;/div&gt;&#x27;
+            f&#x27;&lt;article class=&quot;article-block__main-body&quot;&gt;{body}&lt;/article&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
+
+
+def run(*args, env=None):
+    e = dict(os.environ, PYTHONIOENCODING=&#x27;utf-8&#x27;, **(env or {}))
+    r = subprocess.run([PY, *args], capture_output=True, encoding=&#x27;utf-8&#x27;, env=e)
+    return r.returncode, r.stdout + r.stderr
+
+
+class TestCli(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.data = tempfile.mkdtemp()
+        ru = [{&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 1, &#x27;title&#x27;: &#x27;ВЛ80&#x27;, &#x27;url&#x27;: &#x27;u1&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
+               &#x27;wikitext&#x27;: &quot;&#x27;&#x27;&#x27;ВЛ80&#x27;&#x27;&#x27; — [[электровоз]] переменного тока.{{sfn|А|1}}\n== Примечания ==\nx&quot;},
+              {&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 2, &#x27;title&#x27;: &#x27;ЧС2&#x27;, &#x27;url&#x27;: &#x27;u2&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
+               &#x27;wikitext&#x27;: &#x27;[[Файл:x.jpg|thumb]]ЧС2 — пассажирский электровоз.[[Категория:Электровозы]]&#x27;},
+              {&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 3, &#x27;title&#x27;: &#x27;ВЛ-80&#x27;, &#x27;url&#x27;: &#x27;u3&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
+               &#x27;wikitext&#x27;: &#x27;#ПЕРЕНАПРАВЛЕНИЕ [[ВЛ80]]&#x27;}]
+        en = [{&#x27;source&#x27;: &#x27;enwiki&#x27;, &#x27;id&#x27;: 10, &#x27;title&#x27;: &#x27;Maglev&#x27;, &#x27;url&#x27;: &#x27;u10&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
+               &#x27;wikitext&#x27;: &quot;&#x27;&#x27;&#x27;Maglev&#x27;&#x27;&#x27; is a [[train]] system.&lt;ref&gt;src&lt;/ref&gt;&quot;}]
+        gd = [{&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 100, &#x27;title&#x27;: &#x27;Миллион за профессионализм&#x27;, &#x27;url&#x27;: &#x27;u100&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
+               &#x27;html&#x27;: gudok_page(&#x27;Миллион за профессионализм&#x27;, &#x27;Кадры | Конкурс машинистов прошёл в Екатеринбурге.&#x27;)},
+              {&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 101, &#x27;title&#x27;: &#x27;Цифра дня&#x27;, &#x27;url&#x27;: &#x27;u101&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
+               &#x27;html&#x27;: gudok_page(&#x27;Цифра дня&#x27;, &#x27;На 14,4% выросла погрузка зерна.&#x27;)},
+              {&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 102, &#x27;title&#x27;: &#x27;Фото&#x27;, &#x27;url&#x27;: &#x27;u102&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
+               &#x27;html&#x27;: &#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;только фото, статьи нет&lt;/nav&gt;&lt;/body&gt;&lt;/html&gt;&#x27;}]
+        for name, rows in ((&#x27;ruwiki_raw.jsonl&#x27;, ru), (&#x27;enwiki_raw.jsonl&#x27;, en)):
+            with open(os.path.join(cls.data, name), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+                f.writelines(json.dumps(r, ensure_ascii=False) + &#x27;\n&#x27; for r in rows)
+        with gzip.open(os.path.join(cls.data, &#x27;gudok_raw.jsonl.gz&#x27;), &#x27;wt&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            f.writelines(json.dumps(r, ensure_ascii=False) + &#x27;\n&#x27; for r in gd)
+        cls.code, cls.out = run(os.path.join(SRC, &#x27;extract.py&#x27;), cls.data)
+        cls.env = {&#x27;CORPUS_DATA&#x27;: cls.data}
+
+    def test_extract_creates_files(self):
+        self.assertEqual(self.code, 0, self.out)
+        for name in (&#x27;ruwiki_text.jsonl&#x27;, &#x27;enwiki_text.jsonl&#x27;, &#x27;gudok_text.jsonl&#x27;, &#x27;corpus_stats.json&#x27;):
+            self.assertTrue(os.path.exists(os.path.join(self.data, name)), name)
+
+    def test_extract_counts(self):
+        st = json.load(open(os.path.join(self.data, &#x27;corpus_stats.json&#x27;), encoding=&#x27;utf-8&#x27;))
+        self.assertEqual({k: v[&#x27;docs&#x27;] for k, v in st.items()}, {&#x27;ruwiki&#x27;: 2, &#x27;enwiki&#x27;: 1, &#x27;gudok&#x27;: 2})
+        self.assertEqual(st[&#x27;gudok&#x27;][&#x27;meta_share&#x27;][&#x27;issue&#x27;], 1.0)
+        self.assertEqual(st[&#x27;gudok&#x27;][&#x27;meta_share&#x27;][&#x27;rubric&#x27;], 0.5)
+
+    def test_extract_text(self):
+        rows = [json.loads(l) for l in open(os.path.join(self.data, &#x27;ruwiki_text.jsonl&#x27;), encoding=&#x27;utf-8&#x27;)]
+        self.assertEqual(rows[0][&#x27;text&#x27;], &#x27;ВЛ80 — электровоз переменного тока.&#x27;)
+        g = [json.loads(l) for l in open(os.path.join(self.data, &#x27;gudok_text.jsonl&#x27;), encoding=&#x27;utf-8&#x27;)]
+        self.assertEqual(g[0][&#x27;text&#x27;], &#x27;Конкурс машинистов прошёл в Екатеринбурге.&#x27;)
+
+    def test_corpus_stats(self):
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;stats&#x27;, env=self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIn(&#x27;ВСЕГО документов: 5&#x27;, out)
+
+    def test_corpus_find(self):
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;find&#x27;, &#x27;вл80&#x27;, env=self.env)
+        self.assertIn(&#x27;[ruwiki] 1\tВЛ80&#x27;, out)
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;find&#x27;, &#x27;миллион&#x27;, env=self.env)
+        self.assertIn(&#x27;[gudok] 100&#x27;, out)
+
+    def test_corpus_show_raw(self):
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;show&#x27;, &#x27;1&#x27;, env=self.env)
+        self.assertIn(&#x27;ВЛ80 — электровоз переменного тока.&#x27;, out)
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;raw&#x27;, &#x27;1&#x27;, env=self.env)
+        self.assertIn(&#x27;{{sfn|А|1}}&#x27;, out)
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;raw&#x27;, &#x27;100&#x27;, env=self.env)
+        self.assertIn(&#x27;&lt;article class=&quot;article-block__main-body&quot;&gt;&#x27;, out)
+
+    def test_corpus_errors(self):
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;show&#x27;, &#x27;999999&#x27;, env=self.env)
+        self.assertEqual(code, 0); self.assertIn(&#x27;не найдено&#x27;, out)
+        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), env=self.env)
+        self.assertEqual(code, 0); self.assertIn(&#x27;Консольная утилита&#x27;, out)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    unittest.main(verbosity=2)
+</code></pre></details>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

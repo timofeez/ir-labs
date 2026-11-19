@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР1 Корпус — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html" class=on>ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#1_1">1. Что такое корпус и зачем он нужен</a></li>
+<li><a href="#2">2. Архитектура</a></li>
+<li><a href="#3-api">3. Википедия: обход дерева категорий через API</a><ul>
+<li><a href="#api-html">Что такое API и почему не скачивать HTML</a></li>
+<li><a href="#_1">Категории — это граф, обход в ширину</a></li>
+<li><a href="#_2">Надёжность: повторы с экспоненциальной паузой</a></li>
+<li><a href="#50">Скачивание текстов пачками по 50</a></li>
+</ul>
+</li>
+<li><a href="#4-robotstxt">4. «Гудок»: robots.txt и карта сайта</a><ul>
+<li><a href="#robotstxt">robots.txt</a></li>
+<li><a href="#sitemap">Карта сайта (sitemap)</a></li>
+</ul>
+</li>
+<li><a href="#5">5. Из чего состоит документ: разметка и метаданные</a><ul>
+<li><a href="#wikitext">Wikitext</a></li>
+<li><a href="#html">HTML «Гудка»</a></li>
+</ul>
+</li>
+<li><a href="#6">6. Выделение текста</a><ul>
+<li><a href="#wikitext_1">Wikitext — цепочка регулярных выражений</a></li>
+<li><a href="#html-dom">HTML — разбор дерева DOM</a></li>
+</ul>
+</li>
+<li><a href="#7">7. Существующие поисковики и их недостатки</a></li>
+<li><a href="#8-unittest">8. Тесты (unittest)</a></li>
+<li><a href="#9-lab1py">9. Утилита lab1.py</a></li>
+<li><a href="#10">10. Вопросы на защите</a></li>
+<li><a href="#11">11. Полные исходники</a></li>
+</ul>
+</div>
+</aside><h1 id="1">ЛР1. Добыча корпуса документов<a class="headerlink" href="#1" title="Permanent link">#</a></h1>
+<blockquote>
+<p><strong>Задание</strong> (lesson-01/homework.md): выбрать тематику и источники, скачать документы, разобраться,
+из чего состоит текст (разметка, метаданные), выделить текст, посмотреть существующие поисковики
+по этим данным и их недостатки, посчитать статистику: размер «сырых» документов, число документов,
+размер текста, средние значения. Требования курса: ≥ 30 000 документов одной тематики,
+<strong>не менее двух источников</strong> в итоговом индексе.</p>
+</blockquote>
+<h2 id="1_1">1. Что такое корпус и зачем он нужен<a class="headerlink" href="#1_1" title="Permanent link">#</a></h2>
+<p><strong>Корпус</strong> — фиксированный набор документов, по которому работает поисковая система. Всё остальное
+(токенизация, индекс, поиск, статистика) строится над ним. Поэтому корпус должен быть:</p>
+<ul>
+<li><strong>тематическим</strong> — чтобы запросы были осмысленными и было с чем сравнивать выдачу;</li>
+<li><strong>достаточно большим</strong> — 30–50 тыс. документов на «3», больше 1 млн на «5» (тогда индекс не
+  помещается в память, и нужны блочные алгоритмы);</li>
+<li><strong>из нескольких источников</strong> — разные источники дают разную разметку и разный язык, и система
+  должна с этим справляться.</li>
+</ul>
+<p><strong>Мой корпус: 65 509 документов</strong> по теме «Железнодорожный транспорт»:</p>
+<table>
+<thead>
+<tr>
+<th>Источник</th>
+<th>Документов</th>
+<th>«Сырые» данные</th>
+<th>Чистый текст</th>
+<th>Слов</th>
+<th>Слов/док</th>
+<th>Доля текста</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Википедия (ru)</td>
+<td>19 290</td>
+<td>250 МБ</td>
+<td>115 МБ</td>
+<td>9,3 млн</td>
+<td>480</td>
+<td>46 %</td>
+</tr>
+<tr>
+<td>Википедия (en)</td>
+<td>26 361</td>
+<td>333 МБ</td>
+<td>120 МБ</td>
+<td>20,7 млн</td>
+<td>784</td>
+<td>36 %</td>
+</tr>
+<tr>
+<td>газета «Гудок»</td>
+<td>19 858</td>
+<td>2 109 МБ</td>
+<td>78 МБ</td>
+<td>5,9 млн</td>
+<td>295</td>
+<td>3,7 %</td>
+</tr>
+<tr>
+<td><strong>Всего</strong></td>
+<td><strong>65 509</strong></td>
+<td><strong>2,7 ГБ</strong></td>
+<td><strong>313 МБ</strong></td>
+<td><strong>36 млн</strong></td>
+<td>546</td>
+<td>11,6 %</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Русская и английская Википедии считаются <strong>одним</strong> источником (одинаковая разметка wikitext,
+один способ получения). Второй источник — <strong>газета «Гудок»</strong> (gudok.ru), отраслевая газета ОАО «РЖД»:
+другой формат (HTML), другой стиль (новости, интервью), другой способ получения (карта сайта).</p>
+</blockquote>
+<h2 id="2">2. Архитектура<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<pre><code>crawl.py         API Википедии: обход дерева категорий ──► data/ruwiki_titles.tsv, enwiki_titles.tsv
+download_all.py  API Википедии: тексты пачками по 50   ──► data/ruwiki_raw.jsonl, enwiki_raw.jsonl (wikitext)
+gudok.py         robots.txt → sitemap_index.xml → 17 карт → 20 000 свежих статей ──► data/gudok_raw.jsonl.gz (HTML)
+extract.py       выделение текста + метаданные + статистика ──► data/*_text.jsonl, corpus_stats.json
+corpus.py        утилита просмотра корпуса;  lab1.py — интерактивная утилита для защиты
+</code></pre>
+<p>Каждый этап сохраняет результат в файл, поэтому этапы независимы: можно перезапустить любой,
+а после обрыва скачивание продолжается с места остановки.</p>
+<h2 id="3-api">3. Википедия: обход дерева категорий через API<a class="headerlink" href="#3-api" title="Permanent link">#</a></h2>
+<h3 id="api-html">Что такое API и почему не скачивать HTML<a class="headerlink" href="#api-html" title="Permanent link">#</a></h3>
+<p><strong>MediaWiki API</strong> (<code>https://ru.wikipedia.org/w/api.php</code>) — интерфейс для программ: запрос с
+параметрами, ответ в JSON. Преимущества перед скачиванием HTML-страниц:</p>
+<ul>
+<li>за один запрос — <strong>до 50 статей</strong> сразу;</li>
+<li>текст приходит в <strong>wikitext</strong> — исходной разметке, без меню, скриптов и оформления;</li>
+<li>нагрузка на Википедию минимальна, и это официально разрешённый для программ путь.</li>
+</ul>
+<h3 id="_1">Категории — это граф, обход в ширину<a class="headerlink" href="#_1" title="Permanent link">#</a></h3>
+<p>В Википедии статьи помещены в категории, категории вложены в другие категории:
+«Железнодорожный транспорт» → «Локомотивы» → «Электровозы» → «Электровозы России»… Это граф
+(не дерево: у категории может быть несколько родителей, бывают циклы). Обход <strong>в ширину</strong> (BFS)
+идёт по уровням: сначала все категории глубины 1, потом глубины 2 и т. д. Так в корпус сначала
+попадают самые близкие к теме статьи, а глубина ограничивает «дрейф» в смежные темы.</p>
+<p>API отдаёт содержимое категории порциями до 500 элементов. Если элементов больше, в ответе есть поле
+<code>continue</code> — «закладка», которую нужно передать в следующий запрос:</p>
+<div class="code"><div class="code-title">lab1/src/crawl.py — members <span class="ln">строки 27–35</span></div><pre><code class="language-python">def members(url, cat):
+    cont = {}
+    while True:
+        d = api(url, action=&#x27;query&#x27;, list=&#x27;categorymembers&#x27;, cmtitle=cat,
+                cmlimit=500, cmtype=&#x27;page|subcat&#x27;, **cont)
+        yield from d[&#x27;query&#x27;][&#x27;categorymembers&#x27;]
+        if &#x27;continue&#x27; not in d:
+            return
+        cont = d[&#x27;continue&#x27;]</code></pre></div>
+
+<p>Сам обход: <code>seen_cat</code> — множество уже встреченных категорий (защита от циклов), <code>pages</code> — словарь
+<code>pageid → название</code> (дубликаты статей исключаются автоматически), <code>MAX_CATS = 4000</code> — предел числа
+категорий, иначе глубокий обход уходит в автобусы и города:</p>
+<div class="code"><div class="code-title">lab1/src/crawl.py — collect_titles <span class="ln">строки 38–52</span></div><pre><code class="language-python">def collect_titles(name, max_cats):
+    url, root, depth = SOURCES[name]
+    seen_cat, pages = {root}, {}
+    level = [root]
+    for dep in range(depth + 1):
+        nxt = []
+        for cat in level:
+            for m in members(url, cat):
+                if m[&#x27;ns&#x27;] == 0:
+                    pages.setdefault(m[&#x27;pageid&#x27;], m[&#x27;title&#x27;])
+                elif m[&#x27;ns&#x27;] == 14 and m[&#x27;title&#x27;] not in seen_cat and len(seen_cat) &lt; max_cats:
+                    seen_cat.add(m[&#x27;title&#x27;]); nxt.append(m[&#x27;title&#x27;])
+        print(f&#x27;{name}: depth {dep}, cats {len(seen_cat)}, pages {len(pages)}&#x27;, flush=True)
+        level = nxt
+    return pages, len(seen_cat)</code></pre></div>
+
+<h3 id="_2">Надёжность: повторы с экспоненциальной паузой<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
+<p>Сеть может ответить ошибкой или сервер — «слишком много запросов» (HTTP 429). Тогда запрос
+повторяется через 3, 6, 12, 24… секунд (но не больше 60): <strong>экспоненциальная задержка</strong>
+(exponential backoff) — стандартный приём, чтобы не «добивать» перегруженный сервер:</p>
+<div class="code"><div class="code-title">lab1/src/crawl.py — api <span class="ln">строки 14–24</span></div><pre><code class="language-python">def api(url, **p):
+    p.update(format=&#x27;json&#x27;, formatversion=2)
+    for attempt in range(8):
+        try:
+            r = requests.get(url, params=p, headers=UA, timeout=60)
+            if r.status_code == 200:
+                return r.json()
+        except requests.RequestException:
+            pass
+        time.sleep(min(60, 3 * 2 ** attempt))
+    raise RuntimeError(&#x27;API failed&#x27;)</code></pre></div>
+
+<h3 id="50">Скачивание текстов пачками по 50<a class="headerlink" href="#50" title="Permanent link">#</a></h3>
+<p><code>prop=revisions</code> с <code>rvprop=content</code> отдаёт текст последней версии статьи. Каждая статья —
+одна строка JSON в файле (формат <strong>JSON Lines</strong>: удобно дописывать и читать построчно).
+<strong>Продолжение после обрыва</strong>: перед началом читаем уже скачанные <code>id</code> в множество <code>done</code>
+и запрашиваем только остальные:</p>
+<div class="code"><div class="code-title">lab1/src/download_all.py — run <span class="ln">строки 5–32</span></div><pre><code class="language-python">def run(name, out):
+    ids = [int(l.split(&#x27;\t&#x27;)[0]) for l in open(os.path.join(out, f&#x27;{name}_titles.tsv&#x27;), encoding=&#x27;utf-8&#x27;)]
+    path = os.path.join(out, f&#x27;{name}_raw.jsonl&#x27;)
+
+    done = set()
+    if os.path.exists(path):
+        for line in open(path, encoding=&#x27;utf-8&#x27;):
+            try:
+                done.add(json.loads(line)[&#x27;id&#x27;])
+            except ValueError:
+                pass
+    todo = [i for i in ids if i not in done]
+    url = SOURCES[name][0]
+
+    with open(path, &#x27;a&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for i in range(0, len(todo), 50):
+            d = api(url, action=&#x27;query&#x27;, prop=&#x27;revisions|info&#x27;, rvprop=&#x27;content|timestamp&#x27;,
+                    rvslots=&#x27;main&#x27;, inprop=&#x27;url&#x27;, pageids=&#x27;|&#x27;.join(map(str, todo[i:i + 50])))
+            for p in d[&#x27;query&#x27;][&#x27;pages&#x27;]:
+                if &#x27;revisions&#x27; not in p:
+                    continue
+                rev = p[&#x27;revisions&#x27;][0]
+                f.write(json.dumps({&#x27;source&#x27;: name, &#x27;id&#x27;: p[&#x27;pageid&#x27;], &#x27;title&#x27;: p[&#x27;title&#x27;],
+                                    &#x27;url&#x27;: p[&#x27;fullurl&#x27;], &#x27;timestamp&#x27;: rev[&#x27;timestamp&#x27;],
+                                    &#x27;wikitext&#x27;: rev[&#x27;slots&#x27;][&#x27;main&#x27;][&#x27;content&#x27;]},
+                                   ensure_ascii=False) + &#x27;\n&#x27;)
+            f.flush()
+            print(f&#x27;{name}: {min(len(ids), len(done) + i + 50)}/{len(ids)}&#x27;, flush=True)</code></pre></div>
+
+<h2 id="4-robotstxt">4. «Гудок»: robots.txt и карта сайта<a class="headerlink" href="#4-robotstxt" title="Permanent link">#</a></h2>
+<h3 id="robotstxt">robots.txt<a class="headerlink" href="#robotstxt" title="Permanent link">#</a></h3>
+<p>Файл в корне сайта (<code>https://gudok.ru/robots.txt</code>), где владелец пишет правила для роботов
+(стандарт Robots Exclusion Protocol, RFC 9309):</p>
+<pre><code>User-Agent: *                         ← для всех роботов
+Sitemap: https://gudok.ru/sitemap_index.xml   ← где карта сайта
+Disallow: /bitrix/                    ← нельзя: служебные разделы движка
+Disallow: /*?print=                   ← нельзя: версии для печати (дубли статей)
+Disallow: /*PAGEN_1=                  ← нельзя: листание (дубли)
+...
+User-Agent: AhrefsBot
+Disallow: /                           ← этому роботу запрещён весь сайт
+</code></pre>
+<p>Это <strong>просьба, а не защита</strong>: технически скачать можно, но честные роботы правила соблюдают.
+Статьи газеты <code>/newspaper/?ID=…</code> не запрещены. Ссылку на карту сайта я взял из строки <code>Sitemap:</code>.</p>
+<h3 id="sitemap">Карта сайта (sitemap)<a class="headerlink" href="#sitemap" title="Permanent link">#</a></h3>
+<p>XML-файл, где сайт сам перечисляет свои страницы (стандарт sitemaps.org). Сайты публикуют её,
+чтобы поисковики нашли <strong>все</strong> страницы (даже те, на которые мало ссылок) и быстрее узнавали
+об изменениях. В одном файле — не больше 50 000 адресов, поэтому большие сайты делают
+<strong>индекс карт</strong>:</p>
+<pre><code class="language-xml">&lt;!-- sitemap_index.xml — список файлов карты --&gt;
+&lt;sitemap&gt;&lt;loc&gt;https://gudok.ru/sitemap-0001.xml&lt;/loc&gt;&lt;/sitemap&gt;
+&lt;!-- sitemap-0001.xml — сами страницы --&gt;
+&lt;url&gt;&lt;loc&gt;https://gudok.ru/newspaper/?ID=1780369&lt;/loc&gt;&lt;lastmod&gt;2026-10-15T10:20:00+03:00&lt;/lastmod&gt;&lt;/url&gt;
+</code></pre>
+<p>У «Гудка» 17 файлов, ~752 тыс. адресов (газета, региональные выпуски, новости). Я беру только статьи
+печатной газеты и <strong>20 000 самых свежих по <code>lastmod</code></strong>:</p>
+<div class="code"><div class="code-title">lab1/src/gudok.py — list_articles <span class="ln">строки 30–38</span></div><pre><code class="language-python">def list_articles(limit):
+    index = get(SITEMAP_INDEX).text
+    parts = re.findall(r&#x27;&lt;loc&gt;([^&lt;]+\.xml)&lt;/loc&gt;&#x27;, index)
+    items = []
+    for p in parts:
+        items += ARTICLE_RE.findall(get(p).text)
+        time.sleep(DELAY)
+    items.sort(key=lambda t: (t[2], int(t[1])), reverse=True)
+    return items[:limit]</code></pre></div>
+
+<p>Скачивание — по одной странице с паузой <code>DELAY = 0.3</code> с (вежливость к сайту). Файл сжимается gzip.
+Если компьютер выключился посреди записи, последняя строка gzip может быть оборвана — при перезапуске
+файл перечитывается, испорченный хвост отбрасывается:</p>
+<div class="code"><div class="code-title">lab1/src/gudok.py — main <span class="ln">строки 41–84</span></div><pre><code class="language-python">def main(limit, out):
+    os.makedirs(out, exist_ok=True)
+    urls_path = os.path.join(out, &#x27;gudok_urls.tsv&#x27;)
+    raw_path = os.path.join(out, &#x27;gudok_raw.jsonl.gz&#x27;)
+
+    if os.path.exists(urls_path):
+        items = [tuple(l.rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;)) for l in open(urls_path, encoding=&#x27;utf-8&#x27;)]
+    else:
+        items = list_articles(limit)
+        with open(urls_path, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            for u, i, m in items:
+                f.write(f&#x27;{u}\t{i}\t{m}\n&#x27;)
+    print(f&#x27;gudok: в списке {len(items)} статей&#x27;, flush=True)
+
+    done = set()
+    if os.path.exists(raw_path):
+        broken = False
+        tmp = raw_path + &#x27;.tmp&#x27;
+        with gzip.open(raw_path, &#x27;rt&#x27;, encoding=&#x27;utf-8&#x27;) as src, gzip.open(tmp, &#x27;wt&#x27;, encoding=&#x27;utf-8&#x27;) as dst:
+            try:
+                for line in src:
+                    d = json.loads(line)
+                    dst.write(line)
+                    done.add(d[&#x27;id&#x27;])
+            except (EOFError, OSError, ValueError):
+                broken = True
+        os.replace(tmp, raw_path)
+        if broken:
+            print(&#x27;gudok: оборванный хвост файла отброшен&#x27;, flush=True)
+    todo = [t for t in items if int(t[1]) not in done]
+
+    with gzip.open(raw_path, &#x27;at&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for k, (url, aid, lastmod) in enumerate(todo, 1):
+            r = get(url)
+            time.sleep(DELAY)
+            if r is None:
+                continue
+            html = r.content.decode(&#x27;utf-8&#x27;, &#x27;replace&#x27;)
+            og = BeautifulSoup(html, &#x27;lxml&#x27;).find(&#x27;meta&#x27;, property=&#x27;og:title&#x27;)
+            f.write(json.dumps({&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: int(aid), &#x27;title&#x27;: og[&#x27;content&#x27;] if og else &#x27;&#x27;,
+                                &#x27;url&#x27;: url, &#x27;timestamp&#x27;: lastmod, &#x27;html&#x27;: html}, ensure_ascii=False) + &#x27;\n&#x27;)
+            if k % 100 == 0:
+                f.flush()
+                print(f&#x27;gudok: {len(done) + k}/{len(items)}&#x27;, flush=True)</code></pre></div>
+
+<h2 id="5">5. Из чего состоит документ: разметка и метаданные<a class="headerlink" href="#5" title="Permanent link">#</a></h2>
+<h3 id="wikitext">Wikitext<a class="headerlink" href="#wikitext" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Разметка</th>
+<th>Пример</th>
+<th>Что делаем</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ссылка</td>
+<td><code>[[Транссибирская магистраль\|Транссибу]]</code></td>
+<td>оставляем текст ссылки: «Транссибу»</td>
+</tr>
+<tr>
+<td>шаблон</td>
+<td><code>{{Карточка локомотива \| ...}}</code>, <code>{{нет АИ}}</code></td>
+<td>удаляем (это оформление и метаданные)</td>
+</tr>
+<tr>
+<td>сноска</td>
+<td><code>&lt;ref&gt;Источник&lt;/ref&gt;</code></td>
+<td>удаляем</td>
+</tr>
+<tr>
+<td>форматирование</td>
+<td><code>'''жирный'''</code>, <code>''курсив''</code></td>
+<td>убираем кавычки</td>
+</tr>
+<tr>
+<td>заголовок</td>
+<td><code>== История ==</code></td>
+<td>оставляем текст заголовка</td>
+</tr>
+<tr>
+<td>таблица</td>
+<td><code>{\| ... \|}</code></td>
+<td>удаляем</td>
+</tr>
+<tr>
+<td>файл, категория</td>
+<td><code>[[Файл:...]]</code>, <code>[[Категория:...]]</code></td>
+<td>удаляем</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Метаданные Википедии</strong>: карточка (infobox: мощность, годы выпуска…) — у 50 % русских статей,
+координаты — 46 %, категории — 95 %, сноски — 74 %, изображения — 47 %.</p>
+<h3 id="html">HTML «Гудка»<a class="headerlink" href="#html" title="Permanent link">#</a></h3>
+<p>Страница статьи — это в основном оформление сайта (меню, баннеры, блоки «популярное»); сама статья
+занимает лишь <strong>3,7 %</strong> HTML. Метаданные: номер выпуска газеты, дата, полоса, рубрика, автор, фото.</p>
+<h2 id="6">6. Выделение текста<a class="headerlink" href="#6" title="Permanent link">#</a></h2>
+<h3 id="wikitext_1">Wikitext — цепочка регулярных выражений<a class="headerlink" href="#wikitext_1" title="Permanent link">#</a></h3>
+<p>Порядок важен: сначала отрезаются хвостовые разделы (Примечания, Литература), потом комментарии
+и сноски (внутри них бывают ссылки и шаблоны), потом шаблоны — <strong>в цикле</strong>, потому что они вложены
+(<code>{{a|{{b}}}}</code>): регулярка <code>\{\{[^{}]*\}\}</code> за один проход снимает только самый внутренний уровень.</p>
+<div class="code"><div class="code-title">lab1/src/extract.py — clean <span class="ln">строки 23–41</span></div><pre><code class="language-python">def clean(wt):
+    t = TAIL.sub(&#x27;&#x27;, wt)
+    t = COMMENT.sub(&#x27;&#x27;, t)
+    t = REF.sub(&#x27;&#x27;, t)
+    for _ in range(5):
+        t2 = TEMPLATE.sub(&#x27;&#x27;, t)
+        if t2 == t:
+            break
+        t = t2
+    t = TABLE.sub(&#x27;&#x27;, t)
+    t = FILE.sub(&#x27;&#x27;, t)
+    t = LINK.sub(r&#x27;\1&#x27;, t)
+    t = EXTLINK.sub(r&#x27;\1&#x27;, t)
+    t = TAG.sub(&#x27;&#x27;, t)
+    t = HEADING.sub(r&#x27;\1&#x27;, t)
+    t = FORMAT.sub(&#x27;&#x27;, t)
+    t = re.sub(r&#x27;^[*#:;]+\s*&#x27;, &#x27;&#x27;, t, flags=re.M)
+    t = re.sub(r&#x27;\n{3,}&#x27;, &#x27;\n\n&#x27;, t)
+    return t.strip()</code></pre></div>
+
+<h3 id="html-dom">HTML — разбор дерева DOM<a class="headerlink" href="#html-dom" title="Permanent link">#</a></h3>
+<p>BeautifulSoup с парсером lxml строит дерево страницы; CSS-селектор <code>article.article-block__main-body</code>
+выбирает блок статьи. Из него удаляются подпись автора и скрипты, <code>&lt;br&gt;</code> превращаются в переводы
+строк; рубрика в начале («Кадры | …») и короткая жирная подпись в конце распознаются эвристикой:</p>
+<div class="code"><div class="code-title">lab1/src/extract.py — clean_html <span class="ln">строки 44–75</span></div><pre><code class="language-python">def clean_html(html):
+    soup = BeautifulSoup(html, &#x27;lxml&#x27;)
+    body = soup.select_one(&#x27;article.article-block__main-body&#x27;)
+    header = soup.select_one(&#x27;div.article-header&#x27;)
+    meta = {
+        &#x27;issue&#x27;: bool(header and header.find(&#x27;h2&#x27;) and &#x27;Выпуск&#x27; in header.find(&#x27;h2&#x27;).get_text()),
+        &#x27;photo&#x27;: bool(header and header.select_one(&#x27;.article-header__img img&#x27;)),
+        &#x27;subheadings&#x27;: bool(body and body.find(&#x27;b&#x27;)),
+        &#x27;author&#x27;: bool(body and body.select_one(&#x27;div.avt&#x27;)),
+        &#x27;rubric&#x27;: False,
+    }
+    if body is None:
+        return &#x27;&#x27;, meta
+    for el in body.select(&#x27;div.avt, script, style&#x27;):
+        el.decompose()
+    for br in body.find_all(&#x27;br&#x27;):
+        br.replace_with(&#x27;\n&#x27;)
+    text = body.get_text()
+    m = RUBRIC.match(text)
+    if m:
+        meta[&#x27;rubric&#x27;] = True
+        text = text[m.end():]
+    text = re.sub(r&#x27;[ \t\xa0]+&#x27;, &#x27; &#x27;, text)
+    text = re.sub(r&#x27;\n\s*\n\s*(\n\s*)+&#x27;, &#x27;\n\n&#x27;, text)
+    paragraphs = text.strip().split(&#x27;\n\n&#x27;)
+    bold = body.find_all(&#x27;b&#x27;)
+    last = paragraphs[-1].strip()
+    if bold and bold[-1].get_text(strip=True) and bold[-1].get_text(strip=True) in last \
+            and len(last.split()) &lt;= 20 and len(paragraphs) &gt; 1:
+        meta[&#x27;author&#x27;] = True
+        paragraphs = paragraphs[:-1]
+    return &#x27;\n\n&#x27;.join(p.strip() for p in paragraphs).strip(), meta</code></pre></div>
+
+<p>Метаданные Википедии определяются по наличию подстрок в wikitext:</p>
+<div class="code"><div class="code-title">lab1/src/extract.py — wiki_meta <span class="ln">строки 85–93</span></div><pre><code class="language-python">def wiki_meta(wt):
+    low = wt.lower()
+    return {
+        &#x27;infobox&#x27;: &#x27;{{infobox&#x27; in low or &#x27;{{карточка&#x27; in low or &#x27;{{железнодорожная станция&#x27; in low or &#x27;{{станция&#x27; in low,
+        &#x27;coords&#x27;: &#x27;coord&#x27; in low or &#x27;lat_deg&#x27; in low or &#x27;широта&#x27; in low,
+        &#x27;categories&#x27;: &#x27;[[категория:&#x27; in low or &#x27;[[category:&#x27; in low,
+        &#x27;refs&#x27;: &#x27;&lt;ref&#x27; in low,
+        &#x27;images&#x27;: &#x27;файл:&#x27; in low or &#x27;file:&#x27; in low or &#x27;image&#x27; in low,
+    }</code></pre></div>
+
+<h2 id="7">7. Существующие поисковики и их недостатки<a class="headerlink" href="#7" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Поисковик</th>
+<th>Недостатки, найденные на запросах</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Поиск Википедии</td>
+<td>не понимает разговорные формы и вопросы; выдача по совпадению слов, а не по смыслу</td>
+</tr>
+<tr>
+<td>Поиск «Гудка» (gudok.ru/search)</td>
+<td>сортирует <strong>по дате</strong>, а не по релевантности; выдача обрезана на 1000; нельзя исключить слово</td>
+</tr>
+</tbody>
+</table>
+<h2 id="8-unittest">8. Тесты (unittest)<a class="headerlink" href="#8-unittest" title="Permanent link">#</a></h2>
+<ul>
+<li><code>tests/test_extract.py</code> — 19 тестов очистки: ссылки с подписью и без, вложенные шаблоны,
+  сноски, хвостовые разделы, таблицы, HTML «Гудка» (рубрика, автор, <code>&lt;br&gt;</code>).</li>
+<li><code>tests/test_cli.py</code> — 7 тестов, запускающих скрипты как утилиты командной строки на мини-корпусе.</li>
+</ul>
+<h2 id="9-lab1py">9. Утилита <code>lab1.py</code><a class="headerlink" href="#9-lab1py" title="Permanent link">#</a></h2>
+<pre><code>python lab1.py stats      — таблица по источникам
+python lab1.py meta       — доли метаданных
+python lab1.py lengths    — гистограмма длины документов
+python lab1.py find ВЛ80  — поиск по заголовкам
+python lab1.py compare 140304   — документ «до» (wikitext) и «после» (текст)
+python lab1.py clean &quot;'''Электровоз''' [[ВЛ80|ВЛ-80]]&lt;ref&gt;x&lt;/ref&gt;&quot;   — очистка своего кусочка
+python lab1.py robots     — живой запрос robots.txt и sitemap «Гудка»
+</code></pre>
+<h2 id="10">10. Вопросы на защите<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Почему два источника, если в корпусе три?</strong> Русская и английская Википедии — один источник.</li>
+<li><strong>Почему API, а не HTML?</strong> 50 статей за запрос, чистый wikitext, официальный путь для программ.</li>
+<li><strong>Что такое <code>continue</code>?</strong> Закладка: API отдаёт результат порциями и сообщает, откуда продолжить.</li>
+<li><strong>Почему обход в ширину?</strong> Ближние к корню категории релевантнее; глубина ограничивает дрейф темы.</li>
+<li><strong>Почему шаблоны в цикле?</strong> Они вложены; регулярное выражение не умеет считать скобки.</li>
+<li><strong>Почему регулярки, а не настоящий парсер?</strong> Проще и быстрее; недостаток — вложенность любой
+  глубины не понимается (указано в выводах). Альтернатива — <code>action=parse</code> или mwparserfromhell.</li>
+<li><strong>Что будет при обрыве?</strong> Скачанное пропускается (множество <code>done</code>), оборванный хвост gzip отбрасывается.</li>
+<li><strong>Зачем пауза 0,3 с и User-Agent?</strong> Вежливость: не нагружать сайт, честно представиться.</li>
+<li><strong>Откуда ссылка на sitemap?</strong> Из строки <code>Sitemap:</code> в robots.txt.</li>
+<li><strong>Почему статьи короткие?</strong> Это свойство темы: справки о станциях, сериях вагонов, газетные
+  заметки. Объём набран числом статей (65 тыс. при 30 тыс.), всего 36 млн слов.</li>
+</ul>
+<h2 id="11">11. Полные исходники<a class="headerlink" href="#11" title="Permanent link">#</a></h2>
+<details class="file"><summary>lab1/src/crawl.py <span class="ln">(68 строк)</span></summary><pre><code class="language-python">import json, os, sys, time
+import requests
+
+UA = {&#x27;User-Agent&#x27;: &#x27;MAI-IR-lab/1.0 (https://github.com/toshunster/MAI-IR; educational)&#x27;}
+
+SOURCES = {
+    &#x27;ruwiki&#x27;: (&#x27;https://ru.wikipedia.org/w/api.php&#x27;, &#x27;Категория:Железнодорожный транспорт&#x27;, 4),
+    &#x27;enwiki&#x27;: (&#x27;https://en.wikipedia.org/w/api.php&#x27;, &#x27;Category:Rail transport&#x27;, 3),
+}
+MAX_CATS = 4000
+OUT = os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;data&#x27;)
+
+
+def api(url, **p):
+    p.update(format=&#x27;json&#x27;, formatversion=2)
+    for attempt in range(8):
+        try:
+            r = requests.get(url, params=p, headers=UA, timeout=60)
+            if r.status_code == 200:
+                return r.json()
+        except requests.RequestException:
+            pass
+        time.sleep(min(60, 3 * 2 ** attempt))
+    raise RuntimeError(&#x27;API failed&#x27;)
+
+
+def members(url, cat):
+    cont = {}
+    while True:
+        d = api(url, action=&#x27;query&#x27;, list=&#x27;categorymembers&#x27;, cmtitle=cat,
+                cmlimit=500, cmtype=&#x27;page|subcat&#x27;, **cont)
+        yield from d[&#x27;query&#x27;][&#x27;categorymembers&#x27;]
+        if &#x27;continue&#x27; not in d:
+            return
+        cont = d[&#x27;continue&#x27;]
+
+
+def collect_titles(name, max_cats):
+    url, root, depth = SOURCES[name]
+    seen_cat, pages = {root}, {}
+    level = [root]
+    for dep in range(depth + 1):
+        nxt = []
+        for cat in level:
+            for m in members(url, cat):
+                if m[&#x27;ns&#x27;] == 0:
+                    pages.setdefault(m[&#x27;pageid&#x27;], m[&#x27;title&#x27;])
+                elif m[&#x27;ns&#x27;] == 14 and m[&#x27;title&#x27;] not in seen_cat and len(seen_cat) &lt; max_cats:
+                    seen_cat.add(m[&#x27;title&#x27;]); nxt.append(m[&#x27;title&#x27;])
+        print(f&#x27;{name}: depth {dep}, cats {len(seen_cat)}, pages {len(pages)}&#x27;, flush=True)
+        level = nxt
+    return pages, len(seen_cat)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    max_cats = int(sys.argv[1]) if len(sys.argv) &gt; 1 else MAX_CATS
+    out = sys.argv[2] if len(sys.argv) &gt; 2 else OUT
+    os.makedirs(out, exist_ok=True)
+    stats = {}
+    for name in SOURCES:
+        pages, ncat = collect_titles(name, max_cats)
+        with open(os.path.join(out, f&#x27;{name}_titles.tsv&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            for pid, t in pages.items():
+                f.write(f&#x27;{pid}\t{t}\n&#x27;)
+        stats[name] = {&#x27;categories&#x27;: ncat, &#x27;articles&#x27;: len(pages)}
+    with open(os.path.join(out, &#x27;crawl_stats.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+</code></pre></details>
+<details class="file"><summary>lab1/src/download_all.py <span class="ln">(39 строк)</span></summary><pre><code class="language-python">import json, os, sys
+from crawl import api, SOURCES, OUT
+
+
+def run(name, out):
+    ids = [int(l.split(&#x27;\t&#x27;)[0]) for l in open(os.path.join(out, f&#x27;{name}_titles.tsv&#x27;), encoding=&#x27;utf-8&#x27;)]
+    path = os.path.join(out, f&#x27;{name}_raw.jsonl&#x27;)
+
+    done = set()
+    if os.path.exists(path):
+        for line in open(path, encoding=&#x27;utf-8&#x27;):
+            try:
+                done.add(json.loads(line)[&#x27;id&#x27;])
+            except ValueError:
+                pass
+    todo = [i for i in ids if i not in done]
+    url = SOURCES[name][0]
+
+    with open(path, &#x27;a&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for i in range(0, len(todo), 50):
+            d = api(url, action=&#x27;query&#x27;, prop=&#x27;revisions|info&#x27;, rvprop=&#x27;content|timestamp&#x27;,
+                    rvslots=&#x27;main&#x27;, inprop=&#x27;url&#x27;, pageids=&#x27;|&#x27;.join(map(str, todo[i:i + 50])))
+            for p in d[&#x27;query&#x27;][&#x27;pages&#x27;]:
+                if &#x27;revisions&#x27; not in p:
+                    continue
+                rev = p[&#x27;revisions&#x27;][0]
+                f.write(json.dumps({&#x27;source&#x27;: name, &#x27;id&#x27;: p[&#x27;pageid&#x27;], &#x27;title&#x27;: p[&#x27;title&#x27;],
+                                    &#x27;url&#x27;: p[&#x27;fullurl&#x27;], &#x27;timestamp&#x27;: rev[&#x27;timestamp&#x27;],
+                                    &#x27;wikitext&#x27;: rev[&#x27;slots&#x27;][&#x27;main&#x27;][&#x27;content&#x27;]},
+                                   ensure_ascii=False) + &#x27;\n&#x27;)
+            f.flush()
+            print(f&#x27;{name}: {min(len(ids), len(done) + i + 50)}/{len(ids)}&#x27;, flush=True)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    out = sys.argv[1] if len(sys.argv) &gt; 1 else OUT
+    for n in SOURCES:
+        run(n, out)
+</code></pre></details>
+<details class="file"><summary>lab1/src/gudok.py <span class="ln">(91 строк)</span></summary><pre><code class="language-python">import gzip, json, os, re, sys, time
+import requests
+from bs4 import BeautifulSoup
+
+UA = {&#x27;User-Agent&#x27;: &#x27;MAI-IR-lab/1.0 (https://github.com/toshunster/MAI-IR; educational)&#x27;}
+SITEMAP_INDEX = &#x27;https://gudok.ru/sitemap_index.xml&#x27;
+ARTICLE_RE = re.compile(r&#x27;&lt;loc&gt;(https://gudok\.ru/newspaper/\?ID=(\d+))&lt;/loc&gt;&lt;lastmod&gt;([^&lt;]+)&lt;/lastmod&gt;&#x27;)
+DELAY = 0.3
+LIMIT = 20000
+OUT = os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;data&#x27;)
+
+session = requests.Session()
+session.headers.update(UA)
+
+
+def get(url):
+    for attempt in range(6):
+        try:
+            r = session.get(url, timeout=60)
+            if r.status_code == 200:
+                return r
+            if r.status_code == 404:
+                return None
+        except requests.RequestException:
+            pass
+        time.sleep(min(60, 3 * 2 ** attempt))
+    return None
+
+
+def list_articles(limit):
+    index = get(SITEMAP_INDEX).text
+    parts = re.findall(r&#x27;&lt;loc&gt;([^&lt;]+\.xml)&lt;/loc&gt;&#x27;, index)
+    items = []
+    for p in parts:
+        items += ARTICLE_RE.findall(get(p).text)
+        time.sleep(DELAY)
+    items.sort(key=lambda t: (t[2], int(t[1])), reverse=True)
+    return items[:limit]
+
+
+def main(limit, out):
+    os.makedirs(out, exist_ok=True)
+    urls_path = os.path.join(out, &#x27;gudok_urls.tsv&#x27;)
+    raw_path = os.path.join(out, &#x27;gudok_raw.jsonl.gz&#x27;)
+
+    if os.path.exists(urls_path):
+        items = [tuple(l.rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;)) for l in open(urls_path, encoding=&#x27;utf-8&#x27;)]
+    else:
+        items = list_articles(limit)
+        with open(urls_path, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            for u, i, m in items:
+                f.write(f&#x27;{u}\t{i}\t{m}\n&#x27;)
+    print(f&#x27;gudok: в списке {len(items)} статей&#x27;, flush=True)
+
+    done = set()
+    if os.path.exists(raw_path):
+        broken = False
+        tmp = raw_path + &#x27;.tmp&#x27;
+        with gzip.open(raw_path, &#x27;rt&#x27;, encoding=&#x27;utf-8&#x27;) as src, gzip.open(tmp, &#x27;wt&#x27;, encoding=&#x27;utf-8&#x27;) as dst:
+            try:
+                for line in src:
+                    d = json.loads(line)
+                    dst.write(line)
+                    done.add(d[&#x27;id&#x27;])
+            except (EOFError, OSError, ValueError):
+                broken = True
+        os.replace(tmp, raw_path)
+        if broken:
+            print(&#x27;gudok: оборванный хвост файла отброшен&#x27;, flush=True)
+    todo = [t for t in items if int(t[1]) not in done]
+
+    with gzip.open(raw_path, &#x27;at&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for k, (url, aid, lastmod) in enumerate(todo, 1):
+            r = get(url)
+            time.sleep(DELAY)
+            if r is None:
+                continue
+            html = r.content.decode(&#x27;utf-8&#x27;, &#x27;replace&#x27;)
+            og = BeautifulSoup(html, &#x27;lxml&#x27;).find(&#x27;meta&#x27;, property=&#x27;og:title&#x27;)
+            f.write(json.dumps({&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: int(aid), &#x27;title&#x27;: og[&#x27;content&#x27;] if og else &#x27;&#x27;,
+                                &#x27;url&#x27;: url, &#x27;timestamp&#x27;: lastmod, &#x27;html&#x27;: html}, ensure_ascii=False) + &#x27;\n&#x27;)
+            if k % 100 == 0:
+                f.flush()
+                print(f&#x27;gudok: {len(done) + k}/{len(items)}&#x27;, flush=True)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    limit = int(sys.argv[1]) if len(sys.argv) &gt; 1 else LIMIT
+    out = sys.argv[2] if len(sys.argv) &gt; 2 else OUT
+    main(limit, out)
+</code></pre></details>
+<details class="file"><summary>lab1/src/extract.py <span class="ln">(147 строк)</span></summary><pre><code class="language-python">import gzip, json, os, re, sys
+from bs4 import BeautifulSoup
+
+DATA = os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;data&#x27;)
+
+
+REF = re.compile(r&#x27;&lt;ref[^&gt;/]*/&gt;|&lt;ref[^&gt;]*&gt;.*?&lt;/ref&gt;&#x27;, re.S | re.I)
+COMMENT = re.compile(r&#x27;&lt;!--.*?--&gt;&#x27;, re.S)
+TAG = re.compile(r&#x27;&lt;[^&gt;]+&gt;&#x27;)
+TABLE = re.compile(r&#x27;\{\|.*?\|\}&#x27;, re.S)
+FILE = re.compile(r&#x27;\[\[(?:Файл|Изображение|File|Image|Категория|Category):[^\[\]]*(?:\[\[[^\]]*\]\][^\[\]]*)*\]\]&#x27;, re.I)
+LINK = re.compile(r&#x27;\[\[(?:[^|\]]*\|)?([^\]]*)\]\]&#x27;)
+EXTLINK = re.compile(r&#x27;\[https?://\S+\s*([^\]]*)\]&#x27;)
+TEMPLATE = re.compile(r&#x27;\{\{[^{}]*\}\}&#x27;)
+HEADING = re.compile(r&#x27;^=+\s*(.*?)\s*=+\s*$&#x27;, re.M)
+FORMAT = re.compile(r&quot;&#x27;{2,}&quot;)
+TAIL = re.compile(r&#x27;^==\s*(Примечания|Литература|Ссылки|См\. также|References|External links|See also|Further reading|Notes|Bibliography)\s*==.*&#x27;,
+                  re.S | re.M)
+WORD = re.compile(r&#x27;\w+&#x27;, re.U)
+RUBRIC = re.compile(r&#x27;^\s*([^|\n]{2,40}?)\s*\|\s*&#x27;)
+
+
+def clean(wt):
+    t = TAIL.sub(&#x27;&#x27;, wt)
+    t = COMMENT.sub(&#x27;&#x27;, t)
+    t = REF.sub(&#x27;&#x27;, t)
+    for _ in range(5):
+        t2 = TEMPLATE.sub(&#x27;&#x27;, t)
+        if t2 == t:
+            break
+        t = t2
+    t = TABLE.sub(&#x27;&#x27;, t)
+    t = FILE.sub(&#x27;&#x27;, t)
+    t = LINK.sub(r&#x27;\1&#x27;, t)
+    t = EXTLINK.sub(r&#x27;\1&#x27;, t)
+    t = TAG.sub(&#x27;&#x27;, t)
+    t = HEADING.sub(r&#x27;\1&#x27;, t)
+    t = FORMAT.sub(&#x27;&#x27;, t)
+    t = re.sub(r&#x27;^[*#:;]+\s*&#x27;, &#x27;&#x27;, t, flags=re.M)
+    t = re.sub(r&#x27;\n{3,}&#x27;, &#x27;\n\n&#x27;, t)
+    return t.strip()
+
+
+def clean_html(html):
+    soup = BeautifulSoup(html, &#x27;lxml&#x27;)
+    body = soup.select_one(&#x27;article.article-block__main-body&#x27;)
+    header = soup.select_one(&#x27;div.article-header&#x27;)
+    meta = {
+        &#x27;issue&#x27;: bool(header and header.find(&#x27;h2&#x27;) and &#x27;Выпуск&#x27; in header.find(&#x27;h2&#x27;).get_text()),
+        &#x27;photo&#x27;: bool(header and header.select_one(&#x27;.article-header__img img&#x27;)),
+        &#x27;subheadings&#x27;: bool(body and body.find(&#x27;b&#x27;)),
+        &#x27;author&#x27;: bool(body and body.select_one(&#x27;div.avt&#x27;)),
+        &#x27;rubric&#x27;: False,
+    }
+    if body is None:
+        return &#x27;&#x27;, meta
+    for el in body.select(&#x27;div.avt, script, style&#x27;):
+        el.decompose()
+    for br in body.find_all(&#x27;br&#x27;):
+        br.replace_with(&#x27;\n&#x27;)
+    text = body.get_text()
+    m = RUBRIC.match(text)
+    if m:
+        meta[&#x27;rubric&#x27;] = True
+        text = text[m.end():]
+    text = re.sub(r&#x27;[ \t\xa0]+&#x27;, &#x27; &#x27;, text)
+    text = re.sub(r&#x27;\n\s*\n\s*(\n\s*)+&#x27;, &#x27;\n\n&#x27;, text)
+    paragraphs = text.strip().split(&#x27;\n\n&#x27;)
+    bold = body.find_all(&#x27;b&#x27;)
+    last = paragraphs[-1].strip()
+    if bold and bold[-1].get_text(strip=True) and bold[-1].get_text(strip=True) in last \
+            and len(last.split()) &lt;= 20 and len(paragraphs) &gt; 1:
+        meta[&#x27;author&#x27;] = True
+        paragraphs = paragraphs[:-1]
+    return &#x27;\n\n&#x27;.join(p.strip() for p in paragraphs).strip(), meta
+
+
+SOURCES = {
+    &#x27;ruwiki&#x27;: (&#x27;ruwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;, open),
+    &#x27;enwiki&#x27;: (&#x27;enwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;, open),
+    &#x27;gudok&#x27;: (&#x27;gudok_raw.jsonl.gz&#x27;, &#x27;html&#x27;, gzip.open),
+}
+
+
+def wiki_meta(wt):
+    low = wt.lower()
+    return {
+        &#x27;infobox&#x27;: &#x27;{{infobox&#x27; in low or &#x27;{{карточка&#x27; in low or &#x27;{{железнодорожная станция&#x27; in low or &#x27;{{станция&#x27; in low,
+        &#x27;coords&#x27;: &#x27;coord&#x27; in low or &#x27;lat_deg&#x27; in low or &#x27;широта&#x27; in low,
+        &#x27;categories&#x27;: &#x27;[[категория:&#x27; in low or &#x27;[[category:&#x27; in low,
+        &#x27;refs&#x27;: &#x27;&lt;ref&#x27; in low,
+        &#x27;images&#x27;: &#x27;файл:&#x27; in low or &#x27;file:&#x27; in low or &#x27;image&#x27; in low,
+    }
+
+
+def main(data):
+    report = {}
+    for name, (fname, field, opener) in SOURCES.items():
+        src = os.path.join(data, fname)
+        if not os.path.exists(src):
+            print(f&#x27;{name}: нет файла {fname}, пропускаю&#x27;)
+            continue
+        out = open(os.path.join(data, f&#x27;{name}_text.jsonl&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;)
+        n = raw_b = txt_b = words = 0
+        has = {}
+        sizes = []
+        with opener(src, &#x27;rt&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            for line in f:
+                d = json.loads(line)
+                raw = d[field]
+                if field == &#x27;wikitext&#x27;:
+                    if raw.lstrip().upper().startswith((&#x27;#REDIRECT&#x27;, &#x27;#ПЕРЕНАПРАВЛЕНИЕ&#x27;)):
+                        continue
+                    text, meta = clean(raw), wiki_meta(raw)
+                else:
+                    text, meta = clean_html(raw)
+                    if not text:
+                        continue
+                n += 1
+                raw_b += len(raw.encode(&#x27;utf-8&#x27;))
+                tb = len(text.encode(&#x27;utf-8&#x27;))
+                txt_b += tb
+                w = len(WORD.findall(text))
+                words += w
+                sizes.append(w)
+                for k, v in meta.items():
+                    has[k] = has.get(k, 0) + int(v)
+                out.write(json.dumps({&#x27;id&#x27;: d[&#x27;id&#x27;], &#x27;title&#x27;: d[&#x27;title&#x27;], &#x27;url&#x27;: d[&#x27;url&#x27;], &#x27;text&#x27;: text},
+                                     ensure_ascii=False) + &#x27;\n&#x27;)
+        out.close()
+        sizes.sort()
+        report[name] = {
+            &#x27;docs&#x27;: n, &#x27;raw_bytes&#x27;: raw_b, &#x27;text_bytes&#x27;: txt_b, &#x27;words&#x27;: words,
+            &#x27;avg_raw_bytes&#x27;: raw_b // n, &#x27;avg_text_bytes&#x27;: txt_b // n, &#x27;avg_words&#x27;: words // n,
+            &#x27;median_words&#x27;: sizes[n // 2],
+            &#x27;docs_over_1000_words&#x27;: sum(s &gt;= 1000 for s in sizes),
+            &#x27;text_to_raw_ratio&#x27;: round(txt_b / raw_b, 3),
+            &#x27;meta_share&#x27;: {k: round(v / n, 3) for k, v in has.items()},
+        }
+    json.dump(report, open(os.path.join(data, &#x27;corpus_stats.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;),
+              ensure_ascii=False, indent=2)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == &#x27;__main__&#x27;:
+    main(sys.argv[1] if len(sys.argv) &gt; 1 else DATA)
+</code></pre></details>
+<details class="file"><summary>lab1/src/corpus.py <span class="ln">(71 строк)</span></summary><pre><code class="language-python">import gzip, json, os, random, sys
+
+USAGE = &quot;&quot;&quot;Консольная утилита для просмотра корпуса.
+
+  python src/corpus.py stats                 — статистика корпуса (data/corpus_stats.json)
+  python src/corpus.py find &lt;подстрока&gt;      — найти документы по подстроке в заголовке
+  python src/corpus.py show &lt;id&gt;             — вывести очищенный текст документа
+  python src/corpus.py raw &lt;id&gt;              — вывести «сырой» документ (wikitext или HTML)
+  python src/corpus.py random                — случайный документ
+&quot;&quot;&quot;
+
+DATA = os.environ.get(&#x27;CORPUS_DATA&#x27;) or os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;data&#x27;)
+SRC = (&#x27;ruwiki&#x27;, &#x27;enwiki&#x27;, &#x27;gudok&#x27;)
+RAW = {&#x27;ruwiki&#x27;: (&#x27;ruwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;), &#x27;enwiki&#x27;: (&#x27;enwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;),
+       &#x27;gudok&#x27;: (&#x27;gudok_raw.jsonl.gz&#x27;, &#x27;html&#x27;)}
+
+
+def docs(kind):
+    for name in SRC:
+        path = os.path.join(DATA, RAW[name][0] if kind == &#x27;raw&#x27; else f&#x27;{name}_text.jsonl&#x27;)
+        if not os.path.exists(path):
+            continue
+        opener = gzip.open if path.endswith(&#x27;.gz&#x27;) else open
+        with opener(path, &#x27;rt&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            for line in f:
+                d = json.loads(line)
+                d[&#x27;source&#x27;] = name
+                if kind == &#x27;raw&#x27;:
+                    d[&#x27;raw&#x27;] = d[RAW[name][1]]
+                yield d
+
+
+def print_doc(d, body):
+    print(f&quot;[{d[&#x27;source&#x27;]}] id={d[&#x27;id&#x27;]}  {d[&#x27;title&#x27;]}\n{d[&#x27;url&#x27;]}\n{&#x27;-&#x27; * 60}\n{body}&quot;)
+
+
+def main(argv):
+    if not argv:
+        print(USAGE); return
+    cmd, arg = argv[0], &#x27; &#x27;.join(argv[1:])
+    if cmd == &#x27;stats&#x27;:
+        s = json.load(open(os.path.join(DATA, &#x27;corpus_stats.json&#x27;), encoding=&#x27;utf-8&#x27;))
+        for name, v in s.items():
+            print(f&#x27;== {name} ==&#x27;)
+            for k, x in v.items():
+                print(f&#x27;  {k:22} {x}&#x27;)
+        print(&#x27;ВСЕГО документов:&#x27;, sum(v[&#x27;docs&#x27;] for v in s.values()))
+    elif cmd == &#x27;find&#x27;:
+        q = arg.lower()
+        for d in docs(&#x27;text&#x27;):
+            if q in d[&#x27;title&#x27;].lower():
+                print(f&quot;[{d[&#x27;source&#x27;]}] {d[&#x27;id&#x27;]}\t{d[&#x27;title&#x27;]}\t{len(d[&#x27;text&#x27;].split())} слов&quot;)
+    elif cmd in (&#x27;show&#x27;, &#x27;raw&#x27;):
+        kind, field = (&#x27;text&#x27;, &#x27;text&#x27;) if cmd == &#x27;show&#x27; else (&#x27;raw&#x27;, &#x27;raw&#x27;)
+        for d in docs(kind):
+            if str(d[&#x27;id&#x27;]) == arg:
+                print_doc(d, d[field]); return
+        print(&#x27;не найдено&#x27;)
+    elif cmd == &#x27;random&#x27;:
+        name = random.choice(SRC)
+        lines = open(os.path.join(DATA, f&#x27;{name}_text.jsonl&#x27;), encoding=&#x27;utf-8&#x27;).readlines()
+        d = json.loads(random.choice(lines)); d[&#x27;source&#x27;] = name
+        print_doc(d, d[&#x27;text&#x27;][:2000])
+    else:
+        print(USAGE)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+    main(sys.argv[1:])
+</code></pre></details>
+<details class="file"><summary>lab1/lab1.py <span class="ln">(242 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР1 «Добыча корпуса документов» — утилита для проверок и демонстрации.
+
+  python lab1.py                      — меню
+  python lab1.py stats                — статистика корпуса по источникам (документы, размеры, слова, доля текста)
+  python lab1.py meta                 — доля документов с каждым видом метаданных
+  python lab1.py lengths              — распределение длины документов (гистограмма в консоли)
+  python lab1.py find электровоз      — найти документы по заголовку
+  python lab1.py compare 63729        — документ «до и после»: сырой и очищенный текст, размеры
+  python lab1.py clean &quot;&#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; [[ВЛ80|ВЛ-80]]{{ref}}&quot;   — очистить свой кусок wikitext
+  python lab1.py robots               — robots.txt и карта сайта «Гудка» (живой запрос к сайту)
+  python lab1.py random               — случайный документ
+&quot;&quot;&quot;
+import gzip, json, os, random, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, &#x27;src&#x27;))
+DATA = os.environ.get(&#x27;CORPUS_DATA&#x27;) or os.path.join(HERE, &#x27;data&#x27;)
+try:
+    sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;); sys.stdin.reconfigure(encoding=&#x27;utf-8&#x27;)
+except Exception:
+    pass
+
+SRC = (&#x27;ruwiki&#x27;, &#x27;enwiki&#x27;, &#x27;gudok&#x27;)
+RAW = {&#x27;ruwiki&#x27;: (&#x27;ruwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;), &#x27;enwiki&#x27;: (&#x27;enwiki_raw.jsonl&#x27;, &#x27;wikitext&#x27;),
+       &#x27;gudok&#x27;: (&#x27;gudok_raw.jsonl.gz&#x27;, &#x27;html&#x27;)}
+NAMES = {&#x27;ruwiki&#x27;: &#x27;Википедия (ru)&#x27;, &#x27;enwiki&#x27;: &#x27;Википедия (en)&#x27;, &#x27;gudok&#x27;: &#x27;газета «Гудок»&#x27;}
+WORD = re.compile(r&#x27;\w+&#x27;)
+
+
+def fmt(n):
+    return f&#x27;{n:,}&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;)
+
+
+def table(rows, headers=None):
+    rows = [[str(c) for c in r] for r in rows]
+    if headers:
+        rows.insert(0, list(headers))
+    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    for k, r in enumerate(rows):
+        print(&#x27;  &#x27; + &#x27;  &#x27;.join(c.ljust(w[i]) if i == 0 else c.rjust(w[i]) for i, c in enumerate(r)))
+        if headers and k == 0:
+            print(&#x27;  &#x27; + &#x27;  &#x27;.join(&#x27;-&#x27; * x for x in w))
+
+
+def need(name):
+    p = os.path.join(DATA, name)
+    if not os.path.exists(p):
+        raise SystemExit(f&#x27;нет {p}: сначала соберите корпус (см. README.md)&#x27;)
+    return p
+
+
+def stats_json():
+    return json.load(open(need(&#x27;corpus_stats.json&#x27;), encoding=&#x27;utf-8&#x27;))
+
+
+def texts():
+    for s in SRC:
+        p = os.path.join(DATA, f&#x27;{s}_text.jsonl&#x27;)
+        if os.path.exists(p):
+            with open(p, encoding=&#x27;utf-8&#x27;) as f:
+                for line in f:
+                    d = json.loads(line); d[&#x27;source&#x27;] = s
+                    yield d
+
+
+def raw_of(source, doc_id):
+    fname, field = RAW[source]
+    opener = gzip.open if fname.endswith(&#x27;.gz&#x27;) else open
+    with opener(need(fname), &#x27;rt&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for line in f:
+            if f&#x27;&quot;id&quot;: {doc_id},&#x27; in line[:200] or f&#x27;&quot;id&quot;: {doc_id}}}&#x27; in line[:200]:
+                return json.loads(line)[field]
+    return None
+
+
+def cmd_stats(_):
+    s = stats_json()
+    rows = []
+    for k in SRC:
+        if k in s:
+            v = s[k]
+            rows.append((NAMES[k], fmt(v[&#x27;docs&#x27;]), f&quot;{v[&#x27;raw_bytes&#x27;] / 2**20:,.0f} МБ&quot;.replace(&#x27;,&#x27;, &#x27; &#x27;),
+                         f&quot;{v[&#x27;text_bytes&#x27;] / 2**20:,.0f} МБ&quot;.replace(&#x27;,&#x27;, &#x27; &#x27;), fmt(v[&#x27;words&#x27;]), fmt(v[&#x27;avg_words&#x27;]),
+                         fmt(v[&#x27;median_words&#x27;]), f&quot;{100 * v[&#x27;text_to_raw_ratio&#x27;]:.1f}%&quot;))
+    tot = lambda key: sum(s[k][key] for k in SRC if k in s)
+    rows.append((&#x27;ВСЕГО&#x27;, fmt(tot(&#x27;docs&#x27;)), f&quot;{tot(&#x27;raw_bytes&#x27;) / 2**20:,.0f} МБ&quot;.replace(&#x27;,&#x27;, &#x27; &#x27;),
+                 f&quot;{tot(&#x27;text_bytes&#x27;) / 2**20:,.0f} МБ&quot;.replace(&#x27;,&#x27;, &#x27; &#x27;), fmt(tot(&#x27;words&#x27;)),
+                 fmt(tot(&#x27;words&#x27;) // tot(&#x27;docs&#x27;)), &#x27;&#x27;, f&quot;{100 * tot(&#x27;text_bytes&#x27;) / tot(&#x27;raw_bytes&#x27;):.1f}%&quot;))
+    table(rows, (&#x27;источник&#x27;, &#x27;документов&#x27;, &#x27;сырые&#x27;, &#x27;текст&#x27;, &#x27;слов&#x27;, &#x27;слов/док&#x27;, &#x27;медиана&#x27;, &#x27;доля текста&#x27;))
+    print(&#x27;\nИсточников два: Википедия (ru + en — один источник) и газета «Гудок».&#x27;)
+
+
+def cmd_meta(_):
+    s = stats_json()
+    names = {&#x27;infobox&#x27;: &#x27;карточка (infobox)&#x27;, &#x27;coords&#x27;: &#x27;координаты&#x27;, &#x27;categories&#x27;: &#x27;категории&#x27;, &#x27;refs&#x27;: &#x27;сноски &lt;ref&gt;&#x27;,
+             &#x27;images&#x27;: &#x27;изображения&#x27;, &#x27;issue&#x27;: &#x27;номер выпуска газеты&#x27;, &#x27;photo&#x27;: &#x27;фото в шапке&#x27;,
+             &#x27;subheadings&#x27;: &#x27;подзаголовки (&lt;b&gt;)&#x27;, &#x27;author&#x27;: &#x27;подпись автора&#x27;, &#x27;rubric&#x27;: &#x27;рубрика&#x27;}
+    for k in SRC:
+        if k in s:
+            print(f&#x27;{NAMES[k]}:&#x27;)
+            table([(names.get(m, m), f&#x27;{100 * v:.1f}%&#x27;) for m, v in s[k][&#x27;meta_share&#x27;].items()])
+            print()
+
+
+def cmd_lengths(_):
+    bins = [0, 50, 100, 250, 500, 1000, 2000, 5000, 10**9]
+    cnt = {s: [0] * (len(bins) - 1) for s in SRC}
+    for d in texts():
+        w = len(WORD.findall(d[&#x27;text&#x27;]))
+        for i in range(len(bins) - 1):
+            if bins[i] &lt;= w &lt; bins[i + 1]:
+                cnt[d[&#x27;source&#x27;]][i] += 1; break
+    total = [sum(cnt[s][i] for s in SRC) for i in range(len(bins) - 1)]
+    m = max(total)
+    for i, t in enumerate(total):
+        lab = f&#x27;{bins[i]}–{bins[i + 1] - 1}&#x27; if bins[i + 1] &lt; 10**9 else f&#x27;≥{bins[i]}&#x27;
+        print(f&#x27;  {lab:&gt;10} слов  {fmt(t):&gt;7}  &#x27; + &#x27;█&#x27; * round(40 * t / m))
+    print(&#x27;\n  (ru / en / Гудок по столбцам): &#x27; + &#x27;; &#x27;.join(
+        f&#x27;{bins[i]}+: &#x27; + &#x27;/&#x27;.join(fmt(cnt[s][i]) for s in SRC) for i in range(len(bins) - 1)))
+
+
+def cmd_find(arg):
+    q = (arg or input(&#x27;часть заголовка: &#x27;)).lower()
+    n = 0
+    for d in texts():
+        if q in d[&#x27;title&#x27;].lower():
+            print(f&quot;  [{d[&#x27;source&#x27;]}] id={d[&#x27;id&#x27;]}  {d[&#x27;title&#x27;]}  ({fmt(len(d[&#x27;text&#x27;].split()))} слов)&quot;)
+            n += 1
+            if n &gt;= 30:
+                print(&#x27;  ... (показаны первые 30)&#x27;); break
+    if not n:
+        print(&#x27;не найдено&#x27;)
+
+
+def cmd_compare(arg):
+    doc_id = (arg or input(&#x27;id документа (из find): &#x27;)).strip()
+    for d in texts():
+        if str(d[&#x27;id&#x27;]) == doc_id:
+            raw = raw_of(d[&#x27;source&#x27;], d[&#x27;id&#x27;]) or &#x27;&#x27;
+            rb, tb = len(raw.encode(&#x27;utf-8&#x27;)), len(d[&#x27;text&#x27;].encode(&#x27;utf-8&#x27;))
+            print(f&quot;[{d[&#x27;source&#x27;]}] {d[&#x27;title&#x27;]}\n{d[&#x27;url&#x27;]}&quot;)
+            print(f&#x27;сырой документ: {fmt(rb)} байт, текст: {fmt(tb)} байт, доля текста {100 * tb / max(1, rb):.1f}%&#x27;)
+            print(&#x27;\n--- СЫРОЙ (начало) ---\n&#x27; + raw[:900])
+            print(&#x27;\n--- ОЧИЩЕННЫЙ (начало) ---\n&#x27; + d[&#x27;text&#x27;][:900])
+            return
+    print(&#x27;не найдено&#x27;)
+
+
+def cmd_clean(arg):
+    from extract import clean
+
+    def show(s):
+        print(&#x27;  -&gt; &#x27; + clean(s.replace(&#x27;\\n&#x27;, &#x27;\n&#x27;)))
+    if arg:
+        show(arg)
+    else:
+        print(&#x27;Вводите wikitext (\\n — перевод строки), пустая строка — выход.&#x27;)
+        print(&quot;Пример: &#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; ВЛ80&lt;ref&gt;Источник&lt;/ref&gt; — [[Локомотив|локомотив]] {{Нет АИ}}&quot;)
+        while True:
+            try:
+                s = input(&#x27;wikitext&gt; &#x27;)
+            except (EOFError, KeyboardInterrupt):
+                return
+            if not s.strip():
+                return
+            show(s)
+
+
+def cmd_robots(_):
+    import requests
+    ua = {&#x27;User-Agent&#x27;: &#x27;MAI-IR-lab/1.0 (educational)&#x27;}
+    r = requests.get(&#x27;https://gudok.ru/robots.txt&#x27;, headers=ua, timeout=30)
+    lines = r.text.splitlines()
+    print(f&#x27;robots.txt «Гудка»: {len(lines)} строк. Строки Sitemap и примеры Disallow:&#x27;)
+    for l in lines:
+        if l.lower().startswith(&#x27;sitemap&#x27;):
+            print(&#x27;  &#x27; + l)
+    print(&#x27;  &#x27; + &#x27;\n  &#x27;.join([l for l in lines if l.startswith(&#x27;Disallow&#x27;)][:8]) + &#x27;\n  ...&#x27;)
+    idx = requests.get(&#x27;https://gudok.ru/sitemap_index.xml&#x27;, headers=ua, timeout=30).text
+    parts = re.findall(r&#x27;&lt;loc&gt;([^&lt;]+)&lt;/loc&gt;&#x27;, idx)
+    print(f&#x27;\nИндекс карты сайта: {len(parts)} файлов, например {parts[0] if parts else &quot;—&quot;}&#x27;)
+    if parts:
+        one = requests.get(parts[0], headers=ua, timeout=60).text
+        urls = re.findall(r&#x27;&lt;url&gt;\s*&lt;loc&gt;([^&lt;]+)&lt;/loc&gt;\s*&lt;lastmod&gt;([^&lt;]+)&lt;/lastmod&gt;&#x27;, one)
+        print(f&#x27;В первом файле {fmt(len(urls))} адресов, первые три:&#x27;)
+        for u, m in urls[:3]:
+            print(f&#x27;  {m}  {u}&#x27;)
+
+
+def cmd_random(_):
+    name = random.choice(SRC)
+    p = os.path.join(DATA, f&#x27;{name}_text.jsonl&#x27;)
+    lines = open(need(os.path.basename(p)), encoding=&#x27;utf-8&#x27;).readlines()
+    d = json.loads(random.choice(lines))
+    print(f&quot;[{name}] id={d[&#x27;id&#x27;]}  {d[&#x27;title&#x27;]}\n{d[&#x27;url&#x27;]}\n&quot; + &#x27;-&#x27; * 60 + &#x27;\n&#x27; + d[&#x27;text&#x27;][:1500])
+
+
+COMMANDS = [
+    (&#x27;stats&#x27;, cmd_stats, &#x27;статистика корпуса по источникам&#x27;, None),
+    (&#x27;meta&#x27;, cmd_meta, &#x27;метаданные: доля документов с карточкой, координатами, автором...&#x27;, None),
+    (&#x27;lengths&#x27;, cmd_lengths, &#x27;распределение длины документов&#x27;, None),
+    (&#x27;find&#x27;, cmd_find, &#x27;найти документ по заголовку&#x27;, &#x27;часть заголовка&#x27;),
+    (&#x27;compare&#x27;, cmd_compare, &#x27;документ до и после очистки&#x27;, &#x27;id документа&#x27;),
+    (&#x27;clean&#x27;, cmd_clean, &#x27;очистить свой wikitext (интерактивно)&#x27;, None),
+    (&#x27;robots&#x27;, cmd_robots, &#x27;robots.txt и sitemap «Гудка» (запрос к сайту)&#x27;, None),
+    (&#x27;random&#x27;, cmd_random, &#x27;случайный документ&#x27;, None),
+]
+
+
+def main():
+    by = {c[0]: c for c in COMMANDS}
+    if len(sys.argv) &gt; 1:
+        if sys.argv[1] in by:
+            by[sys.argv[1]][1](&#x27; &#x27;.join(sys.argv[2:])); return
+        print(__doc__); return
+    while True:
+        print(&#x27;\n=== ЛР1 «Добыча корпуса документов» ===&#x27;)
+        for i, (_, _, d, _) in enumerate(COMMANDS, 1):
+            print(f&#x27; {i:2}. {d}&#x27;)
+        print(&#x27;  0. выход&#x27;)
+        try:
+            c = input(&#x27;Номер команды: &#x27;).strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if c in (&#x27;0&#x27;, &#x27;&#x27;):
+            return
+        if not c.isdigit() or not 1 &lt;= int(c) &lt;= len(COMMANDS):
+            continue
+        _, fn, _, hint = COMMANDS[int(c) - 1]
+        try:
+            arg = input(f&#x27;{hint}: &#x27;).strip() if hint else &#x27;&#x27;
+            print(); fn(arg)
+            input(&#x27;\n[Enter — к меню]&#x27;)
+        except (EOFError, KeyboardInterrupt):
+            print()
+        except SystemExit as e:
+            print(e)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    main()
+</code></pre></details>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

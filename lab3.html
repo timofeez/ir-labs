@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР3 Токенизация — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html" class=on>ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#1">1. Токен, терм, нормализация</a></li>
+<li><a href="#2">2. Мои правила</a></li>
+<li><a href="#3-utf-8">3. UTF-8</a></li>
+<li><a href="#4">4. Код токенизатора</a></li>
+<li><a href="#5-tokenizeexe">5. Утилита командной строки tokenize.exe</a></li>
+<li><a href="#6">6. Результаты</a></li>
+<li><a href="#7">7. Неудачные токены и как поправить правила</a></li>
+<li><a href="#8-googletest-lab3_tokenizer">8. Тесты (GoogleTest, группа Lab3_Tokenizer)</a></li>
+<li><a href="#9-lab3py">9. Утилита lab3.py</a></li>
+<li><a href="#10">10. Вопросы на защите</a></li>
+<li><a href="#11">11. Полные исходники</a></li>
+</ul>
+</div>
+</aside><h1 id="3">ЛР3. Токенизация<a class="headerlink" href="#3" title="Permanent link">#</a></h1>
+<blockquote>
+<p><strong>Задание</strong> (lesson-04/homework.md): реализовать разбиение текстов документов на токены, которое
+используется при индексации. Описать правила, достоинства и недостатки. Привести примеры неудачно
+выделенных токенов и объяснить, как поправить правила. Указать число токенов и среднюю длину токена,
+время работы, зависимость времени от объёма данных, скорость на килобайт текста; оптимальна ли
+скорость и как её ускорить.</p>
+</blockquote>
+<h2 id="1">1. Токен, терм, нормализация<a class="headerlink" href="#1" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Токен</strong> — конкретное вхождение слова в тексте. В «поезд и поезда» три токена.</li>
+<li><strong>Терм</strong> — нормализованный токен, запись в словаре индекса: «Поезд», «ПОЕЗД», «поезд» → терм <code>поезд</code>.</li>
+<li><strong>Токенизация</strong> — разбиение текста на токены. Первый шаг любой обработки: индекс, поиск,
+  статистика работают со словами, а не с сырым текстом.</li>
+<li><strong>Нормализация</strong> — приведение токенов к одному виду: регистр, «ё» → «е», ударения, диакритика.</li>
+</ul>
+<p><strong>Главное правило:</strong> документы и запросы должны токенизироваться <strong>одной и той же функцией</strong>. Если
+индексатор режет «ВЛ-80» на <code>вл</code> + <code>80</code>, а поиск искал бы <code>вл-80</code>, слово никогда бы не нашлось.
+У меня это функция <code>next_token</code> из <code>common.h</code> — её вызывают индексатор (ЛР7), поиск (ЛР8),
+подсчёт частот (ЛР5) и утилита ЛР3.</p>
+<h2 id="2">2. Мои правила<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<ol>
+<li><strong>Символ слова</strong> — буква или цифра: латиница <code>a–z A–Z</code>, цифры, латиница с диакритикой
+   (U+00C0–U+024F, кроме × и ÷), греческий (U+0370–U+03FF), кириллица (U+0400–U+04FF).</li>
+<li><strong>Комбинируемые знаки</strong> U+0300–U+036F (ударение «´» и т. п.) пропускаются — слово не рвётся:
+   «Железнодоро́жный» → <code>железнодорожный</code>.</li>
+<li><strong>Всё остальное — разделитель</strong>: пробелы, пунктуация, дефис, апостроф, @, иероглифы.</li>
+<li><strong>Нижний регистр</strong> для латиницы, кириллицы, греческого; <strong>ё → е</strong>.</li>
+<li>Длина токена — не больше 64 байт (защита от «слов» из мусора).</li>
+</ol>
+<p>Это тот же подход, что у токенизатора <code>LetterTokenizer</code> + <code>LowerCaseFilter</code> в Lucene
+(основа Elasticsearch) — базовый уровень; следующий уровень — правила Unicode для границ слов
+(UAX #29, <code>StandardTokenizer</code>).</p>
+<h2 id="3-utf-8">3. UTF-8<a class="headerlink" href="#3-utf-8" title="Permanent link">#</a></h2>
+<p>Тексты в UTF-8: символ занимает 1–4 байта. По старшим битам первого байта видно длину символа,
+байты продолжения начинаются с <code>10</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Байт</th>
+<th>Значит</th>
+<th>Пример</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0xxxxxxx</code></td>
+<td>1 байт (ASCII)</td>
+<td><code>A</code> = <code>41</code></td>
+</tr>
+<tr>
+<td><code>110xxxxx 10xxxxxx</code></td>
+<td>2 байта</td>
+<td><code>Ж</code> = <code>D0 96</code> (U+0416)</td>
+</tr>
+<tr>
+<td><code>1110xxxx 10xxxxxx 10xxxxxx</code></td>
+<td>3 байта</td>
+<td><code>€</code> = <code>E2 82 AC</code></td>
+</tr>
+<tr>
+<td><code>11110xxx …</code></td>
+<td>4 байта</td>
+<td>эмодзи</td>
+</tr>
+</tbody>
+</table>
+<p>Декодирование: из первого байта берутся младшие биты, из каждого следующего — младшие 6 бит
+(<code>&amp; 0x3F</code>), всё склеивается сдвигом на 6. Испорченный байт превращается в U+FFFD, программа не падает:</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — utf8_decode <span class="ln">строки 42–53</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- UTF-8 и токенизация
+// Декодирует один символ UTF-8 начиная с s[i], сдвигает i.
+static inline uint32_t utf8_decode(const unsigned char *s, size_t n, size_t &amp;i) {
+    unsigned c = s[i];
+    if (c &lt; 0x80) { i++; return c; }
+    int len = c &gt;= 0xF0 ? 4 : c &gt;= 0xE0 ? 3 : c &gt;= 0xC0 ? 2 : 1;
+    if (len == 1 || i + len &gt; n) { i++; return 0xFFFD; }
+    uint32_t cp = c &amp; (0xFF &gt;&gt; (len + 1));
+    for (int k = 1; k &lt; len; k++) cp = (cp &lt;&lt; 6) | (s[i + k] &amp; 0x3F);
+    i += len;
+    return cp;
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/common.h — utf8_encode <span class="ln">строки 55–64</span></div><pre><code class="language-cpp">static inline int utf8_encode(uint32_t c, char *o) {
+    if (c &lt; 0x80) { o[0] = (char)c; return 1; }
+    if (c &lt; 0x800) { o[0] = (char)(0xC0 | (c &gt;&gt; 6)); o[1] = (char)(0x80 | (c &amp; 0x3F)); return 2; }
+    if (c &lt; 0x10000) {
+        o[0] = (char)(0xE0 | (c &gt;&gt; 12)); o[1] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F));
+        o[2] = (char)(0x80 | (c &amp; 0x3F)); return 3;
+    }
+    o[0] = (char)(0xF0 | (c &gt;&gt; 18)); o[1] = (char)(0x80 | ((c &gt;&gt; 12) &amp; 0x3F));
+    o[2] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F)); o[3] = (char)(0x80 | (c &amp; 0x3F)); return 4;
+}</code></pre></div>
+
+<h2 id="4">4. Код токенизатора<a class="headerlink" href="#4" title="Permanent link">#</a></h2>
+<p>Класс символа и нормализация регистра — таблицами диапазонов Unicode:</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — char_class <span class="ln">строки 66–74</span></div><pre><code class="language-cpp">// Класс символа: 1 — часть слова, 2 — игнорируемый (знак ударения), 0 — разделитель.
+static inline int char_class(uint32_t c) {
+    if ((c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;) || (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) || (c &gt;= &#x27;0&#x27; &amp;&amp; c &lt;= &#x27;9&#x27;)) return 1;
+    if (c &gt;= 0x300 &amp;&amp; c &lt;= 0x36F) return 2;                 // комбинируемые диакритики (ударения)
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0x24F &amp;&amp; c != 0xD7 &amp;&amp; c != 0xF7) return 1;  // латиница с диакритикой
+    if (c &gt;= 0x370 &amp;&amp; c &lt;= 0x3FF) return 1;                 // греческий
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x4FF) return 1;                 // кириллица
+    return 0;
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/common.h — to_lower <span class="ln">строки 76–85</span></div><pre><code class="language-cpp">// Понижение регистра + нормализация «ё» -&gt; «е».
+static inline uint32_t to_lower(uint32_t c) {
+    if (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) return c + 32;
+    if (c == 0x401 || c == 0x451) return 0x435;             // Ё, ё -&gt; е
+    if (c &gt;= 0x410 &amp;&amp; c &lt;= 0x42F) return c + 0x20;          // А-Я
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x40F) return c + 0x50;          // Ѐ-Џ
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0xDE &amp;&amp; c != 0xD7) return c + 0x20;
+    if (c &gt;= 0x391 &amp;&amp; c &lt;= 0x3AB) return c + 0x20;          // греческие заглавные
+    return c;
+}</code></pre></div>
+
+<p>Сама функция: идёт по тексту символ за символом; буква — дописывается к токену (в нижнем регистре),
+ударение — пропускается, разделитель после начатого слова — конец токена. <code>pos</code> передаётся по ссылке,
+поэтому функция «помнит», где остановилась, и вызывается в цикле <code>while ((len = next_token(...)) &gt; 0)</code>:</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — next_token <span class="ln">строки 89–109</span></div><pre><code class="language-cpp">// Читает следующий токен из s[0..n) начиная с pos.
+// В out пишется нормализованный терм (UTF-8, нижний регистр), возвращается его длина в байтах
+// (0 — токенов больше нет). В chars — длина в символах.
+static inline int next_token(const char *s, size_t n, size_t &amp;pos, char *out, int &amp;chars) {
+    const unsigned char *u = (const unsigned char *)s;
+    int len = 0; chars = 0;
+    while (pos &lt; n) {
+        size_t start = pos;
+        uint32_t c = utf8_decode(u, n, pos);
+        int cls = char_class(c);
+        if (cls == 1) {
+            if (len + 4 &lt;= MAX_TERM_BYTES) { len += utf8_encode(to_lower(c), out + len); chars++; }
+        } else if (cls == 0) {
+            if (len &gt; 0) { pos = start; break; }
+        }
+        // cls == 2: знак ударения внутри слова просто пропускается
+    }
+    // разделитель, на котором остановились, пропустим при следующем вызове
+    if (len &gt; 0 &amp;&amp; pos &lt; n) { size_t p = pos; utf8_decode(u, n, p); pos = p; }
+    return len;
+}</code></pre></div>
+
+<h2 id="5-tokenizeexe">5. Утилита командной строки <code>tokenize.exe</code><a class="headerlink" href="#5-tokenizeexe" title="Permanent link">#</a></h2>
+<p>Два режима: <code>tokenize &lt; текст</code> — токены по одному на строку; <code>tokenize --stats corpus.tsv [--limit-mb N]</code> —
+статистика по корпусу (время засекается отдельно для токенизации, без чтения файла):</p>
+<div class="code"><div class="code-title">lab_boolean/src/tokenize.cpp — stats <span class="ln">строки 23–63</span></div><pre><code class="language-cpp">static int stats(const char *path, double limitMb) {
+    FILE *in = fopen(path, &quot;rb&quot;);
+    if (!in) { fprintf(stderr, &quot;cannot open %s\n&quot;, path); return 1; }
+    LineReader lr(in);
+    uint64_t limit = limitMb &gt; 0 ? (uint64_t)(limitMb * 1024 * 1024) : UINT64_MAX;
+    uint64_t textBytes = 0, tokens = 0, tokenChars = 0, tokenBytes = 0, docs = 0;
+    double tokenizeSec = 0, t0 = now_sec();
+    char tok[MAX_TERM_BYTES + 4];
+    while (textBytes &lt; limit &amp;&amp; lr.next()) {
+        char *s = lr.line.a; size_t n = lr.line.n;
+        if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
+        // поля: источник \t id \t заголовок \t URL \t текст
+        char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
+        for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++)
+            if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
+        if (k &lt; 5) continue;
+        docs++;
+        double ts = now_sec();
+        for (int part = 2; part &lt;= 4; part += 2) {
+            size_t pos = 0; int chars, len;
+            textBytes += fl[part];
+            while ((len = next_token(f[part], fl[part], pos, tok, chars)) &gt; 0) {
+                tokens++; tokenChars += chars; tokenBytes += len;
+            }
+        }
+        tokenizeSec += now_sec() - ts;
+    }
+    fclose(in);
+    double total = now_sec() - t0;
+    double kb = textBytes / 1024.0;
+    printf(&quot;documents          %llu\n&quot;, (unsigned long long)docs);
+    printf(&quot;text_bytes         %llu\n&quot;, (unsigned long long)textBytes);
+    printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
+    printf(&quot;avg_token_len      %.3f\n&quot;, tokens ? (double)tokenChars / tokens : 0.0);   // в символах
+    printf(&quot;avg_token_bytes    %.3f\n&quot;, tokens ? (double)tokenBytes / tokens : 0.0);   // в байтах UTF-8
+    printf(&quot;time_total_sec     %.3f\n&quot;, total);          // чтение файла + токенизация
+    printf(&quot;time_tokenize_sec  %.3f\n&quot;, tokenizeSec);    // только токенизация
+    printf(&quot;ms_per_kb          %.5f\n&quot;, kb ? tokenizeSec * 1000 / kb : 0.0);
+    printf(&quot;mb_per_sec         %.2f\n&quot;, tokenizeSec ? textBytes / 1048576.0 / tokenizeSec : 0.0);
+    return 0;
+}</code></pre></div>
+
+<p>Чтение строк корпуса — свой буферизованный <code>LineReader</code> (буфер 1 МБ, поиск <code>\n</code> через <code>memchr</code>),
+динамический массив — свой <code>Vec</code> (STL запрещена):</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — Vec <span class="ln">строки 13–33</span></div><pre><code class="language-cpp">struct Vec {
+    T *a = nullptr;
+    size_t n = 0, cap = 0;
+
+    void grow(size_t c) {
+        T *b = (T *)realloc(a, c * sizeof(T));
+        if (!b) { fprintf(stderr, &quot;out of memory\n&quot;); exit(1); }
+        a = b; cap = c;
+    }
+    void reserve(size_t c) { if (c &gt; cap) grow(c); }
+    void push(const T &amp;x) { if (n == cap) grow(cap ? cap * 2 : 16); a[n++] = x; }
+    void append(const T *src, size_t k) {
+        if (n + k &gt; cap) { size_t c = cap ? cap : 16; while (c &lt; n + k) c *= 2; grow(c); }
+        memcpy(a + n, src, k * sizeof(T)); n += k;
+    }
+    void resize(size_t k) { reserve(k); n = k; }
+    void clear() { n = 0; }
+    void release() { free(a); a = nullptr; n = cap = 0; }
+    T &amp;operator[](size_t i) { return a[i]; }
+    const T &amp;operator[](size_t i) const { return a[i]; }
+};</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/common.h — LineReader <span class="ln">строки 137–163</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- построчное чтение файла
+struct LineReader {
+    FILE *f;
+    char *buf;
+    size_t cap = 1 &lt;&lt; 20, beg = 0, end = 0;
+    bool eof = false;
+    Vec&lt;char&gt; line;
+
+    explicit LineReader(FILE *file) : f(file) { buf = (char *)malloc(cap); }
+    ~LineReader() { free(buf); line.release(); }
+
+    bool next() {
+        line.clear();
+        for (;;) {
+            if (beg == end) {
+                if (eof) return line.n &gt; 0;
+                end = fread(buf, 1, cap, f); beg = 0;
+                if (end == 0) { eof = true; return line.n &gt; 0; }
+            }
+            char *p = (char *)memchr(buf + beg, &#x27;\n&#x27;, end - beg);
+            size_t stop = p ? (size_t)(p - buf) : end;
+            line.append(buf + beg, stop - beg);
+            beg = p ? stop + 1 : end;
+            if (p) return true;
+        }
+    }
+};</code></pre></div>
+
+<h2 id="6">6. Результаты<a class="headerlink" href="#6" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Показатель</th>
+<th>Значение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Документов</td>
+<td>65 509</td>
+</tr>
+<tr>
+<td>Объём текста (заголовки + тексты)</td>
+<td>315 МБ</td>
+</tr>
+<tr>
+<td><strong>Токенов</strong></td>
+<td><strong>36 011 927</strong></td>
+</tr>
+<tr>
+<td><strong>Средняя длина токена</strong></td>
+<td><strong>5,43 символа</strong> (7,93 байта: кириллица — 2 байта на букву)</td>
+</tr>
+<tr>
+<td>Время токенизации</td>
+<td>1,40 с</td>
+</tr>
+<tr>
+<td>Скорость</td>
+<td><strong>0,0043 мс/КБ</strong>, ~225 МБ/с</td>
+</tr>
+<tr>
+<td>Зависимость от объёма</td>
+<td><strong>линейная</strong>, R² = 0,999</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Почему линейно:</strong> каждый байт читается и обрабатывается ровно один раз, сложность O(n), памяти —
+O(1) кроме буфера. <strong>Оптимальна ли скорость?</strong> Для учебной задачи — да: токенизация занимает
+~1,4 с из ~4,9 с индексации, узкое место — чтение и хеширование термов. <strong>Как ускорить:</strong>
+таблица классов на 256 элементов для ASCII вместо цепочки сравнений; разбор байтов без полного
+декодирования (у кириллицы первый байт <code>D0</code>/<code>D1</code>); многопоточность (части корпуса — разным потокам);
+отображение файла в память (mmap).</p>
+<h2 id="7">7. Неудачные токены и как поправить правила<a class="headerlink" href="#7" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Текст</th>
+<th>Токены</th>
+<th>Проблема</th>
+<th>Как исправить</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ВЛ-80</code></td>
+<td><code>вл</code> <code>80</code></td>
+<td>не совпадает с <code>ВЛ80</code></td>
+<td>хранить составной токен <code>вл-80</code> <strong>и</strong> его части</td>
+</tr>
+<tr>
+<td><code>Санкт-Петербург</code></td>
+<td><code>санкт</code> <code>петербург</code></td>
+<td>находит документы, где слова порознь</td>
+<td>то же / словарь составных слов</td>
+</tr>
+<tr>
+<td><code>14,4 км</code></td>
+<td><code>14</code> <code>4</code> <code>км</code></td>
+<td>числовые запросы неточны</td>
+<td>правило: цифры<code>,</code>цифры — один токен</td>
+</tr>
+<tr>
+<td><code>т. е.</code>, <code>В. И. Ленин</code></td>
+<td><code>т</code> <code>е</code>, <code>в</code> <code>и</code></td>
+<td>однобуквенный мусор</td>
+<td>словарь сокращений, шаблон инициалов</td>
+</tr>
+<tr>
+<td><code>info@gudok.ru</code></td>
+<td><code>info</code> <code>gudok</code> <code>ru</code></td>
+<td>адрес не найти целиком</td>
+<td>шаблоны e-mail / URL</td>
+</tr>
+<tr>
+<td><code>world's</code></td>
+<td><code>world</code> <code>s</code></td>
+<td>лишний токен <code>s</code></td>
+<td>правило для <code>'s</code></td>
+</tr>
+<tr>
+<td><code>新幹線</code></td>
+<td>—</td>
+<td>японские названия теряются</td>
+<td>добавить CJK + сегментацию по словарю</td>
+</tr>
+</tbody>
+</table>
+<p>Все они найдены и посчитаны по корпусу (<code>analysis/tokenization.py</code>, отчёт ЛР3); самые частые —
+дефисные слова (380 тыс.) и десятичные дроби. Почему не исправлено в коде: задание просит
+<strong>объяснить</strong>, как поправить; токенизатор общий для ЛР4–8, и изменение правил поменяло бы все
+результаты (индекс, Ципф, оценку стемминга).</p>
+<h2 id="8-googletest-lab3_tokenizer">8. Тесты (GoogleTest, группа <code>Lab3_Tokenizer</code>)<a class="headerlink" href="#8-googletest-lab3_tokenizer" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Тест</th>
+<th>Что проверяет</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>utf8_decode_ascii_cyrillic_and_broken</code></td>
+<td>1–4-байтовые символы и испорченный байт</td>
+</tr>
+<tr>
+<td><code>utf8_encode_roundtrip</code></td>
+<td>кодирование ↔ декодирование</td>
+</tr>
+<tr>
+<td><code>char_class_rules</code></td>
+<td>буквы/цифры — слово, ударение — пропуск, дефис/точка/иероглиф — разделитель</td>
+</tr>
+<tr>
+<td><code>to_lower_and_yo</code></td>
+<td>регистр латиницы, кириллицы, греческого; Ё → е</td>
+</tr>
+<tr>
+<td><code>tokenizer_basic_rules</code></td>
+<td>обычный текст, пустой ввод, ударение внутри слова</td>
+</tr>
+<tr>
+<td><code>tokenizer_known_bad_cases</code></td>
+<td>все неудачные случаи из таблицы выше — ровно такими, как описано в отчёте</td>
+</tr>
+<tr>
+<td><code>tokenizer_length_limit_and_char_count</code></td>
+<td>предел 64 байта, длина в символах и байтах</td>
+</tr>
+</tbody>
+</table>
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — tokenizer_known_bad_cases <span class="ln">строки 162–171</span></div><pre><code class="language-cpp">TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {   // поведение, описанное в отчёте ЛР3 как недостатки
+    char out[512]; int n;
+    n = tokens_joined(&quot;ВЛ-80&quot;, out);             CHECK_STR(out, n, &quot;вл 80&quot;);
+    n = tokens_joined(&quot;Санкт-Петербург&quot;, out);   CHECK_STR(out, n, &quot;санкт петербург&quot;);
+    n = tokens_joined(&quot;14,4&quot;, out);              CHECK_STR(out, n, &quot;14 4&quot;);
+    n = tokens_joined(&quot;т. е.&quot;, out);             CHECK_STR(out, n, &quot;т е&quot;);
+    n = tokens_joined(&quot;info@gudok.ru&quot;, out);     CHECK_STR(out, n, &quot;info gudok ru&quot;);
+    n = tokens_joined(&quot;world&#x27;s&quot;, out);           CHECK_STR(out, n, &quot;world s&quot;);
+    n = tokens_joined(&quot;新幹線&quot;, out);             CHECK_EQ(n, 0);
+}</code></pre></div>
+
+<h2 id="9-lab3py">9. Утилита <code>lab3.py</code><a class="headerlink" href="#9-lab3py" title="Permanent link">#</a></h2>
+<pre><code>python lab3.py text &quot;Электровоз ВЛ-80 проехал Санкт-Петербург&quot;   — токены
+python lab3.py stats    — число токенов, средняя длина, скорость (весь корпус)
+python lab3.py speed    — время для 5, 20, 80 МБ и всего корпуса: видно, что линейно
+python lab3.py bad      — неудачные токены и исправления
+python lab3.py utf8 &quot;Ж€&quot; — коды Unicode, байты UTF-8, класс символа
+</code></pre>
+<h2 id="10">10. Вопросы на защите<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Чем токен отличается от терма?</strong> Токен — вхождение, терм — нормализованная запись словаря.</li>
+<li><strong>Почему средняя длина токена (5,43) меньше средней длины терма (8,38)?</strong> Токены считаются по
+  вхождениям — среди них много коротких частых слов (и, в, the, of); терм в словаре считается один раз,
+  а словарь в основном из редких длинных слов.</li>
+<li><strong>Почему 7,93 байта на токен?</strong> Кириллица в UTF-8 — 2 байта на букву.</li>
+<li><strong>Как понять длину символа UTF-8?</strong> По старшим битам первого байта.</li>
+<li><strong>Почему токенизатор такой простой?</strong> Это базовый вариант (как <code>LetterTokenizer</code> в Lucene);
+  его недостатки найдены на корпусе и описаны с исправлениями.</li>
+<li><strong>Где ещё используется?</strong> Индексатор, поиск (слова запроса), подсчёт частот — одна функция.</li>
+<li><strong>Стоп-слова?</strong> Не удаляю: нужны для поиска фраз и в булевом поиске не мешают; частые слова видны в ЛР5.</li>
+</ul>
+<h2 id="11">11. Полные исходники<a class="headerlink" href="#11" title="Permanent link">#</a></h2>
+<details class="file"><summary>lab_boolean/src/common.h <span class="ln">(210 строк)</span></summary><pre><code class="language-cpp">// Общие структуры данных и функции для индексатора и поиска.
+// STL не используется: только стандартная библиотека C (cstdio, cstdlib, cstring).
+#pragma once
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;cstdint&gt;
+#include &lt;ctime&gt;
+
+// ---------------------------------------------------------------- динамический массив
+// Аналог vector для простых (POD) типов: рост в 2 раза, память через realloc.
+template &lt;class T&gt;
+struct Vec {
+    T *a = nullptr;
+    size_t n = 0, cap = 0;
+
+    void grow(size_t c) {
+        T *b = (T *)realloc(a, c * sizeof(T));
+        if (!b) { fprintf(stderr, &quot;out of memory\n&quot;); exit(1); }
+        a = b; cap = c;
+    }
+    void reserve(size_t c) { if (c &gt; cap) grow(c); }
+    void push(const T &amp;x) { if (n == cap) grow(cap ? cap * 2 : 16); a[n++] = x; }
+    void append(const T *src, size_t k) {
+        if (n + k &gt; cap) { size_t c = cap ? cap : 16; while (c &lt; n + k) c *= 2; grow(c); }
+        memcpy(a + n, src, k * sizeof(T)); n += k;
+    }
+    void resize(size_t k) { reserve(k); n = k; }
+    void clear() { n = 0; }
+    void release() { free(a); a = nullptr; n = cap = 0; }
+    T &amp;operator[](size_t i) { return a[i]; }
+    const T &amp;operator[](size_t i) const { return a[i]; }
+};
+
+// ---------------------------------------------------------------- время
+static inline double now_sec() {
+    timespec ts;
+    timespec_get(&amp;ts, TIME_UTC);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
+// ---------------------------------------------------------------- UTF-8 и токенизация
+// Декодирует один символ UTF-8 начиная с s[i], сдвигает i.
+static inline uint32_t utf8_decode(const unsigned char *s, size_t n, size_t &amp;i) {
+    unsigned c = s[i];
+    if (c &lt; 0x80) { i++; return c; }
+    int len = c &gt;= 0xF0 ? 4 : c &gt;= 0xE0 ? 3 : c &gt;= 0xC0 ? 2 : 1;
+    if (len == 1 || i + len &gt; n) { i++; return 0xFFFD; }
+    uint32_t cp = c &amp; (0xFF &gt;&gt; (len + 1));
+    for (int k = 1; k &lt; len; k++) cp = (cp &lt;&lt; 6) | (s[i + k] &amp; 0x3F);
+    i += len;
+    return cp;
+}
+
+static inline int utf8_encode(uint32_t c, char *o) {
+    if (c &lt; 0x80) { o[0] = (char)c; return 1; }
+    if (c &lt; 0x800) { o[0] = (char)(0xC0 | (c &gt;&gt; 6)); o[1] = (char)(0x80 | (c &amp; 0x3F)); return 2; }
+    if (c &lt; 0x10000) {
+        o[0] = (char)(0xE0 | (c &gt;&gt; 12)); o[1] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F));
+        o[2] = (char)(0x80 | (c &amp; 0x3F)); return 3;
+    }
+    o[0] = (char)(0xF0 | (c &gt;&gt; 18)); o[1] = (char)(0x80 | ((c &gt;&gt; 12) &amp; 0x3F));
+    o[2] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F)); o[3] = (char)(0x80 | (c &amp; 0x3F)); return 4;
+}
+
+// Класс символа: 1 — часть слова, 2 — игнорируемый (знак ударения), 0 — разделитель.
+static inline int char_class(uint32_t c) {
+    if ((c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;) || (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) || (c &gt;= &#x27;0&#x27; &amp;&amp; c &lt;= &#x27;9&#x27;)) return 1;
+    if (c &gt;= 0x300 &amp;&amp; c &lt;= 0x36F) return 2;                 // комбинируемые диакритики (ударения)
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0x24F &amp;&amp; c != 0xD7 &amp;&amp; c != 0xF7) return 1;  // латиница с диакритикой
+    if (c &gt;= 0x370 &amp;&amp; c &lt;= 0x3FF) return 1;                 // греческий
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x4FF) return 1;                 // кириллица
+    return 0;
+}
+
+// Понижение регистра + нормализация «ё» -&gt; «е».
+static inline uint32_t to_lower(uint32_t c) {
+    if (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) return c + 32;
+    if (c == 0x401 || c == 0x451) return 0x435;             // Ё, ё -&gt; е
+    if (c &gt;= 0x410 &amp;&amp; c &lt;= 0x42F) return c + 0x20;          // А-Я
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x40F) return c + 0x50;          // Ѐ-Џ
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0xDE &amp;&amp; c != 0xD7) return c + 0x20;
+    if (c &gt;= 0x391 &amp;&amp; c &lt;= 0x3AB) return c + 0x20;          // греческие заглавные
+    return c;
+}
+
+const int MAX_TERM_BYTES = 64;
+
+// Читает следующий токен из s[0..n) начиная с pos.
+// В out пишется нормализованный терм (UTF-8, нижний регистр), возвращается его длина в байтах
+// (0 — токенов больше нет). В chars — длина в символах.
+static inline int next_token(const char *s, size_t n, size_t &amp;pos, char *out, int &amp;chars) {
+    const unsigned char *u = (const unsigned char *)s;
+    int len = 0; chars = 0;
+    while (pos &lt; n) {
+        size_t start = pos;
+        uint32_t c = utf8_decode(u, n, pos);
+        int cls = char_class(c);
+        if (cls == 1) {
+            if (len + 4 &lt;= MAX_TERM_BYTES) { len += utf8_encode(to_lower(c), out + len); chars++; }
+        } else if (cls == 0) {
+            if (len &gt; 0) { pos = start; break; }
+        }
+        // cls == 2: знак ударения внутри слова просто пропускается
+    }
+    // разделитель, на котором остановились, пропустим при следующем вызове
+    if (len &gt; 0 &amp;&amp; pos &lt; n) { size_t p = pos; utf8_decode(u, n, p); pos = p; }
+    return len;
+}
+
+// ---------------------------------------------------------------- бинарный формат индекса
+// Все числа little-endian. Подробное описание — в README.md / отчёте.
+static const char INDEX_MAGIC[4] = {&#x27;B&#x27;, &#x27;I&#x27;, &#x27;D&#x27;, &#x27;X&#x27;};
+static const uint32_t INDEX_VERSION = 1;
+// Флаги в заголовке (байты 12..15, раньше «зарезервировано»): бит 0 — в индексе основы слов (стемминг)
+static const uint32_t FLAG_STEMMED = 1;
+enum SectionType : uint32_t {
+    SEC_DOCS = 1,       // прямой индекс: документы (источник, id, заголовок, URL)
+    SEC_DICT = 2,       // словарь: отсортированные термы
+    SEC_TERMSTR = 3,    // строки термов
+    SEC_POSTINGS = 4,   // списки документов (posting lists)
+};
+const size_t HEADER_SIZE = 16, SECTION_ENTRY_SIZE = 24, DICT_ENTRY_SIZE = 24;
+
+static inline uint16_t rd16(const char *p) { uint16_t v; memcpy(&amp;v, p, 2); return v; }
+static inline uint32_t rd32(const char *p) { uint32_t v; memcpy(&amp;v, p, 4); return v; }
+static inline uint64_t rd64(const char *p) { uint64_t v; memcpy(&amp;v, p, 8); return v; }
+
+// Сравнение байтовых строк (лексикографически по беззнаковым байтам).
+static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
+    size_t m = la &lt; lb ? la : lb;
+    int r = memcmp(a, b, m);
+    if (r) return r;
+    return la &lt; lb ? -1 : la &gt; lb ? 1 : 0;
+}
+
+// ---------------------------------------------------------------- построчное чтение файла
+struct LineReader {
+    FILE *f;
+    char *buf;
+    size_t cap = 1 &lt;&lt; 20, beg = 0, end = 0;
+    bool eof = false;
+    Vec&lt;char&gt; line;
+
+    explicit LineReader(FILE *file) : f(file) { buf = (char *)malloc(cap); }
+    ~LineReader() { free(buf); line.release(); }
+
+    bool next() {
+        line.clear();
+        for (;;) {
+            if (beg == end) {
+                if (eof) return line.n &gt; 0;
+                end = fread(buf, 1, cap, f); beg = 0;
+                if (end == 0) { eof = true; return line.n &gt; 0; }
+            }
+            char *p = (char *)memchr(buf + beg, &#x27;\n&#x27;, end - beg);
+            size_t stop = p ? (size_t)(p - buf) : end;
+            line.append(buf + beg, stop - beg);
+            beg = p ? stop + 1 : end;
+            if (p) return true;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- хеш-таблица термов
+// Открытая адресация с линейным пробированием; строки термов хранятся в общем пуле.
+struct TermTable {
+    struct Slot { uint32_t hash, id; };
+    Slot *slots = nullptr;
+    size_t cap = 0, size = 0;
+    Vec&lt;char&gt; pool;            // байты всех термов подряд
+    Vec&lt;uint32_t&gt; off;         // off[id]  — смещение терма в пуле
+    Vec&lt;uint8_t&gt; len;          // len[id]  — длина терма в байтах
+
+    static uint32_t fnv1a(const char *s, int n) {
+        uint32_t h = 2166136261u;
+        for (int i = 0; i &lt; n; i++) { h ^= (unsigned char)s[i]; h *= 16777619u; }
+        return h;
+    }
+    void rehash(size_t newcap) {
+        Slot *ns = (Slot *)malloc(newcap * sizeof(Slot));
+        for (size_t i = 0; i &lt; newcap; i++) ns[i].id = UINT32_MAX;
+        for (size_t i = 0; i &lt; cap; i++) {
+            if (slots[i].id == UINT32_MAX) continue;
+            size_t j = slots[i].hash &amp; (newcap - 1);
+            while (ns[j].id != UINT32_MAX) j = (j + 1) &amp; (newcap - 1);
+            ns[j] = slots[i];
+        }
+        free(slots); slots = ns; cap = newcap;
+    }
+    // Возвращает id терма; если терма ещё нет — добавляет. isNew = true для нового.
+    uint32_t get_or_add(const char *s, int n, bool &amp;isNew) {
+        if (size * 2 &gt;= cap) rehash(cap ? cap * 2 : 1 &lt;&lt; 16);
+        uint32_t h = fnv1a(s, n);
+        size_t j = h &amp; (cap - 1);
+        while (slots[j].id != UINT32_MAX) {
+            uint32_t id = slots[j].id;
+            if (slots[j].hash == h &amp;&amp; len[id] == n &amp;&amp; memcmp(pool.a + off[id], s, n) == 0) {
+                isNew = false; return id;
+            }
+            j = (j + 1) &amp; (cap - 1);
+        }
+        uint32_t id = (uint32_t)size++;
+        slots[j].hash = h; slots[j].id = id;
+        off.push((uint32_t)pool.n); len.push((uint8_t)n); pool.append(s, n);
+        isNew = true;
+        return id;
+    }
+};
+</code></pre></details>
+<details class="file"><summary>lab_boolean/src/tokenize.cpp <span class="ln">(78 строк)</span></summary><pre><code class="language-cpp">// Токенизатор (ЛР «Токенизация») — утилита командной строки. Правила токенизации — next_token() в common.h,
+// те же самые использует индексатор.
+//
+//   tokenize                              — читает текст из stdin, печатает токены, по одному на строку
+//   tokenize --stats corpus.tsv [--limit-mb N]
+//                                         — токенизирует заголовки и тексты корпуса (не больше N МБ текста),
+//                                           печатает число токенов, среднюю длину, время и скорость
+#include &quot;common.h&quot;
+
+static void tokens_of_stdin() {
+    Vec&lt;char&gt; text;
+    char buf[1 &lt;&lt; 16];
+    size_t k;
+    while ((k = fread(buf, 1, sizeof(buf), stdin)) &gt; 0) text.append(buf, k);
+    char tok[MAX_TERM_BYTES + 4];
+    size_t pos = 0; int chars, len;
+    while ((len = next_token(text.a, text.n, pos, tok, chars)) &gt; 0) {
+        fwrite(tok, 1, len, stdout);
+        putchar(&#x27;\n&#x27;);
+    }
+}
+
+static int stats(const char *path, double limitMb) {
+    FILE *in = fopen(path, &quot;rb&quot;);
+    if (!in) { fprintf(stderr, &quot;cannot open %s\n&quot;, path); return 1; }
+    LineReader lr(in);
+    uint64_t limit = limitMb &gt; 0 ? (uint64_t)(limitMb * 1024 * 1024) : UINT64_MAX;
+    uint64_t textBytes = 0, tokens = 0, tokenChars = 0, tokenBytes = 0, docs = 0;
+    double tokenizeSec = 0, t0 = now_sec();
+    char tok[MAX_TERM_BYTES + 4];
+    while (textBytes &lt; limit &amp;&amp; lr.next()) {
+        char *s = lr.line.a; size_t n = lr.line.n;
+        if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
+        // поля: источник \t id \t заголовок \t URL \t текст
+        char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
+        for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++)
+            if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
+        if (k &lt; 5) continue;
+        docs++;
+        double ts = now_sec();
+        for (int part = 2; part &lt;= 4; part += 2) {
+            size_t pos = 0; int chars, len;
+            textBytes += fl[part];
+            while ((len = next_token(f[part], fl[part], pos, tok, chars)) &gt; 0) {
+                tokens++; tokenChars += chars; tokenBytes += len;
+            }
+        }
+        tokenizeSec += now_sec() - ts;
+    }
+    fclose(in);
+    double total = now_sec() - t0;
+    double kb = textBytes / 1024.0;
+    printf(&quot;documents          %llu\n&quot;, (unsigned long long)docs);
+    printf(&quot;text_bytes         %llu\n&quot;, (unsigned long long)textBytes);
+    printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
+    printf(&quot;avg_token_len      %.3f\n&quot;, tokens ? (double)tokenChars / tokens : 0.0);   // в символах
+    printf(&quot;avg_token_bytes    %.3f\n&quot;, tokens ? (double)tokenBytes / tokens : 0.0);   // в байтах UTF-8
+    printf(&quot;time_total_sec     %.3f\n&quot;, total);          // чтение файла + токенизация
+    printf(&quot;time_tokenize_sec  %.3f\n&quot;, tokenizeSec);    // только токенизация
+    printf(&quot;ms_per_kb          %.5f\n&quot;, kb ? tokenizeSec * 1000 / kb : 0.0);
+    printf(&quot;mb_per_sec         %.2f\n&quot;, tokenizeSec ? textBytes / 1048576.0 / tokenizeSec : 0.0);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc &gt;= 3 &amp;&amp; !strcmp(argv[1], &quot;--stats&quot;)) {
+        double lim = 0;
+        if (argc &gt;= 5 &amp;&amp; !strcmp(argv[3], &quot;--limit-mb&quot;)) lim = atof(argv[4]);
+        return stats(argv[2], lim);
+    }
+    if (argc &gt; 1) {
+        fprintf(stderr, &quot;usage: tokenize &lt; text.txt\n       tokenize --stats corpus.tsv [--limit-mb N]\n&quot;);
+        return 1;
+    }
+    tokens_of_stdin();
+    return 0;
+}
+</code></pre></details>
+<details class="file"><summary>lab_boolean/analysis/tokenization.py <span class="ln">(151 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Токенизация»: замеры и разбор неудачных токенов. Результаты — в report_tokenization/.
+
+1. Статистика по всему корпусу: bin/tokenize.exe --stats data/corpus.tsv.
+2. Зависимость времени от объёма: токенизация первых 25, 50, … МБ текста (3 повтора, медиана),
+   график time(MB) с линейной аппроксимацией.
+3. Неудачные токены: в тексте корпуса ищутся конструкции, которые правила токенизации разбивают
+   или теряют (дефисные слова, десятичные дроби, сокращения, e-mail/URL, апострофы, C++, иероглифы…);
+   для каждой — сколько раз встречается и примеры.
+Запуск (из папки lab_boolean): python analysis/tokenization.py
+&quot;&quot;&quot;
+import collections, json, os, re, statistics, subprocess, sys
+
+import matplotlib
+matplotlib.use(&#x27;Agg&#x27;)
+import matplotlib.pyplot as plt
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
+OUT = os.path.join(ROOT, &#x27;report_tokenization&#x27;)
+TOK = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;tokenize.exe&#x27;)
+CORPUS = os.path.join(ROOT, &#x27;data&#x27;, &#x27;corpus.tsv&#x27;)
+sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+
+
+def run_stats(limit_mb=None):
+    args = [TOK, &#x27;--stats&#x27;, CORPUS] + ([&#x27;--limit-mb&#x27;, str(limit_mb)] if limit_mb else [])
+    out = subprocess.run(args, capture_output=True, encoding=&#x27;utf-8&#x27;).stdout
+    return {k: float(v) for k, v in (l.split() for l in out.strip().split(&#x27;\n&#x27;))}
+
+
+def tokens_of(text):
+    out = subprocess.run([TOK], input=text, capture_output=True, encoding=&#x27;utf-8&#x27;).stdout
+    return out.split()
+
+
+# Конструкции, которые правила токенизации обрабатывают неудачно
+PATTERNS = [
+    (&#x27;Слово через дефис&#x27;, r&#x27;\b[А-Яа-яЁёA-Za-z]+-[А-Яа-яЁёA-Za-z]+(?:-[А-Яа-яЁёA-Za-z]+)*\b&#x27;),
+    (&#x27;Обозначение серии с дефисом&#x27;, r&#x27;\b[А-ЯA-Z]{1,4}-\d+[А-Яа-яA-Za-z]*\b&#x27;),
+    (&#x27;Десятичная дробь&#x27;, r&#x27;\b\d+[.,]\d+\b&#x27;),
+    (&#x27;Число с пробелом-разделителем разрядов&#x27;, r&#x27;\b\d{1,3}(?:[  ]\d{3})+\b&#x27;),
+    (&#x27;Сокращение с точками&#x27;, r&#x27;\b(?:т\.\s?е\.|т\.\s?к\.|т\.\s?д\.|т\.\s?п\.|и\.\s?о\.|г\.\s?г\.)&#x27;),
+    (&#x27;Инициалы&#x27;, r&#x27;\b[А-ЯЁ]\.\s?[А-ЯЁ]\.\s?[А-ЯЁ][а-яё]+&#x27;),
+    (&#x27;Адрес e-mail&#x27;, r&#x27;\b[\w.+-]+@[\w-]+\.[\w.]+\b&#x27;),
+    (&#x27;URL / домен&#x27;, r&#x27;\b(?:https?://|www\.)\S+|\b[\w-]+\.(?:ru|com|org|рф)\b&#x27;),
+    (&#x27;Апостроф в слове&#x27;, r&quot;\b[A-Za-z]+[&#x27;’][A-Za-z]+\b&quot;),
+    (&#x27;C++ / C# и т.п.&#x27;, r&#x27;\b[A-Za-z]\+\+|\b[A-Za-z]#&#x27;),
+    (&#x27;Знак № / %&#x27;, r&#x27;№\s?\d+|\d+\s?%&#x27;),
+    (&#x27;Иероглифы, арабское письмо и др. (теряются)&#x27;, r&#x27;[぀-ヿ一-鿿؀-ۿ가-힯]+&#x27;),
+]
+
+
+def bad_tokens():
+    counts = collections.Counter()
+    examples = collections.defaultdict(collections.Counter)
+    regs = [(name, re.compile(p)) for name, p in PATTERNS]
+    with open(CORPUS, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) as f:
+        for line in f:
+            src, pid, title, url, text = line.rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;, 4)
+            for name, rg in regs:
+                for m in rg.finditer(text):
+                    counts[name] += 1
+                    if len(examples[name]) &lt; 2000:
+                        examples[name][m.group(0)] += 1
+    rows = []
+    for name, _ in PATTERNS:
+        ex = [w for w, _ in examples[name].most_common(4)]
+        rows.append({&#x27;name&#x27;: name, &#x27;count&#x27;: counts[name], &#x27;examples&#x27;: ex,
+                     &#x27;tokens&#x27;: [&#x27; | &#x27;.join(tokens_of(w)) or &#x27;(нет токенов)&#x27; for w in ex]})
+    return rows
+
+
+def tex_escape(s):
+    # pdflatex не печатает иероглифы и арабское письмо — заменяем их описанием
+    s = re.sub(r&#x27;[؀-ۿ぀-ヿ一-鿿가-힯]+&#x27;, lambda m: f&#x27;[{len(m.group(0))} симв. не кириллица/латиница]&#x27;, s)
+    for a, b in ((&#x27;\\&#x27;, r&#x27;\textbackslash{}&#x27;), (&#x27;&amp;&#x27;, r&#x27;\&amp;&#x27;), (&#x27;%&#x27;, r&#x27;\%&#x27;), (&#x27;#&#x27;, r&#x27;\#&#x27;), (&#x27;_&#x27;, r&#x27;\_&#x27;),
+                 (&#x27;{&#x27;, r&#x27;\{&#x27;), (&#x27;}&#x27;, r&#x27;\}&#x27;), (&#x27;$&#x27;, r&#x27;\$&#x27;), (&#x27;^&#x27;, r&#x27;\^{}&#x27;), (&#x27;~&#x27;, r&#x27;\~{}&#x27;)):
+        s = s.replace(a, b)
+    return s
+
+
+def num(x):
+    return f&#x27;{x:,.0f}&#x27;.replace(&#x27;,&#x27;, &#x27;\\,&#x27;)
+
+
+def comma(x, d=2):
+    return f&#x27;{x:.{d}f}&#x27;.replace(&#x27;.&#x27;, &#x27;,&#x27;)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    os.makedirs(OUT, exist_ok=True)
+    full = run_stats()
+    print(&#x27;корпус целиком:&#x27;, full)
+    total_mb = full[&#x27;text_bytes&#x27;] / 1048576
+    sizes = [25, 50, 100, 150, 200, 250, 300]
+    pts = []
+    for mb in sizes + [None]:
+        runs = [run_stats(mb) for _ in range(3)]
+        st = runs[0]
+        pts.append((st[&#x27;text_bytes&#x27;] / 1048576, statistics.median(r[&#x27;time_tokenize_sec&#x27;] for r in runs),
+                    statistics.median(r[&#x27;time_total_sec&#x27;] for r in runs), st[&#x27;tokens&#x27;]))
+        print(f&#x27;{pts[-1][0]:.0f} МБ: токенизация {pts[-1][1]:.2f} с, всего {pts[-1][2]:.2f} с&#x27;)
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    # линейная аппроксимация t = a*x + b (метод наименьших квадратов)
+    mx, my = statistics.mean(xs), statistics.mean(ys)
+    a = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+    b = my - a * mx
+    ss_res = sum((y - (a * x + b)) ** 2 for x, y in zip(xs, ys)); ss_tot = sum((y - my) ** 2 for y in ys)
+    r2 = 1 - ss_res / ss_tot
+
+    plt.figure(figsize=(6.5, 3.6))
+    plt.plot(xs, ys, &#x27;o&#x27;, label=&#x27;токенизация (медиана из 3 замеров)&#x27;)
+    plt.plot(xs, [p[2] for p in pts], &#x27;s&#x27;, color=&#x27;gray&#x27;, label=&#x27;чтение файла + токенизация&#x27;)
+    plt.plot([0, max(xs)], [b, a * max(xs) + b], &#x27;-&#x27;, label=f&#x27;аппроксимация: t = {a * 1000:.1f} мс/МБ · V&#x27;)
+    plt.xlabel(&#x27;объём текста V, МБ&#x27;); plt.ylabel(&#x27;время, с&#x27;); plt.grid(alpha=.3); plt.legend(fontsize=8)
+    plt.tight_layout(); plt.savefig(os.path.join(OUT, &#x27;fig_time.pdf&#x27;))
+
+    bad = bad_tokens()
+    json.dump({&#x27;full&#x27;: full, &#x27;points&#x27;: pts, &#x27;fit&#x27;: [a, b, r2], &#x27;bad&#x27;: bad},
+              open(os.path.join(OUT, &#x27;tokenization_results.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;), ensure_ascii=False, indent=1)
+
+    # Таблицы для отчёта
+    L = [&#x27;% Сгенерировано analysis/tokenization.py — вручную не править&#x27;]
+    L.append(r&#x27;\newcommand{\TokTotal}{&#x27; + num(full[&#x27;tokens&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokAvgLen}{&#x27; + comma(full[&#x27;avg_token_len&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokAvgBytes}{&#x27; + comma(full[&#x27;avg_token_bytes&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokDocs}{&#x27; + num(full[&#x27;documents&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokMB}{&#x27; + comma(total_mb, 1) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokTime}{&#x27; + comma(full[&#x27;time_tokenize_sec&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokTotalTime}{&#x27; + comma(full[&#x27;time_total_sec&#x27;]) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokMsPerKb}{&#x27; + comma(full[&#x27;ms_per_kb&#x27;], 4) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokMbPerSec}{&#x27; + comma(full[&#x27;mb_per_sec&#x27;], 1) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokFitA}{&#x27; + comma(a * 1000, 1) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokFitB}{&#x27; + comma(b * 1000, 0) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokFitR}{&#x27; + comma(r2, 4) + &#x27;}&#x27;)
+    L.append(r&#x27;\newcommand{\TokScaleTable}{\begin{center}{\small\begin{tabular}{|r|r|r|r|r|}\hline&#x27;)
+    L.append(r&#x27;Текст, МБ &amp; Токенов &amp; Токенизация, с &amp; Чтение + токенизация, с &amp; мс/КБ \\ \hline&#x27;)
+    for x, t, tt, n in pts:
+        L.append(f&#x27;{comma(x, 0)} &amp; {num(n)} &amp; {comma(t)} &amp; {comma(tt)} &amp; {comma(t * 1000 / (x * 1024), 4)} \\\\&#x27;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    L.append(r&#x27;\newcommand{\BadTokTable}{\begin{center}{\small\begin{tabular}{|p{3.6cm}|r|p{4.4cm}|p{4.6cm}|}\hline&#x27;)
+    L.append(r&#x27;Конструкция &amp; Встречается &amp; Пример в тексте &amp; Токены \\ \hline&#x27;)
+    for row in bad:
+        ex = row[&#x27;examples&#x27;][0] if row[&#x27;examples&#x27;] else &#x27;---&#x27;
+        tk = row[&#x27;tokens&#x27;][0] if row[&#x27;tokens&#x27;] else &#x27;---&#x27;
+        L.append(f&#x27;{tex_escape(row[&quot;name&quot;])} &amp; {num(row[&quot;count&quot;])} &amp; \\texttt{{{tex_escape(ex)}}} &amp; \\texttt{{{tex_escape(tk)}}} \\\\&#x27;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    open(os.path.join(OUT, &#x27;src&#x27;, &#x27;generated.tex&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;).write(&#x27;\n&#x27;.join(L) + &#x27;\n&#x27;)
+    for row in bad:
+        print(f&quot;{row[&#x27;name&#x27;]}: {row[&#x27;count&#x27;]}  {list(zip(row[&#x27;examples&#x27;], row[&#x27;tokens&#x27;]))[:3]}&quot;)
+    print(f&#x27;аппроксимация: {a*1000:.2f} мс/МБ, b={b*1000:.1f} мс, R^2={r2:.4f}&#x27;)
+</code></pre></details>
+<details class="file"><summary>lab_boolean/lab3.py <span class="ln">(92 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР3 «Токенизация» — утилита для проверок и демонстрации.
+
+  python lab3.py                 — меню
+  python lab3.py text &quot;Электровоз ВЛ-80 проехал Санкт-Петербург&quot;   — токены текста
+  python lab3.py stats           — число токенов, средняя длина, скорость (весь корпус, tokenize.exe)
+  python lab3.py speed           — зависимость времени от объёма (5, 20, 80 МБ и весь корпус)
+  python lab3.py bad             — неудачные токены: примеры и как исправить правила
+  python lab3.py utf8 &quot;Ж€&quot;       — как символы выглядят в UTF-8 и к какому классу относятся
+&quot;&quot;&quot;
+import json, os
+from labtool import HERE, data, fmt, main, repl, run, table
+
+BAD = [
+    (&#x27;ВЛ-80&#x27;, &#x27;дефис — разделитель&#x27;, &#x27;хранить составной токен «вл-80» вместе с частями&#x27;),
+    (&#x27;Санкт-Петербург&#x27;, &#x27;дефис — разделитель&#x27;, &#x27;то же; или словарь составных слов&#x27;),
+    (&#x27;14,4 км&#x27;, &#x27;запятая — разделитель&#x27;, &#x27;правило для чисел: цифры,цифры — один токен&#x27;),
+    (&#x27;т. е.&#x27;, &#x27;точка — разделитель&#x27;, &#x27;словарь сокращений&#x27;),
+    (&#x27;В. И. Ленин&#x27;, &#x27;инициалы — однобуквенные токены&#x27;, &#x27;шаблон «буква. буква. Фамилия»&#x27;),
+    (&#x27;info@gudok.ru&#x27;, &#x27;@ и . — разделители&#x27;, &#x27;шаблон e-mail / URL&#x27;),
+    (&quot;world&#x27;s&quot;, &#x27;апостроф — разделитель&#x27;, &quot;правило для &#x27;s&quot;),
+    (&#x27;新幹線&#x27;, &#x27;иероглифы не входят в класс букв&#x27;, &#x27;добавить CJK и сегментацию по словарю&#x27;),
+    (&#x27;Железнодоро́жный&#x27;, &#x27;знак ударения&#x27;, &#x27;уже исправлено: ударение пропускается&#x27;),
+    (&#x27;Ёлка&#x27;, &#x27;ё&#x27;, &#x27;уже исправлено: ё -&gt; е&#x27;),
+]
+
+
+def tokens(text):
+    out, _ = run(&#x27;tokenize&#x27;, stdin=text)
+    return out.split()
+
+
+def cmd_text(arg):
+    if arg:
+        t = tokens(arg); print(f&#x27;{len(t)} токенов: &#x27; + &#x27; | &#x27;.join(t)); return
+    repl(&#x27;текст&gt; &#x27;, lambda s: print(&#x27;  &#x27; + &#x27; | &#x27;.join(tokens(s)) + f&#x27;   ({len(tokens(s))})&#x27;))
+
+
+def cmd_stats(_):
+    out, _ = run(&#x27;tokenize&#x27;, [&#x27;--stats&#x27;, data(&#x27;corpus.tsv&#x27;)])
+    v = dict(l.split(None, 1) for l in out.splitlines() if l.strip())
+    table([(&#x27;документов&#x27;, fmt(int(v[&#x27;documents&#x27;]))), (&#x27;текст, байт&#x27;, fmt(int(v[&#x27;text_bytes&#x27;]))),
+           (&#x27;токенов&#x27;, fmt(int(v[&#x27;tokens&#x27;]))), (&#x27;средняя длина токена, символов&#x27;, v[&#x27;avg_token_len&#x27;]),
+           (&#x27;средняя длина токена, байт UTF-8&#x27;, v[&#x27;avg_token_bytes&#x27;]),
+           (&#x27;время токенизации, с&#x27;, v[&#x27;time_tokenize_sec&#x27;]), (&#x27;мс на КБ&#x27;, v[&#x27;ms_per_kb&#x27;]),
+           (&#x27;МБ/с&#x27;, v[&#x27;mb_per_sec&#x27;])])
+
+
+def cmd_speed(_):
+    rows = []
+    for mb in (5, 20, 80, 0):
+        out, _ = run(&#x27;tokenize&#x27;, [&#x27;--stats&#x27;, data(&#x27;corpus.tsv&#x27;)] + ([&#x27;--limit-mb&#x27;, str(mb)] if mb else []))
+        v = dict(l.split(None, 1) for l in out.splitlines() if l.strip())
+        size = int(v[&#x27;text_bytes&#x27;]) / 2 ** 20
+        rows.append((f&#x27;{size:.0f} МБ&#x27;, fmt(int(v[&#x27;tokens&#x27;])), v[&#x27;time_tokenize_sec&#x27;], v[&#x27;ms_per_kb&#x27;]))
+    table(rows, (&#x27;объём&#x27;, &#x27;токенов&#x27;, &#x27;время, с&#x27;, &#x27;мс/КБ&#x27;))
+    print(&#x27;\nВремя растёт линейно с объёмом: каждый байт обрабатывается один раз (O(n)); мс/КБ почти постоянно.&#x27;)
+    j = os.path.join(HERE, &#x27;report_tokenization&#x27;, &#x27;tokenization_results.json&#x27;)
+    if os.path.exists(j):
+        print(&#x27;Подробный замер с графиком — отчёт ЛР3 (report_tokenization/fig_time.pdf).&#x27;)
+
+
+def cmd_bad(_):
+    rows = [(src, &#x27; | &#x27;.join(tokens(src)) or &#x27;(нет токенов)&#x27;, why, fix) for src, why, fix in BAD]
+    for src, got, why, fix in rows:
+        print(f&#x27;  {src!r:24} -&gt; {got}\n      причина: {why}\n      исправление: {fix}&#x27;)
+
+
+def cmd_utf8(arg):
+    import sys
+    sys.path.insert(0, HERE)
+    s = arg or input(&#x27;символы: &#x27;)
+    for ch in s:
+        cp = ord(ch); b = ch.encode(&#x27;utf-8&#x27;)
+        if (0x30 &lt;= cp &lt;= 0x39) or (0x41 &lt;= cp &lt;= 0x5A) or (0x61 &lt;= cp &lt;= 0x7A) or 0xC0 &lt;= cp &lt;= 0x24F and cp not in (0xD7, 0xF7) \
+                or 0x370 &lt;= cp &lt;= 0x3FF or 0x400 &lt;= cp &lt;= 0x4FF:
+            cls = &#x27;1 — часть слова&#x27;
+        elif 0x300 &lt;= cp &lt;= 0x36F:
+            cls = &#x27;2 — пропускается (ударение)&#x27;
+        else:
+            cls = &#x27;0 — разделитель&#x27;
+        print(f&#x27;  {ch!r:6} U+{cp:04X}  байты UTF-8: {b.hex(&quot; &quot;).upper():12} ({len(b)} байт)  класс {cls}&#x27;)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    main(&#x27;ЛР3 «Токенизация»&#x27;, [
+        (&#x27;text&#x27;, cmd_text, &#x27;разбить текст на токены (интерактивно)&#x27;, None),
+        (&#x27;stats&#x27;, cmd_stats, &#x27;статистика токенизации всего корпуса (tokenize.exe --stats)&#x27;, None),
+        (&#x27;speed&#x27;, cmd_speed, &#x27;зависимость времени от объёма текста&#x27;, None),
+        (&#x27;bad&#x27;, cmd_bad, &#x27;неудачные токены и как исправить правила&#x27;, None),
+        (&#x27;utf8&#x27;, cmd_utf8, &#x27;символ -&gt; код Unicode, байты UTF-8, класс в токенизаторе&#x27;, &#x27;символы&#x27;),
+    ])
+</code></pre></details>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

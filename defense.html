@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Защита — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html" class=on>Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#5">Перед сдачей (5 минут)</a></li>
+<li><a href="#_2">Порядок сдачи и что показать по каждой работе</a><ul>
+<li><a href="#1-5">ЛР1 — корпус (≈5 мин)</a></li>
+<li><a href="#2-7">ЛР2 — робот (≈7 мин)</a></li>
+<li><a href="#3-4">ЛР3 — токенизация (≈4 мин)</a></li>
+<li><a href="#4-4">ЛР4 — стемминг (≈4 мин)</a></li>
+<li><a href="#5-3">ЛР5 — Ципф (≈3 мин)</a></li>
+<li><a href="#7-4">ЛР7 — индекс (≈4 мин)</a></li>
+<li><a href="#8-4">ЛР8 — поиск (≈4 мин)</a></li>
+</ul>
+</li>
+<li><a href="#_3">Самые вероятные вопросы (коротко)</a></li>
+<li><a href="#-">Если что-то не работает</a></li>
+</ul>
+</div>
+</aside><h1 id="_1">Как сдавать: что показывать и что говорить<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
+<h2 id="5">Перед сдачей (5 минут)<a class="headerlink" href="#5" title="Permanent link">#</a></h2>
+<ol>
+<li>Запустить кластер базы ЛР2: двойной щелчок по <code>lab2\start_cluster.bat</code> (или <code>python lab2\lab2.py cluster</code>
+   — проверить, что 3 узла живы).</li>
+<li>Проверить тесты C++: <code>cd lab_boolean</code> → <code>ctest --preset default</code> → <code>100% tests passed out of 29</code>.</li>
+<li>Открыть <code>Отчёт_ЛР1-8_Григорьев_М8О-408Б-23.pdf</code> и этот сайт.</li>
+</ol>
+<h2 id="_2">Порядок сдачи и что показать по каждой работе<a class="headerlink" href="#_2" title="Permanent link">#</a></h2>
+<h3 id="1-5">ЛР1 — корпус (≈5 мин)<a class="headerlink" href="#1-5" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab1\lab1.py stats</code></td>
+<td>65 509 документов, 2 источника (Википедия ru+en = один), 36 млн слов</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>python lab1\lab1.py compare 140304</code></td>
+<td>вот wikitext, вот чистый текст: убраны шаблоны, сноски, разметка</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab1\lab1.py clean "'''Электровоз''' [[ВЛ80\|ВЛ-80]]&lt;ref&gt;x&lt;/ref&gt;"</code></td>
+<td>цепочка регулярок, шаблоны в цикле</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>python lab1\lab1.py meta</code></td>
+<td>метаданные: карточки, координаты; выпуск, рубрика, автор</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>python lab1\lab1.py robots</code></td>
+<td>sitemap «Гудка» из robots.txt, lastmod</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-7">ЛР2 — робот (≈7 мин)<a class="headerlink" href="#2-7" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab2\lab2.py cluster</code></td>
+<td>распределённая БД CockroachDB: 3 узла, каждый диапазон в 3 копиях, Raft</td>
+</tr>
+<tr>
+<td>2</td>
+<td>браузер http://localhost:8091</td>
+<td>веб-консоль кластера: узлы, реплики</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab2\lab2.py stats</code>, <code>frontier</code></td>
+<td>65 тыс. документов, очередь по состояниям</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>python lab2\lab2.py show ВЛ80</code></td>
+<td>поля: нормализованный URL, сырой HTML, источник, дата Unix</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>python lab2\lab2.py crawl 30</code> → Ctrl+C → снова</td>
+<td>остановка в любой момент и продолжение с того же места</td>
+</tr>
+<tr>
+<td>6</td>
+<td>закрыть окно <code>crdb-node3</code> → <code>python lab2\lab2.py nodes</code></td>
+<td>узел упал — база работает (кворум 2 из 3)</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>python lab2\lab2.py normalize ...</code>, <code>robots ...</code></td>
+<td>нормализация URL, robots.txt</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>type lab2\config.yaml</code></td>
+<td>единственный аргумент — yaml с секциями db и logic</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-4">ЛР3 — токенизация (≈4 мин)<a class="headerlink" href="#3-4" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab_boolean\lab3.py text "Электровоз ВЛ-80 проехал Санкт-Петербург, т. е. 14,4 км"</code></td>
+<td>правила: буквы/цифры — слово, остальное — разделитель</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>python lab_boolean\lab3.py stats</code></td>
+<td>36 млн токенов, 5,43 символа, 0,0043 мс/КБ</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab_boolean\lab3.py speed</code></td>
+<td>время растёт линейно, O(n)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>python lab_boolean\lab3.py bad</code></td>
+<td>неудачные токены и исправления</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-4">ЛР4 — стемминг (≈4 мин)<a class="headerlink" href="#4-4" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab_boolean\lab4.py stem "электровозами станциями running"</code></td>
+<td>Snowball / Портер</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>python lab_boolean\lab4.py compare "машинисту поезда"</code></td>
+<td>204 → 2 354 документа: выросла полнота</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab_boolean\lab4.py eval</code></td>
+<td>F1 0,668 → 0,914; хуже в 4 из 23</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>python lab_boolean\lab4.py errors</code></td>
+<td>news → new: пересечение, как исправить</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5-3">ЛР5 — Ципф (≈3 мин)<a class="headerlink" href="#5-3" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab_boolean\lab5.py plot</code></td>
+<td>график log-log, прямые Ципфа и Мандельброта</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>python lab_boolean\lab5.py ranks</code></td>
+<td>где расходится и почему (2 языка, хвост, нет лемматизации)</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab_boolean\lab5.py summary</code></td>
+<td>hapax 42,5 %, константы P, ρ, B</td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-4">ЛР7 — индекс (≈4 мин)<a class="headerlink" href="#7-4" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab_boolean\lab7.py info</code></td>
+<td>642 тыс. термов, 4,9 с, терм 8,38 vs токен 5,43</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>python lab_boolean\lab7.py format</code></td>
+<td>свой бинарный формат: BIDX, таблица секций — расширяемый</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab_boolean\lab7.py term вагон</code></td>
+<td>запись словаря: df, список документов</td>
+</tr>
+</tbody>
+</table>
+<h3 id="8-4">ЛР8 — поиск (≈4 мин)<a class="headerlink" href="#8-4" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Шаг</th>
+<th>Команда</th>
+<th>Что сказать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>python lab_boolean\lab8.py web</code> → http://localhost:8080</td>
+<td>веб-сервис: 50 результатов, «следующие 50»</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>echo паровоз !англия \| bin\search.exe data\index.bin -n 5</code> (в <code>lab_boolean</code>)</td>
+<td>утилита командной строки</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>python lab_boolean\lab8.py explain "ноги \|\| красный автомобиль"</code></td>
+<td>лексер, рекурсивный спуск, приоритет</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>python lab_boolean\lab8.py bench</code></td>
+<td>скорость, тяжёлые запросы</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>ctest --preset default</code> (в <code>lab_boolean</code>)</td>
+<td>GoogleTest + CTest, сверка на полном корпусе</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_3">Самые вероятные вопросы (коротко)<a class="headerlink" href="#_3" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Вопрос</th>
+<th>Ответ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Сколько источников?</td>
+<td>Два: Википедия (ru+en — один) и газета «Гудок»</td>
+</tr>
+<tr>
+<td>Почему C++ без STL?</td>
+<td>Требование курса: структуры данных индекса и поиска — свои</td>
+</tr>
+<tr>
+<td>Токен vs терм?</td>
+<td>Вхождение слова vs нормализованная запись словаря</td>
+</tr>
+<tr>
+<td>Почему терм длиннее токена?</td>
+<td>Токены по вхождениям — много коротких частых слов; терм в словаре один раз</td>
+</tr>
+<tr>
+<td>Стемминг vs лемматизация?</td>
+<td>Правила без словаря vs начальная форма по словарю</td>
+</tr>
+<tr>
+<td>Закон Ципфа?</td>
+<td>f·r ≈ const; log-log — прямая с наклоном −1</td>
+</tr>
+<tr>
+<td>Обратный индекс?</td>
+<td>Терм → отсортированный список документов</td>
+</tr>
+<tr>
+<td>Почему списки отсортированы?</td>
+<td>Пересечение двумя указателями за O(m+n)</td>
+</tr>
+<tr>
+<td>Сортировки?</td>
+<td>Пары — подсчётом (O(n), стабильно), словарь — слиянием (O(T log T))</td>
+</tr>
+<tr>
+<td>Расширяемый формат?</td>
+<td>Таблица секций: новые данные — новые секции; флаги в заголовке</td>
+</tr>
+<tr>
+<td>Приоритет в запросе?</td>
+<td>НЕ &gt; И &gt; ИЛИ, парсер — рекурсивный спуск</td>
+</tr>
+<tr>
+<td>Как проверяли поиск?</td>
+<td>Мини-корпус + сверка с перебором всех 65 509 документов на 300 запросах</td>
+</tr>
+<tr>
+<td>Распределённая БД?</td>
+<td>CockroachDB: 3 узла, 3 копии диапазона, Raft, кворум 2 из 3</td>
+</tr>
+<tr>
+<td>Остановка робота?</td>
+<td>Очередь в БД, коммит после каждой страницы</td>
+</tr>
+<tr>
+<td>Переобкачка?</td>
+<td>Условный GET (304) / lastmod из sitemap + SHA-1 статьи</td>
+</tr>
+</tbody>
+</table>
+<h2 id="-">Если что-то не работает<a class="headerlink" href="#-" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Кластер не отвечает</strong> — запустить <code>lab2\start_cluster.bat</code>; подождать 15 с; <code>python lab2\lab2.py cluster</code>.</li>
+<li><strong>Нет <code>bin\*.exe</code></strong> — <code>cd lab_boolean</code> → <code>cmake --preset default</code> → <code>cmake --build --preset default</code>.</li>
+<li><strong>Нет <code>data\index.bin</code></strong> — <code>run.bat</code> в <code>lab_boolean</code> (подготовка корпуса и индексов, ~2 мин).</li>
+<li><strong>Русские буквы «кракозябрами» в cmd</strong> — <code>chcp 65001</code>.</li>
+</ul>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Главная — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html" class=on>Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><h1 id="15-7-8">Информационный поиск: лабораторные работы 1–5, 7, 8<a class="headerlink" href="#15-7-8" title="Permanent link">#</a></h1>
+<p><strong>Тема корпуса — «Железнодорожный транспорт».</strong> Студент: Григорьев Тимофей Андреевич, группа М8О-408Б-23.
+Курс: «Информационный поиск», МАИ (<a href="https://github.com/toshunster/MAI-IR">репозиторий курса</a>).</p>
+<p>Этот сайт — подробная теория по каждой работе <strong>на примере моего кода</strong>: что требовалось, какие
+идеи из лекций за этим стоят, как именно это реализовано (с фрагментами и полными файлами исходников),
+какие получены цифры, что показывать на защите и какие вопросы могут задать.</p>
+<h2 id="_1">Как устроена система<a class="headerlink" href="#_1" title="Permanent link">#</a></h2>
+<p>Поисковая система — это конвейер, каждая лабораторная работа — одно его звено:</p>
+<pre><code> Интернет ──► [ЛР2 робот] ──► «сырые» страницы в распределённой БД CockroachDB (3 узла)
+     │
+     └──► [ЛР1 API Википедии + sitemap «Гудка»] ──► корпус: 65 509 документов, 36 млн слов
+                                                        │
+               [ЛР3 токенизация]  «Электровозы ВЛ-80» → электровозы | вл | 80
+                                                        │
+               [ЛР4 стемминг]     электровозы → электровоз
+                                                        │
+               [ЛР7 индекс]       терм → отсортированный список документов (свой бинарный формат)
+                                                        │      ▲
+               [ЛР5 закон Ципфа]  частоты термов ───────┘      │
+                                                               │
+ Пользователь ──► [ЛР8 поиск]  «(электровоз || тепловоз) колея !узкоколейная» → документы
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>№</th>
+<th>Работа</th>
+<th>Проект</th>
+<th>Язык</th>
+<th>Главное</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><a href="lab1.html">Добыча корпуса</a></td>
+<td><code>lab1</code></td>
+<td>Python</td>
+<td>2 источника: Википедия (ru+en) и газета «Гудок»; выделение текста из wikitext и HTML</td>
+</tr>
+<tr>
+<td>2</td>
+<td><a href="lab2.html">Поисковый робот</a></td>
+<td><code>lab2</code></td>
+<td>Python + CockroachDB</td>
+<td>обход сайтов, очередь, robots.txt, дубликаты, переобкачка; распределённая БД</td>
+</tr>
+<tr>
+<td>3</td>
+<td><a href="lab3.html">Токенизация</a></td>
+<td><code>lab_boolean</code></td>
+<td>C++ без STL</td>
+<td>правила разбиения текста на слова, UTF-8, скорость</td>
+</tr>
+<tr>
+<td>4</td>
+<td><a href="lab4.html">Стемминг</a></td>
+<td><code>lab_boolean</code></td>
+<td>C++ без STL</td>
+<td>Snowball (рус.) и Портер (англ.), оценка P/R/F1</td>
+</tr>
+<tr>
+<td>5</td>
+<td><a href="lab5.html">Закон Ципфа</a></td>
+<td><code>lab_boolean</code></td>
+<td>C++ + Python</td>
+<td>частоты термов, Ципф и Мандельброт</td>
+</tr>
+<tr>
+<td>7</td>
+<td><a href="lab7.html">Булев индекс</a></td>
+<td><code>lab_boolean</code></td>
+<td>C++ без STL</td>
+<td>обратный индекс в своём бинарном формате</td>
+</tr>
+<tr>
+<td>8</td>
+<td><a href="lab8.html">Булев поиск</a></td>
+<td><code>lab_boolean</code></td>
+<td>C++ без STL</td>
+<td>И/ИЛИ/НЕ, скобки, парсер, веб-сервис + CLI</td>
+</tr>
+<tr>
+<td></td>
+<td><a href="tests.html">Тесты</a></td>
+<td>все</td>
+<td>GoogleTest + CTest, unittest</td>
+<td>как проверялась корректность</td>
+</tr>
+<tr>
+<td></td>
+<td><a href="defense.html">Защита</a></td>
+<td></td>
+<td></td>
+<td>что показывать и частые вопросы</td>
+</tr>
+<tr>
+<td></td>
+<td><a href="code.html">Весь код</a></td>
+<td></td>
+<td></td>
+<td>полные исходники всех файлов</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_2">Общие требования курса и как они выполнены<a class="headerlink" href="#_2" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Требование (README курса)</th>
+<th>Как выполнено</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Корпус ≥ 30 000 документов одной тематики</td>
+<td>65 509 документов, «Железнодорожный транспорт»</td>
+</tr>
+<tr>
+<td>Не менее двух источников</td>
+<td>Википедия (русский и английский разделы — <strong>один</strong> источник) и газета «Гудок»</td>
+</tr>
+<tr>
+<td>Основные компоненты — C/C++ без STL, структуры данных — свои</td>
+<td>токенизатор, стеммер, индексатор, поиск — C++ без STL: свой <code>Vec</code>, хеш-таблица, сортировки</td>
+</tr>
+<tr>
+<td>Обвязка, выкачка — любой интерпретируемый язык</td>
+<td>Python (ЛР1, ЛР2, подготовка корпуса, веб-сервис, графики)</td>
+</tr>
+<tr>
+<td>Интерфейс: веб-сервис + утилита командной строки</td>
+<td>ЛР8: <code>web/server.py</code> (две страницы, 50 результатов, «следующие 50») и <code>search.exe</code></td>
+</tr>
+<tr>
+<td>Тесты на C++</td>
+<td>GoogleTest, запуск через CTest: 29 тест-кейсов, в т.ч. проверка на полном корпусе</td>
+</tr>
+<tr>
+<td>Распределённая БД (не SQLite)</td>
+<td>ЛР2: CockroachDB — кластер из 3 узлов, 3 реплики каждого диапазона</td>
+</tr>
+<tr>
+<td>Индексация и поиск — на полном корпусе</td>
+<td>индекс строится по всем 65 509 документам; тест сверяет поиск с эталоном по всем документам</td>
+</tr>
+<tr>
+<td>Один отчёт по всем работам</td>
+<td><code>Отчёт_ЛР1-8_Григорьев_М8О-408Б-23.pdf</code> (63 стр.)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_3">Утилиты для демонстрации<a class="headerlink" href="#_3" title="Permanent link">#</a></h2>
+<p>Для каждой работы есть утилита: без аргументов — интерактивное меню, с аргументами — одна команда.</p>
+<table>
+<thead>
+<tr>
+<th>Работа</th>
+<th>Запуск</th>
+<th>Что умеет</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ЛР1</td>
+<td><code>python lab1/lab1.py</code></td>
+<td>статистика, метаданные, гистограмма длин, документ «до/после», очистка своего wikitext, robots.txt и sitemap</td>
+</tr>
+<tr>
+<td>ЛР2</td>
+<td><code>python lab2/lab2.py</code></td>
+<td>состояние кластера, реплики, очередь, документ из БД, отказ узла, нормализация URL, robots.txt, свой SELECT, запуск робота</td>
+</tr>
+<tr>
+<td>ЛР3</td>
+<td><code>python lab_boolean/lab3.py</code></td>
+<td>токены текста, статистика и скорость, неудачные токены, UTF-8</td>
+</tr>
+<tr>
+<td>ЛР4</td>
+<td><code>python lab_boolean/lab4.py</code></td>
+<td>основы слов, поиск со стеммингом и без, словоформы основы, P/R/F1, ошибки стемминга</td>
+</tr>
+<tr>
+<td>ЛР5</td>
+<td><code>python lab_boolean/lab5.py</code></td>
+<td>топ термов, ранг слова, сводка, Ципф/Мандельброт, график</td>
+</tr>
+<tr>
+<td>ЛР7</td>
+<td><code>python lab_boolean/lab7.py</code></td>
+<td>статистика индекса, разбор файла побайтово, запись словаря, прямой индекс</td>
+</tr>
+<tr>
+<td>ЛР8</td>
+<td><code>python lab_boolean/lab8.py</code></td>
+<td>поиск, разбор запроса в дерево, замер скорости, веб-сервис</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_4">Словарик<a class="headerlink" href="#_4" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Термин</th>
+<th>Простыми словами</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Документ / корпус</td>
+<td>единица выдачи / весь набор документов (65 509)</td>
+</tr>
+<tr>
+<td>Токен / терм</td>
+<td>вхождение слова в тексте / нормализованное слово — запись словаря</td>
+</tr>
+<tr>
+<td>Нормализация</td>
+<td>приведение к одному виду: нижний регистр, ё → е, без ударений</td>
+</tr>
+<tr>
+<td>Стемминг / лемматизация</td>
+<td>отрезание окончаний по правилам / начальная форма по словарю</td>
+</tr>
+<tr>
+<td>Обратный индекс</td>
+<td>терм → отсортированный список документов, где он встречается</td>
+</tr>
+<tr>
+<td>Постинг-лист</td>
+<td>этот список номеров документов (координатный блок)</td>
+</tr>
+<tr>
+<td>df</td>
+<td>document frequency: в скольких документах встречается терм</td>
+</tr>
+<tr>
+<td>Прямой индекс</td>
+<td>номер документа → заголовок и URL</td>
+</tr>
+<tr>
+<td>Точность / полнота / F1</td>
+<td>доля нужного среди найденного / доля найденного среди нужного / их среднее гармоническое</td>
+</tr>
+<tr>
+<td>hapax legomena</td>
+<td>слова, встретившиеся в корпусе один раз</td>
+</tr>
+<tr>
+<td>Робот, frontier</td>
+<td>программа обкачки / её очередь адресов</td>
+</tr>
+<tr>
+<td>robots.txt, sitemap</td>
+<td>правила для роботов / список страниц сайта от самого сайта</td>
+</tr>
+<tr>
+<td>Условный GET, 304</td>
+<td>«отдай страницу, если изменилась» / «не изменилась»</td>
+</tr>
+<tr>
+<td>Реплика, Raft</td>
+<td>копия данных на узле / протокол согласования копий</td>
+</tr>
+</tbody>
+</table>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

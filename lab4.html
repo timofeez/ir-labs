@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР4 Стемминг — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html" class=on>ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#1">1. Проблема словоформ</a></li>
+<li><a href="#2">2. Стемминг и лемматизация</a></li>
+<li><a href="#3-snowball">3. Алгоритм Snowball для русского</a></li>
+<li><a href="#4_1">4. Алгоритм Портера для английского</a></li>
+<li><a href="#5">5. Куда встроен стемминг</a></li>
+<li><a href="#6">6. Оценка качества</a></li>
+<li><a href="#7">7. Где стало хуже и почему</a></li>
+<li><a href="#8-googletest-lab4_stemming">8. Тесты (GoogleTest, Lab4_Stemming)</a></li>
+<li><a href="#9-lab4py">9. Утилита lab4.py</a></li>
+<li><a href="#10">10. Вопросы на защите</a></li>
+<li><a href="#11">11. Полные исходники</a></li>
+</ul>
+</div>
+</aside><h1 id="4">ЛР4. Стемминг<a class="headerlink" href="#4" title="Permanent link">#</a></h1>
+<blockquote>
+<p><strong>Задание</strong> (lesson-04/homework.md, вариант на «3» — стемминг): добавить в поисковую систему поиск
+без учёта словоформ. Оценить качество поиска после внедрения: стало ли лучше? Привести запросы,
+где стало хуже, объяснить причину и предложить, как исправить, не ухудшив остальные.</p>
+</blockquote>
+<h2 id="1">1. Проблема словоформ<a class="headerlink" href="#1" title="Permanent link">#</a></h2>
+<p>У русского слова — десятки форм: электровоз, электровоза, электровозу, электровозом, электровозе,
+электровозы, электровозов, электровозам, электровозами, электровозах. Пользователь пишет одну форму,
+а в документах — другие. Без обработки поиск пропускает документы — <strong>падает полнота</strong>.</p>
+<p>Пример из моего корпуса: запрос «машинисту поезда» без стемминга находит <strong>204</strong> документа, а
+релевантных (содержащих оба слова в любой форме) — <strong>2 353</strong>. Полнота 0,087.</p>
+<h2 id="2">2. Стемминг и лемматизация<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Стемминг</th>
+<th>Лемматизация</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Что делает</td>
+<td>отрезает окончания и суффиксы <strong>по правилам</strong></td>
+<td>находит начальную форму <strong>по словарю</strong></td>
+</tr>
+<tr>
+<td>Результат</td>
+<td>основа, не обязательно слово: «станциями» → <code>станц</code></td>
+<td>лемма: «станциями» → «станция», «is» → «be»</td>
+</tr>
+<tr>
+<td>Нужен словарь</td>
+<td>нет</td>
+<td>да (pymorphy, MyStem)</td>
+</tr>
+<tr>
+<td>Скорость</td>
+<td>очень высокая</td>
+<td>ниже</td>
+</tr>
+<tr>
+<td>Новые слова</td>
+<td>обрабатывает</td>
+<td>не знает (если нет в словаре)</td>
+</tr>
+<tr>
+<td>Ошибки</td>
+<td>пересечение и недостаточный стемминг</td>
+<td>реже, но есть омонимия</td>
+</tr>
+</tbody>
+</table>
+<p>Я сделал <strong>стемминг</strong> (вариант на «3»): русский — <strong>Snowball</strong> (развитие алгоритма Портера),
+английский — классический <strong>алгоритм Портера</strong> (1980). Язык определяется по буквам терма:
+только кириллица → русский, только a–z → английский, иначе (цифры, смешанные) — терм не меняется.</p>
+<h2 id="3-snowball">3. Алгоритм Snowball для русского<a class="headerlink" href="#3-snowball" title="Permanent link">#</a></h2>
+<ol>
+<li><strong>Области слова.</strong> RV — часть после первой гласной; R1 — после первой согласной, идущей за
+   гласной; R2 — то же внутри R1. Окончание отрезается, <strong>только если целиком лежит в нужной
+   области</strong> — это не даёт «съесть» корень коротких слов.</li>
+<li><strong>Шаг 1.</strong> Отрезать деепричастие (<code>вши</code>, <code>ивши</code>…); если нет — возвратное <code>ся/сь</code>, затем
+   прилагательное (<code>ого</code>, <code>ыми</code>…) с причастием перед ним, иначе глагол (<code>ила</code>, <code>ешь</code>…), иначе
+   существительное (<code>ами</code>, <code>ов</code>, <code>ия</code>…). Всегда берётся <strong>самое длинное</strong> подходящее окончание.</li>
+<li><strong>Шаг 2.</strong> Отрезать <code>и</code> на конце.</li>
+<li><strong>Шаг 3.</strong> Словообразовательный суффикс <code>ост/ость</code> — только в R2.</li>
+<li><strong>Шаг 4.</strong> Превосходная степень <code>ейш/ейше</code>, двойное <code>нн</code> → <code>н</code>, мягкий знак.</li>
+</ol>
+<p>Некоторые окончания (группа 1) допускаются только после <code>а</code> или <code>я</code> (<code>чита-вший</code>, но не <code>пи-вший</code>).</p>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — ru_init <span class="ln">строки 35–49</span></div><pre><code class="language-cpp">static void ru_init() {
+    if (ru_ready) return;
+    add_all(PERF, &quot;в вши вшись&quot;, 1);
+    add_all(PERF, &quot;ив ивши ившись ыв ывши ывшись&quot;, 2);
+    add_all(ADJ, &quot;ее ие ые ое ими ыми ей ий ый ой ем им ым ом его ого ему ому их ых ую юю ая яя ою ею&quot;, 2);
+    add_all(PART, &quot;ем нн вш ющ щ&quot;, 1);
+    add_all(PART, &quot;ивш ывш ующ&quot;, 2);
+    add_all(REFL, &quot;ся сь&quot;, 2);
+    add_all(VERB, &quot;ла на ете йте ли й л ем н ло но ет ют ны ть ешь нно&quot;, 1);
+    add_all(VERB, &quot;ила ыла ена ейте уйте ите или ыли ей уй ил ыл им ым ен ило ыло ено ят ует уют ит ыт ены ить ыть ишь ую ю&quot;, 2);
+    add_all(NOUN, &quot;а ев ов ие ье е иями ями ами еи ии и ией ей ой ий й иям ям ием ем ам ом о у ах иях ях ы ь ию ью ю ия ья я&quot;, 2);
+    add_all(DERIV, &quot;ост ость&quot;, 2);
+    add_all(SUPER, &quot;ейш ейше&quot;, 2);
+    ru_ready = true;
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — longest <span class="ln">строки 58–68</span></div><pre><code class="language-cpp">// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
+static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
+    int best = -1;
+    for (int k = 0; k &lt; t.n; k++) {
+        const Suf &amp;s = t.s[k];
+        if (s.n &gt; n - lim) continue;
+        if (memcmp(w + n - s.n, s.c, s.n * sizeof(uint32_t)) != 0) continue;
+        if (best &lt; 0 || s.n &gt; t.s[best].n) best = k;
+    }
+    return best;
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem_ru <span class="ln">строки 83–128</span></div><pre><code class="language-cpp">static int stem_ru(uint32_t *w, int n) {
+    ru_init();
+    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
+    int pV = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+    if (i &lt; n) {
+        pV = i + 1; i = pV;
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        if (i &lt; n) {
+            i++;                                       // i = p1
+            while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+            if (i &lt; n) {
+                i++;
+                while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
+                if (i &lt; n) p2 = i + 1;
+            }
+        }
+    }
+    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
+    if (!cut(PERF, w, n, pV)) {
+        cut(REFL, w, n, pV);
+        int k = longest(ADJ, w, n, pV);
+        if (k &gt;= 0) {
+            n -= ADJ.s[k].n;
+            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+        } else if (!cut(VERB, w, n, pV)) {
+            cut(NOUN, w, n, pV);
+        }
+    }
+    // Шаг 2: «и» на конце
+    if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
+    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
+    int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
+    if (k &gt;= 0) n -= DERIV.s[k].n;
+    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
+    k = longest(SUPER, w, n, pV);
+    if (k &gt;= 0) {
+        n -= SUPER.s[k].n;
+        if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) n--;
+    } else if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) {
+        n--;
+    } else if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_SOFT) {
+        n--;
+    }
+    return n;
+}</code></pre></div>
+
+<h2 id="4_1">4. Алгоритм Портера для английского<a class="headerlink" href="#4_1" title="Permanent link">#</a></h2>
+<p>Слово рассматривается как <code>[C](VC)^m[V]</code> (C — серия согласных, V — гласных), <code>m</code> — «мера».
+Шаги: 1a — множественное число (<code>sses → ss</code>, <code>ies → i</code>, <code>s →</code>); 1b — <code>-ed</code>, <code>-ing</code> (с
+восстановлением <code>e</code>: <code>hoping → hope</code>); 1c — <code>y → i</code>; 2–4 — суффиксы (<code>ational → ate</code>,
+<code>ness</code>, <code>ment</code>…) при условии на меру; 5 — конечное <code>e</code> и <code>ll</code>.</p>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem_en <span class="ln">строки 166–236</span></div><pre><code class="language-cpp">static int stem_en(char *w, int n) {
+    if (n &lt;= 0) return n;
+    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
+    if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
+    for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
+    // Области R1, R2
+    int p1 = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+    if (i &lt; n) {
+        i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++;
+        if (i &lt; n) {
+            p1 = i + 1; i = p1;
+            while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+            if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
+        }
+    }
+    // Шаг 1a
+    if (ends(w, n, &quot;sses&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ies&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ss&quot;)) {}
+    else if (ends(w, n, &quot;s&quot;)) n -= 1;
+    // Шаг 1b
+    if (ends(w, n, &quot;eed&quot;)) {
+        if (n - 3 &gt;= p1) n -= 1;
+    } else {
+        int L = ends(w, n, &quot;ing&quot;) ? 3 : ends(w, n, &quot;ed&quot;) ? 2 : 0;
+        if (L &amp;&amp; has_vowel(w, n - L)) {
+            n -= L;
+            if (ends(w, n, &quot;at&quot;) || ends(w, n, &quot;bl&quot;) || ends(w, n, &quot;iz&quot;)) w[n++] = &#x27;e&#x27;;
+            else if (n &gt;= 2 &amp;&amp; w[n - 1] == w[n - 2] &amp;&amp; strchr(&quot;bdfgmnprt&quot;, w[n - 1])) n--;
+            else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
+        }
+    }
+    // Шаг 1c
+    if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
+    // Шаг 2 (в R1)
+    static const Rule S2[] = {
+        {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
+        {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
+        {&quot;ator&quot;, &quot;ate&quot;}, {&quot;alli&quot;, &quot;al&quot;}, {&quot;alism&quot;, &quot;al&quot;}, {&quot;aliti&quot;, &quot;al&quot;}, {&quot;fulness&quot;, &quot;ful&quot;},
+        {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
+    int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
+    // Шаг 3 (в R1)
+    static const Rule S3[] = {
+        {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
+    k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
+    // Шаг 4 (в R2)
+    static const Rule S4[] = {
+        {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
+        {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
+        {&quot;iti&quot;, &quot;&quot;}, {&quot;ous&quot;, &quot;&quot;}, {&quot;ive&quot;, &quot;&quot;}, {&quot;ize&quot;, &quot;&quot;}, {&quot;ion&quot;, &quot;&quot;}};
+    k = en_longest(S4, sizeof(S4) / sizeof(S4[0]), w, n);
+    if (k &gt;= 0) {
+        int L = (int)strlen(S4[k].suf);
+        if (n - L &gt;= p2) {
+            if (strcmp(S4[k].suf, &quot;ion&quot;) != 0) n -= L;
+            else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
+        }
+    }
+    // Шаг 5a: конечное «e»
+    if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
+        int c = n - 1;
+        if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
+    }
+    // Шаг 5b: «ll» -&gt; «l» в R2
+    if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
+    for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
+    return n;
+}</code></pre></div>
+
+<p>Общая точка входа — выбор языка и пересчёт между UTF-8 и кодами символов:</p>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem <span class="ln">строки 10–264</span></div><pre><code class="language-cpp">namespace stem {
+
+const int MAXW = 64;                      // как MAX_TERM_BYTES: длиннее термов не бывает
+
+// ---------------------------------------------------------------- русский (Snowball)
+struct Suf { uint32_t c[8]; int n; int grp; };       // grp = 1: перед окончанием должна стоять «а» или «я»
+struct Table { Suf s[48]; int n; };
+
+static void add(Table &amp;t, const char *u, int grp) {
+    Suf &amp;x = t.s[t.n++];
+    size_t i = 0, n = strlen(u);
+    x.n = 0; x.grp = grp;
+    while (i &lt; n) x.c[x.n++] = utf8_decode((const unsigned char *)u, n, i);
+}
+static void add_all(Table &amp;t, const char *list, int grp) {     // слова через пробел
+    char buf[32]; int k = 0;
+    for (const char *p = list;; p++) {
+        if (*p == &#x27; &#x27; || *p == 0) { if (k) { buf[k] = 0; add(t, buf, grp); k = 0; } if (!*p) break; }
+        else buf[k++] = *p;
+    }
+}
+
+static Table PERF, ADJ, PART, REFL, VERB, NOUN, DERIV, SUPER;
+static bool ru_ready = false;
+
+static void ru_init() {
+    if (ru_ready) return;
+    add_all(PERF, &quot;в вши вшись&quot;, 1);
+    add_all(PERF, &quot;ив ивши ившись ыв ывши ывшись&quot;, 2);
+    add_all(ADJ, &quot;ее ие ые ое ими ыми ей ий ый ой ем им ым ом его ого ему ому их ых ую юю ая яя ою ею&quot;, 2);
+    add_all(PART, &quot;ем нн вш ющ щ&quot;, 1);
+    add_all(PART, &quot;ивш ывш ующ&quot;, 2);
+    add_all(REFL, &quot;ся сь&quot;, 2);
+    add_all(VERB, &quot;ла на ете йте ли й л ем н ло но ет ют ны ть ешь нно&quot;, 1);
+    add_all(VERB, &quot;ила ыла ена ейте уйте ите или ыли ей уй ил ыл им ым ен ило ыло ено ят ует уют ит ыт ены ить ыть ишь ую ю&quot;, 2);
+    add_all(NOUN, &quot;а ев ов ие ье е иями ями ами еи ии и ией ей ой ий й иям ям ием ем ам ом о у ах иях ях ы ь ию ью ю ия ья я&quot;, 2);
+    add_all(DERIV, &quot;ост ость&quot;, 2);
+    add_all(SUPER, &quot;ейш ейше&quot;, 2);
+    ru_ready = true;
+}
+
+const uint32_t RU_A = 0x430, RU_YA = 0x44F, RU_I = 0x438, RU_N = 0x43D, RU_SOFT = 0x44C;
+
+static bool ru_vowel(uint32_t c) {         // а е и о у ы э ю я
+    return c == 0x430 || c == 0x435 || c == 0x438 || c == 0x43E || c == 0x443 ||
+           c == 0x44B || c == 0x44D || c == 0x44E || c == 0x44F;
+}
+
+// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
+static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
+    int best = -1;
+    for (int k = 0; k &lt; t.n; k++) {
+        const Suf &amp;s = t.s[k];
+        if (s.n &gt; n - lim) continue;
+        if (memcmp(w + n - s.n, s.c, s.n * sizeof(uint32_t)) != 0) continue;
+        if (best &lt; 0 || s.n &gt; t.s[best].n) best = k;
+    }
+    return best;
+}
+// Как «among ... delete» в Snowball: берётся самое длинное окончание; если для него не выполнено
+// условие группы 1 (перед ним «а»/«я»), шаг не выполняется (более короткие не пробуются).
+static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
+    int k = longest(t, w, n, lim);
+    if (k &lt; 0) return false;
+    int L = t.s[k].n;
+    if (t.s[k].grp == 1) {
+        int p = n - L - 1;
+        if (p &lt; lim || (w[p] != RU_A &amp;&amp; w[p] != RU_YA)) return false;
+    }
+    n -= L;
+    return true;
+}
+
+static int stem_ru(uint32_t *w, int n) {
+    ru_init();
+    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
+    int pV = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+    if (i &lt; n) {
+        pV = i + 1; i = pV;
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        if (i &lt; n) {
+            i++;                                       // i = p1
+            while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+            if (i &lt; n) {
+                i++;
+                while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
+                if (i &lt; n) p2 = i + 1;
+            }
+        }
+    }
+    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
+    if (!cut(PERF, w, n, pV)) {
+        cut(REFL, w, n, pV);
+        int k = longest(ADJ, w, n, pV);
+        if (k &gt;= 0) {
+            n -= ADJ.s[k].n;
+            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+        } else if (!cut(VERB, w, n, pV)) {
+            cut(NOUN, w, n, pV);
+        }
+    }
+    // Шаг 2: «и» на конце
+    if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
+    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
+    int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
+    if (k &gt;= 0) n -= DERIV.s[k].n;
+    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
+    k = longest(SUPER, w, n, pV);
+    if (k &gt;= 0) {
+        n -= SUPER.s[k].n;
+        if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) n--;
+    } else if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) {
+        n--;
+    } else if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_SOFT) {
+        n--;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------- английский (Портер)
+static bool en_v(char c) { return c == &#x27;a&#x27; || c == &#x27;e&#x27; || c == &#x27;i&#x27; || c == &#x27;o&#x27; || c == &#x27;u&#x27; || c == &#x27;y&#x27;; }
+
+static bool ends(const char *w, int n, const char *s) {
+    int L = (int)strlen(s);
+    return L &lt;= n &amp;&amp; memcmp(w + n - L, s, L) == 0;
+}
+// «Короткий слог» на конце w[0..n): согласная (не w, x, Y), перед ней гласная, перед ней согласная
+static bool shortv(const char *w, int n) {
+    if (n &lt; 3) return false;
+    char c = w[n - 1];
+    return !en_v(c) &amp;&amp; c != &#x27;w&#x27; &amp;&amp; c != &#x27;x&#x27; &amp;&amp; c != &#x27;Y&#x27; &amp;&amp; en_v(w[n - 2]) &amp;&amp; !en_v(w[n - 3]);
+}
+static bool has_vowel(const char *w, int n) {
+    for (int i = 0; i &lt; n; i++) if (en_v(w[i])) return true;
+    return false;
+}
+
+struct Rule { const char *suf; const char *rep; };
+
+// Самое длинное правило из списка, подходящее к концу слова; -1, если ни одно не подходит
+static int en_longest(const Rule *r, int cnt, const char *w, int n) {
+    int best = -1, bl = -1;
+    for (int k = 0; k &lt; cnt; k++) {
+        int L = (int)strlen(r[k].suf);
+        if (L &gt; bl &amp;&amp; ends(w, n, r[k].suf)) { best = k; bl = L; }
+    }
+    return best;
+}
+static void replace_end(char *w, int &amp;n, int cut_len, const char *rep) {
+    n -= cut_len;
+    int L = (int)strlen(rep);
+    memcpy(w + n, rep, L);
+    n += L;
+}
+
+static int stem_en(char *w, int n) {
+    if (n &lt;= 0) return n;
+    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
+    if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
+    for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
+    // Области R1, R2
+    int p1 = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+    if (i &lt; n) {
+        i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++;
+        if (i &lt; n) {
+            p1 = i + 1; i = p1;
+            while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+            if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
+        }
+    }
+    // Шаг 1a
+    if (ends(w, n, &quot;sses&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ies&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ss&quot;)) {}
+    else if (ends(w, n, &quot;s&quot;)) n -= 1;
+    // Шаг 1b
+    if (ends(w, n, &quot;eed&quot;)) {
+        if (n - 3 &gt;= p1) n -= 1;
+    } else {
+        int L = ends(w, n, &quot;ing&quot;) ? 3 : ends(w, n, &quot;ed&quot;) ? 2 : 0;
+        if (L &amp;&amp; has_vowel(w, n - L)) {
+            n -= L;
+            if (ends(w, n, &quot;at&quot;) || ends(w, n, &quot;bl&quot;) || ends(w, n, &quot;iz&quot;)) w[n++] = &#x27;e&#x27;;
+            else if (n &gt;= 2 &amp;&amp; w[n - 1] == w[n - 2] &amp;&amp; strchr(&quot;bdfgmnprt&quot;, w[n - 1])) n--;
+            else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
+        }
+    }
+    // Шаг 1c
+    if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
+    // Шаг 2 (в R1)
+    static const Rule S2[] = {
+        {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
+        {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
+        {&quot;ator&quot;, &quot;ate&quot;}, {&quot;alli&quot;, &quot;al&quot;}, {&quot;alism&quot;, &quot;al&quot;}, {&quot;aliti&quot;, &quot;al&quot;}, {&quot;fulness&quot;, &quot;ful&quot;},
+        {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
+    int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
+    // Шаг 3 (в R1)
+    static const Rule S3[] = {
+        {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
+    k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
+    // Шаг 4 (в R2)
+    static const Rule S4[] = {
+        {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
+        {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
+        {&quot;iti&quot;, &quot;&quot;}, {&quot;ous&quot;, &quot;&quot;}, {&quot;ive&quot;, &quot;&quot;}, {&quot;ize&quot;, &quot;&quot;}, {&quot;ion&quot;, &quot;&quot;}};
+    k = en_longest(S4, sizeof(S4) / sizeof(S4[0]), w, n);
+    if (k &gt;= 0) {
+        int L = (int)strlen(S4[k].suf);
+        if (n - L &gt;= p2) {
+            if (strcmp(S4[k].suf, &quot;ion&quot;) != 0) n -= L;
+            else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
+        }
+    }
+    // Шаг 5a: конечное «e»
+    if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
+        int c = n - 1;
+        if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
+    }
+    // Шаг 5b: «ll» -&gt; «l» в R2
+    if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
+    for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
+    return n;
+}
+
+// ---------------------------------------------------------------- общий вход
+// Основа терма s[0..n) (UTF-8, нижний регистр) -&gt; out; возвращает длину основы в байтах.
+static int stem(const char *s, int n, char *out) {
+    bool en = n &gt; 0, ru = n &gt; 0;
+    uint32_t cp[MAXW]; int m = 0;
+    size_t i = 0;
+    while (i &lt; (size_t)n &amp;&amp; m &lt; MAXW) {
+        uint32_t c = utf8_decode((const unsigned char *)s, n, i);
+        cp[m++] = c;
+        if (!(c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;)) en = false;
+        if (!(c &gt;= 0x430 &amp;&amp; c &lt;= 0x44F)) ru = false;
+    }
+    if (en) {
+        memcpy(out, s, n);
+        return stem_en(out, n);
+    }
+    if (ru) {
+        m = stem_ru(cp, m);
+        int len = 0;
+        for (int j = 0; j &lt; m; j++) len += utf8_encode(cp[j], out + len);
+        return len;
+    }
+    memcpy(out, s, n);
+    return n;
+}
+
+}  // namespace stem</code></pre></div>
+
+<p><strong>Проверка:</strong> стеммер сверен с эталонной библиотекой <code>snowballstemmer</code> на <strong>всех 564 135 термах</strong>
+словаря корпуса — <strong>0 расхождений</strong> (<code>tests/check_stemmer.py</code>).</p>
+<h2 id="5">5. Куда встроен стемминг<a class="headerlink" href="#5" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>При индексации</strong> (<code>indexer --stem</code>): в индекс идут основы. Стемминг делается <strong>один раз на
+  словоформу</strong> (кеш <code>toStem[id словоформы] → id основы</code>), а не на каждое вхождение — поэтому время
+  индексации почти не выросло.</li>
+<li><strong>В заголовке индекса</strong> выставляется флаг <code>FLAG_STEMMED</code> (бит 0 байтов 12–15) — формат был
+  расширяемым, и старые программы этот бит просто не замечают.</li>
+<li><strong>При поиске</strong>: <code>search.exe</code> читает флаг и, если индекс основ, прогоняет слова запроса через
+  <strong>тот же</strong> стеммер.</li>
+<li><strong>Веб-сервис со стеммингом</strong>: <code>python web/server.py 8080 stem</code> (или <code>lab8.py</code>).</li>
+</ul>
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 86–109</span></div><pre><code class="language-cpp">        for (int part = 2; part &lt;= 4; part += 2) {
+            const char *p = f[part]; size_t pn = fl[part], pos = 0;
+            textBytes += pn;
+            int chars, tlen;
+            while ((tlen = next_token(p, pn, pos, tok, chars)) &gt; 0) {
+                tokens++; tokenChars += chars;
+                bool isNew;
+                uint32_t id = tt.get_or_add(tok, tlen, isNew);
+                if (useStem) {
+                    if (isNew) {                       // новая словоформа: находим её основу
+                        bool newStem;
+                        int sl = stem::stem(tok, tlen, sb);
+                        toStem.push(stemTab.get_or_add(sb, sl, newStem));
+                        if (newStem) lastDoc.push(UINT32_MAX);
+                    }
+                    id = toStem[id];                   // в индекс идёт основа
+                } else if (isNew) {
+                    lastDoc.push(UINT32_MAX);
+                }
+                if (lastDoc[id] != docNo) {            // каждая пара (терм, документ) — один раз
+                    lastDoc[id] = docNo;
+                    pairs.push(((uint64_t)id &lt;&lt; 32) | docNo);
+                }
+            }</code></pre></div>
+
+<h2 id="6">6. Оценка качества<a class="headerlink" href="#6" title="Permanent link">#</a></h2>
+<p><strong>Метрики</strong> (поиск булев, без ранжирования, поэтому DCG/NDCG неприменимы):</p>
+<ul>
+<li><strong>Точность</strong> P = |найдено ∩ релевантно| / |найдено|;</li>
+<li><strong>Полнота</strong> R = |найдено ∩ релевантно| / |релевантно|;</li>
+<li><strong>F1</strong> = 2PR / (P + R) — среднее гармоническое: маленькое, если мала хотя бы одна из метрик.</li>
+</ul>
+<p><strong>Эталон (что считать релевантным):</strong> документ содержит все слова запроса в <strong>любой форме слова</strong>.
+Для каждого слова вручную составлен список его форм (лемма → формы), документы найдены перебором
+по всему корпусу. Запросов — 23: русские и английские, частые и редкие.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>P</th>
+<th>R</th>
+<th>F1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Без стемминга</td>
+<td>1,000</td>
+<td>0,551</td>
+<td>0,668</td>
+</tr>
+<tr>
+<td><strong>Со стеммингом</strong></td>
+<td>0,921</td>
+<td><strong>0,968</strong></td>
+<td><strong>0,914</strong></td>
+</tr>
+<tr>
+<td>С исправлениями (Porter2 + исключения)</td>
+<td>0,988</td>
+<td>0,968</td>
+<td><strong>0,968</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Стало лучше в 18 запросах из 23</strong>, хуже — в 4 (news, general, university, «депо»), без изменений — 1.
+Рост — за счёт <strong>полноты</strong>; точность немного упала — это типичный компромисс.</p>
+<h2 id="7">7. Где стало хуже и почему<a class="headerlink" href="#7" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Пересечение (overstemming)</strong> — разные слова получают одну основу → падает <strong>точность</strong>:
+  <code>news</code> → <code>new</code> (находит «new»), <code>general</code> и <code>generation</code> → <code>gener</code>, <code>university</code> и <code>universe</code> →
+  <code>univers</code>, «метро» и «метров» → <code>метр</code>.</li>
+<li><strong>Недостаточный стемминг (understemming)</strong> — формы одного слова дают разные основы → падает
+  <strong>полнота</strong>: «автомобили» → <code>автомоб</code>, «автомобиль» → <code>автомобил</code>.</li>
+</ul>
+<p><strong>Как исправить, не ухудшив остальное:</strong> Porter2 (Snowball English) со списком исключений
+(<code>news</code>, <code>generally</code>…); не стеммировать несклоняемые слова («депо», «метро», «кино»); словарная
+лемматизация для русского; в ранжированном поиске — бонус за точное совпадение формы. Проверено
+расчётом: F1 0,914 → 0,968, ни один запрос не стал хуже.</p>
+<h2 id="8-googletest-lab4_stemming">8. Тесты (GoogleTest, <code>Lab4_Stemming</code>)<a class="headerlink" href="#8-googletest-lab4_stemming" title="Permanent link">#</a></h2>
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — stem_russian <span class="ln">строки 250–260</span></div><pre><code class="language-cpp">// ================================================================ ЛР4: стемминг
+TEST(Lab4_Stemming, stem_russian) {
+    char out[128]; int n;
+    n = stem_of(&quot;электровозы&quot;, out);   CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;электровозов&quot;, out);  CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;станциями&quot;, out);     CHECK_STR(out, n, &quot;станц&quot;);
+    n = stem_of(&quot;руками&quot;, out);        CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;руки&quot;, out);          CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;автомобилем&quot;, out);   CHECK_STR(out, n, &quot;автомобил&quot;);
+    n = stem_of(&quot;автомобиль&quot;, out);    CHECK_STR(out, n, &quot;автомобил&quot;);
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — stem_index_flag_and_search <span class="ln">строки 392–402</span></div><pre><code class="language-cpp">// ================================================================ ЛР4: индекс основ + поиск
+TEST(Lab4_Stemming, stem_index_flag_and_search) {
+    CHECK(build_index(TMP_STEM, true)); g_stem_built = true;
+    Index idx; ASSERT_TRUE(idx.load(stem_index()));
+    CHECK(idx.stemmed);
+    CHECK_EQ(rd32(idx.data + 12) &amp; FLAG_STEMMED, FLAG_STEMMED);
+    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);   // другая словоформа находит те же документы
+    CHECK_QUERY(idx, &quot;руками&quot;, 0, 2, 3, 5);
+    CHECK_QUERY(idx, &quot;руками &amp;&amp; !ногами&quot;, 0, 2, 5);
+    CHECK(idx.find_term(&quot;автомобил&quot;, (int)strlen(&quot;автомобил&quot;)) &gt;= 0);
+}</code></pre></div>
+
+<h2 id="9-lab4py">9. Утилита <code>lab4.py</code><a class="headerlink" href="#9-lab4py" title="Permanent link">#</a></h2>
+<pre><code>python lab4.py stem &quot;электровозами станциями running&quot;   — основы слов
+python lab4.py compare &quot;машинисту поезда&quot;   — 204 без стемминга против 2 354 со стеммингом
+python lab4.py forms электровоз   — все словоформы корпуса с этой основой и их частоты
+python lab4.py eval     — таблица P/R/F1 по 23 запросам
+python lab4.py errors   — примеры пересечения и недостаточного стемминга
+</code></pre>
+<h2 id="10">10. Вопросы на защите<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Стемминг или лемматизация — что сделано и почему?</strong> Стемминг: на «3» требуется он; без словаря, быстро.</li>
+<li><strong>Как работает Snowball?</strong> Области RV/R1/R2, самое длинное окончание из таблиц по шагам.</li>
+<li><strong>Почему основа не слово?</strong> Стеммер не знает словаря — ему важно, чтобы формы совпали, а не чтобы основа была словом.</li>
+<li><strong>Как проверял правильность?</strong> Сверка со <code>snowballstemmer</code> на всех 564 тыс. термах — 0 расхождений.</li>
+<li><strong>Как встроено в поиск?</strong> Индекс основ + флаг в заголовке; слова запроса стеммируются тем же стеммером.</li>
+<li><strong>Почему точность упала?</strong> Пересечения: <code>news → new</code>, «метро» и «метров» → <code>метр</code>.</li>
+</ul>
+<h2 id="11">11. Полные исходники<a class="headerlink" href="#11" title="Permanent link">#</a></h2>
+<details class="file"><summary>lab_boolean/src/stem.h <span class="ln">(265 строк)</span></summary><pre><code class="language-cpp">// Стемминг (ЛР «Стемминг»): отбрасывание окончаний и суффиксов, чтобы разные словоформы
+// одного слова давали одну основу («электровозы», «электровозов» -&gt; «электровоз»).
+//   русский    — алгоритм Портера в версии Snowball (snowballstem.org/algorithms/russian);
+//   английский — классический алгоритм Портера (snowballstem.org/algorithms/porter).
+// Язык определяется по буквам терма: только кириллица -&gt; русский, только a-z -&gt; английский,
+// иначе (цифры, смешанные, другие алфавиты) терм не меняется. Без STL.
+#pragma once
+#include &quot;common.h&quot;
+
+namespace stem {
+
+const int MAXW = 64;                      // как MAX_TERM_BYTES: длиннее термов не бывает
+
+// ---------------------------------------------------------------- русский (Snowball)
+struct Suf { uint32_t c[8]; int n; int grp; };       // grp = 1: перед окончанием должна стоять «а» или «я»
+struct Table { Suf s[48]; int n; };
+
+static void add(Table &amp;t, const char *u, int grp) {
+    Suf &amp;x = t.s[t.n++];
+    size_t i = 0, n = strlen(u);
+    x.n = 0; x.grp = grp;
+    while (i &lt; n) x.c[x.n++] = utf8_decode((const unsigned char *)u, n, i);
+}
+static void add_all(Table &amp;t, const char *list, int grp) {     // слова через пробел
+    char buf[32]; int k = 0;
+    for (const char *p = list;; p++) {
+        if (*p == &#x27; &#x27; || *p == 0) { if (k) { buf[k] = 0; add(t, buf, grp); k = 0; } if (!*p) break; }
+        else buf[k++] = *p;
+    }
+}
+
+static Table PERF, ADJ, PART, REFL, VERB, NOUN, DERIV, SUPER;
+static bool ru_ready = false;
+
+static void ru_init() {
+    if (ru_ready) return;
+    add_all(PERF, &quot;в вши вшись&quot;, 1);
+    add_all(PERF, &quot;ив ивши ившись ыв ывши ывшись&quot;, 2);
+    add_all(ADJ, &quot;ее ие ые ое ими ыми ей ий ый ой ем им ым ом его ого ему ому их ых ую юю ая яя ою ею&quot;, 2);
+    add_all(PART, &quot;ем нн вш ющ щ&quot;, 1);
+    add_all(PART, &quot;ивш ывш ующ&quot;, 2);
+    add_all(REFL, &quot;ся сь&quot;, 2);
+    add_all(VERB, &quot;ла на ете йте ли й л ем н ло но ет ют ны ть ешь нно&quot;, 1);
+    add_all(VERB, &quot;ила ыла ена ейте уйте ите или ыли ей уй ил ыл им ым ен ило ыло ено ят ует уют ит ыт ены ить ыть ишь ую ю&quot;, 2);
+    add_all(NOUN, &quot;а ев ов ие ье е иями ями ами еи ии и ией ей ой ий й иям ям ием ем ам ом о у ах иях ях ы ь ию ью ю ия ья я&quot;, 2);
+    add_all(DERIV, &quot;ост ость&quot;, 2);
+    add_all(SUPER, &quot;ейш ейше&quot;, 2);
+    ru_ready = true;
+}
+
+const uint32_t RU_A = 0x430, RU_YA = 0x44F, RU_I = 0x438, RU_N = 0x43D, RU_SOFT = 0x44C;
+
+static bool ru_vowel(uint32_t c) {         // а е и о у ы э ю я
+    return c == 0x430 || c == 0x435 || c == 0x438 || c == 0x43E || c == 0x443 ||
+           c == 0x44B || c == 0x44D || c == 0x44E || c == 0x44F;
+}
+
+// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
+static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
+    int best = -1;
+    for (int k = 0; k &lt; t.n; k++) {
+        const Suf &amp;s = t.s[k];
+        if (s.n &gt; n - lim) continue;
+        if (memcmp(w + n - s.n, s.c, s.n * sizeof(uint32_t)) != 0) continue;
+        if (best &lt; 0 || s.n &gt; t.s[best].n) best = k;
+    }
+    return best;
+}
+// Как «among ... delete» в Snowball: берётся самое длинное окончание; если для него не выполнено
+// условие группы 1 (перед ним «а»/«я»), шаг не выполняется (более короткие не пробуются).
+static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
+    int k = longest(t, w, n, lim);
+    if (k &lt; 0) return false;
+    int L = t.s[k].n;
+    if (t.s[k].grp == 1) {
+        int p = n - L - 1;
+        if (p &lt; lim || (w[p] != RU_A &amp;&amp; w[p] != RU_YA)) return false;
+    }
+    n -= L;
+    return true;
+}
+
+static int stem_ru(uint32_t *w, int n) {
+    ru_init();
+    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
+    int pV = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+    if (i &lt; n) {
+        pV = i + 1; i = pV;
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        if (i &lt; n) {
+            i++;                                       // i = p1
+            while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+            if (i &lt; n) {
+                i++;
+                while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
+                if (i &lt; n) p2 = i + 1;
+            }
+        }
+    }
+    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
+    if (!cut(PERF, w, n, pV)) {
+        cut(REFL, w, n, pV);
+        int k = longest(ADJ, w, n, pV);
+        if (k &gt;= 0) {
+            n -= ADJ.s[k].n;
+            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+        } else if (!cut(VERB, w, n, pV)) {
+            cut(NOUN, w, n, pV);
+        }
+    }
+    // Шаг 2: «и» на конце
+    if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
+    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
+    int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
+    if (k &gt;= 0) n -= DERIV.s[k].n;
+    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
+    k = longest(SUPER, w, n, pV);
+    if (k &gt;= 0) {
+        n -= SUPER.s[k].n;
+        if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) n--;
+    } else if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) {
+        n--;
+    } else if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_SOFT) {
+        n--;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------- английский (Портер)
+static bool en_v(char c) { return c == &#x27;a&#x27; || c == &#x27;e&#x27; || c == &#x27;i&#x27; || c == &#x27;o&#x27; || c == &#x27;u&#x27; || c == &#x27;y&#x27;; }
+
+static bool ends(const char *w, int n, const char *s) {
+    int L = (int)strlen(s);
+    return L &lt;= n &amp;&amp; memcmp(w + n - L, s, L) == 0;
+}
+// «Короткий слог» на конце w[0..n): согласная (не w, x, Y), перед ней гласная, перед ней согласная
+static bool shortv(const char *w, int n) {
+    if (n &lt; 3) return false;
+    char c = w[n - 1];
+    return !en_v(c) &amp;&amp; c != &#x27;w&#x27; &amp;&amp; c != &#x27;x&#x27; &amp;&amp; c != &#x27;Y&#x27; &amp;&amp; en_v(w[n - 2]) &amp;&amp; !en_v(w[n - 3]);
+}
+static bool has_vowel(const char *w, int n) {
+    for (int i = 0; i &lt; n; i++) if (en_v(w[i])) return true;
+    return false;
+}
+
+struct Rule { const char *suf; const char *rep; };
+
+// Самое длинное правило из списка, подходящее к концу слова; -1, если ни одно не подходит
+static int en_longest(const Rule *r, int cnt, const char *w, int n) {
+    int best = -1, bl = -1;
+    for (int k = 0; k &lt; cnt; k++) {
+        int L = (int)strlen(r[k].suf);
+        if (L &gt; bl &amp;&amp; ends(w, n, r[k].suf)) { best = k; bl = L; }
+    }
+    return best;
+}
+static void replace_end(char *w, int &amp;n, int cut_len, const char *rep) {
+    n -= cut_len;
+    int L = (int)strlen(rep);
+    memcpy(w + n, rep, L);
+    n += L;
+}
+
+static int stem_en(char *w, int n) {
+    if (n &lt;= 0) return n;
+    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
+    if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
+    for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
+    // Области R1, R2
+    int p1 = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+    if (i &lt; n) {
+        i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++;
+        if (i &lt; n) {
+            p1 = i + 1; i = p1;
+            while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+            if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
+        }
+    }
+    // Шаг 1a
+    if (ends(w, n, &quot;sses&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ies&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ss&quot;)) {}
+    else if (ends(w, n, &quot;s&quot;)) n -= 1;
+    // Шаг 1b
+    if (ends(w, n, &quot;eed&quot;)) {
+        if (n - 3 &gt;= p1) n -= 1;
+    } else {
+        int L = ends(w, n, &quot;ing&quot;) ? 3 : ends(w, n, &quot;ed&quot;) ? 2 : 0;
+        if (L &amp;&amp; has_vowel(w, n - L)) {
+            n -= L;
+            if (ends(w, n, &quot;at&quot;) || ends(w, n, &quot;bl&quot;) || ends(w, n, &quot;iz&quot;)) w[n++] = &#x27;e&#x27;;
+            else if (n &gt;= 2 &amp;&amp; w[n - 1] == w[n - 2] &amp;&amp; strchr(&quot;bdfgmnprt&quot;, w[n - 1])) n--;
+            else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
+        }
+    }
+    // Шаг 1c
+    if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
+    // Шаг 2 (в R1)
+    static const Rule S2[] = {
+        {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
+        {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
+        {&quot;ator&quot;, &quot;ate&quot;}, {&quot;alli&quot;, &quot;al&quot;}, {&quot;alism&quot;, &quot;al&quot;}, {&quot;aliti&quot;, &quot;al&quot;}, {&quot;fulness&quot;, &quot;ful&quot;},
+        {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
+    int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
+    // Шаг 3 (в R1)
+    static const Rule S3[] = {
+        {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
+    k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
+    // Шаг 4 (в R2)
+    static const Rule S4[] = {
+        {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
+        {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
+        {&quot;iti&quot;, &quot;&quot;}, {&quot;ous&quot;, &quot;&quot;}, {&quot;ive&quot;, &quot;&quot;}, {&quot;ize&quot;, &quot;&quot;}, {&quot;ion&quot;, &quot;&quot;}};
+    k = en_longest(S4, sizeof(S4) / sizeof(S4[0]), w, n);
+    if (k &gt;= 0) {
+        int L = (int)strlen(S4[k].suf);
+        if (n - L &gt;= p2) {
+            if (strcmp(S4[k].suf, &quot;ion&quot;) != 0) n -= L;
+            else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
+        }
+    }
+    // Шаг 5a: конечное «e»
+    if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
+        int c = n - 1;
+        if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
+    }
+    // Шаг 5b: «ll» -&gt; «l» в R2
+    if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
+    for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
+    return n;
+}
+
+// ---------------------------------------------------------------- общий вход
+// Основа терма s[0..n) (UTF-8, нижний регистр) -&gt; out; возвращает длину основы в байтах.
+static int stem(const char *s, int n, char *out) {
+    bool en = n &gt; 0, ru = n &gt; 0;
+    uint32_t cp[MAXW]; int m = 0;
+    size_t i = 0;
+    while (i &lt; (size_t)n &amp;&amp; m &lt; MAXW) {
+        uint32_t c = utf8_decode((const unsigned char *)s, n, i);
+        cp[m++] = c;
+        if (!(c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;)) en = false;
+        if (!(c &gt;= 0x430 &amp;&amp; c &lt;= 0x44F)) ru = false;
+    }
+    if (en) {
+        memcpy(out, s, n);
+        return stem_en(out, n);
+    }
+    if (ru) {
+        m = stem_ru(cp, m);
+        int len = 0;
+        for (int j = 0; j &lt; m; j++) len += utf8_encode(cp[j], out + len);
+        return len;
+    }
+    memcpy(out, s, n);
+    return n;
+}
+
+}  // namespace stem
+</code></pre></details>
+<details class="file"><summary>lab_boolean/src/stemtest.cpp <span class="ln">(22 строк)</span></summary><pre><code class="language-cpp">// Утилита проверки стеммера: каждая строка stdin — терм, в stdout — его основа.
+// Запуск: stemtest &lt; words.txt &gt; stems.txt
+#include &quot;common.h&quot;
+#include &quot;stem.h&quot;
+
+int main() {
+    Vec&lt;char&gt; line;
+    char out[MAX_TERM_BYTES + 8];
+    int ch;
+    for (;;) {
+        line.clear();
+        while ((ch = getchar()) != EOF &amp;&amp; ch != &#x27;\n&#x27;) line.push((char)ch);
+        if (ch == EOF &amp;&amp; line.n == 0) break;
+        if (line.n &amp;&amp; line[line.n - 1] == &#x27;\r&#x27;) line.n--;
+        int n = line.n &gt; MAX_TERM_BYTES ? MAX_TERM_BYTES : (int)line.n;
+        int m = stem::stem(line.a, n, out);
+        fwrite(out, 1, m, stdout); putchar(&#x27;\n&#x27;);
+        if (ch == EOF) break;
+    }
+    return 0;
+}
+</code></pre></details>
+<details class="file"><summary>lab_boolean/analysis/stem_eval.py <span class="ln">(224 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Стемминг»: оценка качества булева поиска без стемминга и со стеммингом.
+
+Как оценивается:
+  * 23 запроса (русские и английские, слова в разных падежах и числах).
+  * Для каждого слова запроса вручную задан список правильных словоформ его леммы
+    (регулярное выражение, только формы этого слова: «электровоз(|а|у|ом|е|ы|ов|ам|ами|ах)»).
+  * Документ релевантен, если в нём есть каждое слово запроса в какой-либо своей форме
+    (поиск «без учёта словоформ» — ровно то, что должен дать стемминг).
+  * Эталонное множество релевантных документов считается по всему корпусу (Python-токенизатор,
+    копия токенизатора из common.h), выдачи систем — bin/search.exe --ids по index.bin и index_stem.bin.
+  * Метрики: точность P = |выдача ∩ эталон| / |выдача|, полнота R = |выдача ∩ эталон| / |эталон|,
+    F1 = 2PR / (P + R); средние по запросам (macro). Булев поиск не ранжирует, поэтому метрики
+    ранжирования (DCG, NDCG) здесь неприменимы.
+  * Для запросов, где качество упало, печатаются «лишние» словоформы, которые стеммер свёл
+    к той же основе (причина ошибки).
+Результаты — в report_stemming/. Запуск (из папки lab_boolean): python analysis/stem_eval.py
+&quot;&quot;&quot;
+import json, os, re, subprocess, sys
+
+import snowballstemmer
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
+sys.path.insert(0, os.path.join(ROOT, &#x27;tests&#x27;))
+from run_tests import py_tokens          # noqa: E402  — тот же токенизатор, что в C++
+
+OUT = os.path.join(ROOT, &#x27;report_stemming&#x27;)
+SEARCH = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;search.exe&#x27;)
+sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+
+N_M = r&#x27;(|а|у|ом|е|ы|ов|ам|ами|ах)&#x27;                     # окончания существительных муж. рода на согласную
+# Запрос -&gt; список лемм; лемма -&gt; регулярное выражение для всех её словоформ
+LEMMAS = {
+    &#x27;электровоз&#x27;: r&#x27;электровоз&#x27; + N_M,
+    &#x27;станция&#x27;: r&#x27;станци(я|и|ю|ей|й|ям|ями|ях)&#x27;,
+    &#x27;метро&#x27;: r&#x27;метро&#x27;,
+    &#x27;железный&#x27;: r&#x27;железн(ый|ого|ому|ым|ом|ая|ой|ую|ое|ые|ых|ыми)&#x27;,
+    &#x27;дорога&#x27;: r&#x27;дорог(а|и|е|у|ой|ою|ам|ами|ах)?&#x27;,
+    &#x27;паровоз&#x27;: r&#x27;паровоз&#x27; + N_M,
+    &#x27;машинист&#x27;: r&#x27;машинист&#x27; + N_M,
+    &#x27;поезд&#x27;: r&#x27;поезд(|а|у|ом|е|ов|ам|ами|ах)&#x27;,
+    &#x27;вагон&#x27;: r&#x27;вагон&#x27; + N_M,
+    &#x27;автомобиль&#x27;: r&#x27;автомобил(ь|я|ю|ем|е|и|ей|ям|ями|ях)&#x27;,
+    &#x27;рельс&#x27;: r&#x27;рельс&#x27; + N_M,
+    &#x27;мост&#x27;: r&#x27;мост&#x27; + N_M,
+    &#x27;депо&#x27;: r&#x27;депо&#x27;,
+    &#x27;тоннель&#x27;: r&#x27;тоннел(ь|я|ю|ем|е|и|ей|ям|ями|ях)&#x27;,
+    &#x27;пассажир&#x27;: r&#x27;пассажир&#x27; + N_M,
+    &#x27;скоростной&#x27;: r&#x27;скоростн(ой|ого|ому|ым|ом|ая|ую|ое|ые|ых|ыми)&#x27;,
+    &#x27;линия&#x27;: r&#x27;лини(я|и|ю|ей|й|ям|ями|ях)&#x27;,
+    &#x27;москва&#x27;: r&#x27;москв(а|ы|е|у|ой|ою)&#x27;,
+    &#x27;train&#x27;: r&#x27;trains?&#x27;,
+    &#x27;news&#x27;: r&#x27;news&#x27;,
+    &#x27;railway&#x27;: r&#x27;railways?&#x27;,
+    &#x27;locomotive&#x27;: r&#x27;locomotives?&#x27;,
+    &#x27;general&#x27;: r&#x27;general&#x27;,
+    &#x27;station&#x27;: r&#x27;stations?&#x27;,
+    &#x27;bridge&#x27;: r&#x27;bridges?&#x27;,
+    &#x27;university&#x27;: r&#x27;universit(y|ies)&#x27;,
+}
+# Несклоняемые существительные: у них нет окончаний, стеммер отрезает последнюю букву и путает
+# с другими словами («метро» -&gt; «метр»). В варианте с исправлениями они не стеммируются.
+INDECLINABLE = {&#x27;метро&#x27;, &#x27;депо&#x27;, &#x27;кино&#x27;, &#x27;пальто&#x27;, &#x27;кафе&#x27;, &#x27;такси&#x27;, &#x27;шоссе&#x27;, &#x27;радио&#x27;, &#x27;бюро&#x27;, &#x27;жюри&#x27;, &#x27;меню&#x27;, &#x27;кофе&#x27;}
+QUERIES = [
+    (&#x27;электровозы&#x27;, [&#x27;электровоз&#x27;]),
+    (&#x27;станциями метро&#x27;, [&#x27;станция&#x27;, &#x27;метро&#x27;]),
+    (&#x27;железной дороге&#x27;, [&#x27;железный&#x27;, &#x27;дорога&#x27;]),
+    (&#x27;паровозов&#x27;, [&#x27;паровоз&#x27;]),
+    (&#x27;машинисту поезда&#x27;, [&#x27;машинист&#x27;, &#x27;поезд&#x27;]),
+    (&#x27;вагонов&#x27;, [&#x27;вагон&#x27;]),
+    (&#x27;автомобили&#x27;, [&#x27;автомобиль&#x27;]),
+    (&#x27;рельсов&#x27;, [&#x27;рельс&#x27;]),
+    (&#x27;мостом&#x27;, [&#x27;мост&#x27;]),
+    (&#x27;депо&#x27;, [&#x27;депо&#x27;]),
+    (&#x27;тоннеля&#x27;, [&#x27;тоннель&#x27;]),
+    (&#x27;пассажиров&#x27;, [&#x27;пассажир&#x27;]),
+    (&#x27;скоростного&#x27;, [&#x27;скоростной&#x27;]),
+    (&#x27;линии&#x27;, [&#x27;линия&#x27;]),
+    (&#x27;москве&#x27;, [&#x27;москва&#x27;]),
+    (&#x27;trains&#x27;, [&#x27;train&#x27;]),
+    (&#x27;news&#x27;, [&#x27;news&#x27;]),
+    (&#x27;railways&#x27;, [&#x27;railway&#x27;]),
+    (&#x27;locomotives&#x27;, [&#x27;locomotive&#x27;]),
+    (&#x27;general&#x27;, [&#x27;general&#x27;]),
+    (&#x27;stations&#x27;, [&#x27;station&#x27;]),
+    (&#x27;bridges&#x27;, [&#x27;bridge&#x27;]),
+    (&#x27;university&#x27;, [&#x27;university&#x27;]),
+]
+
+
+def reference_index():
+    inv = {}
+    with open(os.path.join(ROOT, &#x27;data&#x27;, &#x27;corpus.tsv&#x27;), encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) as f:
+        for d, line in enumerate(f):
+            _, _, title, _, text = line.rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;, 4)
+            for tok in set(py_tokens(title) + py_tokens(text)):
+                inv.setdefault(tok, set()).add(d)
+    return inv
+
+
+def search_ids(index, queries):
+    out = subprocess.run([SEARCH, os.path.join(ROOT, &#x27;data&#x27;, index), &#x27;-n&#x27;, &#x27;10000000&#x27;, &#x27;--ids&#x27;],
+                         input=&#x27;\n&#x27;.join(queries) + &#x27;\n&#x27;, capture_output=True, encoding=&#x27;utf-8&#x27;).stdout
+    res = []
+    for block in out.split(&#x27;END\n&#x27;):
+        lines = block.strip(&#x27;\n&#x27;).split(&#x27;\n&#x27;)
+        if len(lines) &gt;= 2:
+            res.append({int(x) for x in lines[2:]})
+    return res
+
+
+def prf(found, gold):
+    tp = len(found &amp; gold)
+    p = tp / len(found) if found else (1.0 if not gold else 0.0)
+    r = tp / len(gold) if gold else 1.0
+    f = 2 * p * r / (p + r) if p + r else 0.0
+    return p, r, f
+
+
+def comma(x, d=3):
+    return f&#x27;{x:.{d}f}&#x27;.replace(&#x27;.&#x27;, &#x27;,&#x27;)
+
+
+def num(x):
+    return f&#x27;{x:,}&#x27;.replace(&#x27;,&#x27;, &#x27;\\,&#x27;)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    os.makedirs(os.path.join(OUT, &#x27;src&#x27;), exist_ok=True)
+    inv = reference_index()
+    vocab = list(inv)
+    ru, en = snowballstemmer.stemmer(&#x27;russian&#x27;), snowballstemmer.stemmer(&#x27;porter&#x27;)
+    stem = lambda w: en.stemWord(w) if all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in w) else (
+        ru.stemWord(w) if all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in w) else w)
+    forms = {lem: [w for w in vocab if re.fullmatch(rx, w)] for lem, rx in LEMMAS.items()}
+    stem_of = {w: stem(w) for w in vocab}               # основы всех словоформ — считаются один раз
+    by_stem = {}
+    for w, s in stem_of.items():
+        by_stem.setdefault(s, []).append(w)
+    # Вариант с исправлениями (моделирование на эталонном индексе): английский — Snowball Porter2
+    # (есть список исключений, news не меняется, особое правило для gener-), русский — тот же Snowball,
+    # но несклоняемые слова из списка-исключений не стеммируются.
+    en2 = snowballstemmer.stemmer(&#x27;english&#x27;)
+    stem2 = lambda w: w if w in INDECLINABLE else (en2.stemWord(w) if all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in w) else (
+        ru.stemWord(w) if all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in w) else w))
+    by_stem2 = {}
+    for w in vocab:
+        by_stem2.setdefault(stem2(w), []).append(w)
+    plain = search_ids(&#x27;index.bin&#x27;, [q for q, _ in QUERIES])
+    stemmed = search_ids(&#x27;index_stem.bin&#x27;, [q for q, _ in QUERIES])
+    rows = []
+    for (q, lemmas), a, b in zip(QUERIES, plain, stemmed):
+        gold = None
+        for lem in lemmas:
+            docs = set().union(*(inv[w] for w in forms[lem])) if forms[lem] else set()
+            gold = docs if gold is None else gold &amp; docs
+        pa, ra, fa = prf(a, gold)
+        pb, rb, fb = prf(b, gold)
+        c = None                                         # выдача варианта с исправлениями
+        for word in q.split():
+            docs = set().union(*(inv[w] for w in by_stem2.get(stem2(word), [])))
+            c = docs if c is None else c &amp; docs
+        pc, rc, fc = prf(c, gold)
+        # словоформы, которые стеммер объединил с запросом, но которые не являются формами его леммы
+        extra, missed = [], []
+        for word, lem in zip(q.split(), lemmas):
+            st = stem(word)
+            same = by_stem.get(st, [])
+            extra += sorted((w for w in same if w not in forms[lem]), key=lambda w: -len(inv[w]))[:6]
+            missed += sorted((w for w in forms[lem] if stem_of[w] != st), key=lambda w: -len(inv[w]))[:6]
+        extra = sorted(set(extra), key=lambda w: -len(inv[w]))     # самые частые «чужие» формы — главная причина ошибки
+        missed = sorted(set(missed), key=lambda w: -len(inv[w]))
+        rows.append({&#x27;query&#x27;: q, &#x27;lemmas&#x27;: lemmas, &#x27;gold&#x27;: len(gold), &#x27;plain&#x27;: len(a), &#x27;stem&#x27;: len(b),
+                     &#x27;P0&#x27;: pa, &#x27;R0&#x27;: ra, &#x27;F0&#x27;: fa, &#x27;P1&#x27;: pb, &#x27;R1&#x27;: rb, &#x27;F1&#x27;: fb, &#x27;P2&#x27;: pc, &#x27;R2&#x27;: rc, &#x27;F2&#x27;: fc,
+                     &#x27;extra&#x27;: extra, &#x27;missed&#x27;: missed})
+        print(f&#x27;{q:22} эталон {len(gold):6}  без стем.: {len(a):6} P={pa:.3f} R={ra:.3f} F={fa:.3f}&#x27;
+              f&#x27;  стем.: {len(b):6} P={pb:.3f} R={rb:.3f} F={fb:.3f}  исправл.: F={fc:.3f}  лишние {extra[:4]} не найдены {missed[:3]}&#x27;)
+    avg = {k: sum(r[k] for r in rows) / len(rows) for k in (&#x27;P0&#x27;, &#x27;R0&#x27;, &#x27;F0&#x27;, &#x27;P1&#x27;, &#x27;R1&#x27;, &#x27;F1&#x27;, &#x27;P2&#x27;, &#x27;R2&#x27;, &#x27;F2&#x27;)}
+    print(&#x27;среднее:&#x27;, {k: round(v, 3) for k, v in avg.items()})
+    json.dump({&#x27;rows&#x27;: rows, &#x27;avg&#x27;: avg, &#x27;lemmas&#x27;: LEMMAS}, open(os.path.join(OUT, &#x27;stem_eval.json&#x27;), &#x27;w&#x27;,
+              encoding=&#x27;utf-8&#x27;), ensure_ascii=False, indent=1)
+
+    L = [&#x27;% Сгенерировано analysis/stem_eval.py — вручную не править&#x27;]
+    L.append(r&#x27;\newcommand{\EvalTable}{\begin{center}{\small\begin{tabular}{|l|r|r|r|r|r|r|r|r|}\hline&#x27;)
+    L.append(r&#x27; &amp; &amp; \multicolumn{3}{c|}{без стемминга} &amp; \multicolumn{4}{c|}{со стеммингом} \\ \cline{3-9}&#x27;)
+    L.append(r&#x27;Запрос &amp; Эталон &amp; Найдено &amp; P &amp; R &amp; Найдено &amp; P &amp; R &amp; $\Delta$F1 \\ \hline&#x27;)
+    for r in rows:
+        d = r[&#x27;F1&#x27;] - r[&#x27;F0&#x27;]
+        mark = r&#x27;\textbf{&#x27; + comma(d) + &#x27;}&#x27; if d &lt; 0 else comma(d)
+        L.append(f&quot;{r[&#x27;query&#x27;]} &amp; {num(r[&#x27;gold&#x27;])} &amp; {num(r[&#x27;plain&#x27;])} &amp; {comma(r[&#x27;P0&#x27;])} &amp; {comma(r[&#x27;R0&#x27;])} &amp; &quot;
+                 f&quot;{num(r[&#x27;stem&#x27;])} &amp; {comma(r[&#x27;P1&#x27;])} &amp; {comma(r[&#x27;R1&#x27;])} &amp; {mark} \\\\&quot;)
+    L.append(r&#x27;\hline&#x27;)
+    L.append(f&quot;\\textbf{{Среднее}} &amp; &amp; &amp; {comma(avg[&#x27;P0&#x27;])} &amp; {comma(avg[&#x27;R0&#x27;])} &amp; &amp; {comma(avg[&#x27;P1&#x27;])} &amp; &quot;
+             f&quot;{comma(avg[&#x27;R1&#x27;])} &amp; {comma(avg[&#x27;F1&#x27;] - avg[&#x27;F0&#x27;])} \\\\&quot;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    for k, v in avg.items():
+        L.append(r&#x27;\newcommand{\Avg%s}{%s}&#x27; % (k.replace(&#x27;0&#x27;, &#x27;Plain&#x27;).replace(&#x27;1&#x27;, &#x27;Stem&#x27;).replace(&#x27;2&#x27;, &#x27;Fix&#x27;), comma(v)))
+    L.append(r&#x27;\newcommand{\FixTable}{\begin{center}{\small\begin{tabular}{|l|r|r|r|r|}\hline&#x27;)
+    L.append(r&#x27;Запрос &amp; F1 без стем. &amp; F1 стем. &amp; F1 исправл. &amp; P исправл. \\ \hline&#x27;)
+    for r in rows:
+        if r[&#x27;F1&#x27;] &lt; r[&#x27;F0&#x27;] or r[&#x27;F2&#x27;] != r[&#x27;F1&#x27;]:
+            L.append(f&quot;{r[&#x27;query&#x27;]} &amp; {comma(r[&#x27;F0&#x27;])} &amp; {comma(r[&#x27;F1&#x27;])} &amp; {comma(r[&#x27;F2&#x27;])} &amp; {comma(r[&#x27;P2&#x27;])} \\\\&quot;)
+    L.append(r&#x27;\hline&#x27;)
+    L.append(f&quot;\\textbf{{Среднее ({len(rows)} запроса)}} &amp; {comma(avg[&#x27;F0&#x27;])} &amp; {comma(avg[&#x27;F1&#x27;])} &amp; {comma(avg[&#x27;F2&#x27;])} &amp; {comma(avg[&#x27;P2&#x27;])} \\\\&quot;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    worse = [r for r in rows if r[&#x27;F1&#x27;] &lt; r[&#x27;F0&#x27;]]
+    better = [r for r in rows if r[&#x27;F1&#x27;] &gt; r[&#x27;F0&#x27;]]
+    L.append(r&#x27;\newcommand{\NWorse}{%d}&#x27; % len(worse))
+    L.append(r&#x27;\newcommand{\NBetter}{%d}&#x27; % len(better))
+    L.append(r&#x27;\newcommand{\NSame}{%d}&#x27; % (len(rows) - len(worse) - len(better)))
+    L.append(r&#x27;\newcommand{\NQueries}{%d}&#x27; % len(rows))
+    L.append(r&#x27;\newcommand{\WorseTable}{\begin{center}{\small\begin{tabular}{|l|r|p{8.6cm}|}\hline&#x27;)
+    L.append(r&#x27;Запрос &amp; $\Delta$F1 &amp; Чужие словоформы, сведённые к той же основе \\ \hline&#x27;)
+    for r in sorted(worse, key=lambda r: r[&#x27;F1&#x27;] - r[&#x27;F0&#x27;]):
+        L.append(f&quot;{r[&#x27;query&#x27;]} &amp; {comma(r[&#x27;F1&#x27;] - r[&#x27;F0&#x27;])} &amp; &quot; + &#x27;, &#x27;.join(r[&#x27;extra&#x27;][:6]) + r&#x27; \\&#x27;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    L.append(r&#x27;\newcommand{\MissedTable}{\begin{center}{\small\begin{tabular}{|l|p{10cm}|}\hline&#x27;)
+    L.append(r&#x27;Запрос &amp; Формы той же леммы, которые стеммер свёл к другой основе \\ \hline&#x27;)
+    for r in rows:
+        if r[&#x27;missed&#x27;]:
+            L.append(f&quot;{r[&#x27;query&#x27;]} &amp; &quot; + &#x27;, &#x27;.join(r[&#x27;missed&#x27;][:6]) + r&#x27; \\&#x27;)
+    L.append(r&#x27;\hline\end{tabular}}\end{center}}&#x27;)
+    open(os.path.join(OUT, &#x27;src&#x27;, &#x27;generated.tex&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;).write(&#x27;\n&#x27;.join(L) + &#x27;\n&#x27;)
+    print(&#x27;ok&#x27;)
+</code></pre></details>
+<details class="file"><summary>lab_boolean/tests/check_stemmer.py <span class="ln">(54 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Сверка стеммера (bin/stemtest.exe, C++) с эталонной реализацией Snowball на Python.
+
+Берёт все термы словаря индекса data/index.bin (или из файла), стеммирует их программой на C++
+и библиотекой snowballstemmer (russian / porter) и сравнивает поэлементно.
+Запуск: python tests/check_stemmer.py
+&quot;&quot;&quot;
+import os, struct, subprocess, sys
+
+import snowballstemmer
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
+sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+
+
+def dictionary(path):
+    &quot;&quot;&quot;Все термы из бинарного индекса (секции DICT и TERMSTR).&quot;&quot;&quot;
+    data = open(path, &#x27;rb&#x27;).read()
+    nsec = struct.unpack_from(&#x27;&lt;I&#x27;, data, 8)[0]
+    sec = {}
+    for i in range(nsec):
+        t, _, off, size = struct.unpack_from(&#x27;&lt;IIQQ&#x27;, data, 16 + 24 * i)
+        sec[t] = off
+    d, s = sec[2], sec[3]
+    n = struct.unpack_from(&#x27;&lt;I&#x27;, data, d)[0]
+    terms = []
+    for k in range(n):
+        off, ln = struct.unpack_from(&#x27;&lt;IH&#x27;, data, d + 4 + 24 * k)
+        terms.append(data[s + off: s + off + ln].decode(&#x27;utf-8&#x27;))
+    return terms
+
+
+def reference(term, ru, en):
+    if term and all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in term):
+        return en.stemWord(term)
+    if term and all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in term):
+        return ru.stemWord(term)
+    return term
+
+
+if __name__ == &#x27;__main__&#x27;:
+    terms = dictionary(os.path.join(ROOT, &#x27;data&#x27;, &#x27;index.bin&#x27;))
+    out = subprocess.run([os.path.join(ROOT, &#x27;bin&#x27;, &#x27;stemtest.exe&#x27;)], input=&#x27;\n&#x27;.join(terms) + &#x27;\n&#x27;,
+                         capture_output=True, encoding=&#x27;utf-8&#x27;).stdout.split(&#x27;\n&#x27;)[:len(terms)]
+    ru, en = snowballstemmer.stemmer(&#x27;russian&#x27;), snowballstemmer.stemmer(&#x27;porter&#x27;)
+    bad = [(t, o, reference(t, ru, en)) for t, o in zip(terms, out) if o != reference(t, ru, en)]
+    kinds = {&#x27;ru&#x27;: 0, &#x27;en&#x27;: 0, &#x27;other&#x27;: 0}
+    for t in terms:
+        kinds[&#x27;en&#x27; if all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in t) else &#x27;ru&#x27; if all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in t) else &#x27;other&#x27;] += 1
+    print(f&#x27;термов: {len(terms)} (русских {kinds[&quot;ru&quot;]}, английских {kinds[&quot;en&quot;]}, прочих {kinds[&quot;other&quot;]} — не стеммируются)&#x27;)
+    print(f&#x27;расхождений с эталоном Snowball: {len(bad)}&#x27;)
+    for t, o, r in bad[:20]:
+        print(f&#x27;  {t!r}: C++ {o!r}, эталон {r!r}&#x27;)
+    sys.exit(1 if bad else 0)
+</code></pre></details>
+<details class="file"><summary>lab_boolean/lab4.py <span class="ln">(99 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР4 «Стемминг» — утилита для проверок и демонстрации.
+
+  python lab4.py                       — меню
+  python lab4.py stem &quot;электровозами станциями running&quot;   — основы слов
+  python lab4.py compare &quot;машинисту поезда&quot;               — поиск без стемминга и со стеммингом
+  python lab4.py forms электровоз      — какие словоформы корпуса дают ту же основу
+  python lab4.py eval                  — оценка качества (P, R, F1) по 23 запросам из отчёта
+  python lab4.py errors                — примеры ошибок стемминга (пересечение / недостаточный)
+&quot;&quot;&quot;
+import json, os
+from labtool import HERE, data, fmt, main, repl, run, search, table
+
+
+def stems(words):
+    out, _ = run(&#x27;stemtest&#x27;, stdin=&#x27;\n&#x27;.join(words) + &#x27;\n&#x27;)
+    return out.split(&#x27;\n&#x27;)[:len(words)]
+
+
+def tok(text):
+    out, _ = run(&#x27;tokenize&#x27;, stdin=text)
+    return out.split()
+
+
+def cmd_stem(arg):
+    def show(s):
+        w = tok(s)
+        for a, b in zip(w, stems(w)):
+            print(f&#x27;  {a:24} -&gt; {b}&#x27;)
+    if arg:
+        show(arg)
+    else:
+        repl(&#x27;слова&gt; &#x27;, show)
+
+
+def cmd_compare(arg):
+    def show(q):
+        rows = []
+        for idx, name in ((&#x27;index.bin&#x27;, &#x27;без стемминга&#x27;), (&#x27;index_stem.bin&#x27;, &#x27;со стеммингом&#x27;)):
+            total, us, docs = search(q, idx, n=3)
+            rows.append((name, fmt(total), f&#x27;{us} мкс&#x27;, docs[0][0] if docs else &#x27;—&#x27;))
+        table(rows, (&#x27;индекс&#x27;, &#x27;найдено&#x27;, &#x27;время&#x27;, &#x27;первый документ&#x27;))
+    if arg:
+        show(arg)
+    else:
+        repl(&#x27;запрос&gt; &#x27;, show)
+
+
+def cmd_forms(arg):
+    w = (arg or input(&#x27;слово: &#x27;)).strip().lower()
+    target = stems([w])[0]
+    forms = []
+    with open(data(&#x27;freq.tsv&#x27;), encoding=&#x27;utf-8&#x27;) as f:
+        cand = [(int(l.split(&#x27;\t&#x27;)[1]), l.split(&#x27;\t&#x27;)[2].strip()) for l in f
+                if l.split(&#x27;\t&#x27;)[2].startswith(target[:max(3, len(target) - 1)])]
+    cand_words = [c[1] for c in cand]
+    st = stems(cand_words) if cand_words else []
+    for (freq, word), s in zip(cand, st):
+        if s == target:
+            forms.append((word, freq))
+    forms.sort(key=lambda x: -x[1])
+    print(f&#x27;Основа «{target}»: {len(forms)} словоформ в корпусе, {fmt(sum(f for _, f in forms))} вхождений&#x27;)
+    table([(w, fmt(f)) for w, f in forms[:30]], (&#x27;словоформа&#x27;, &#x27;вхождений&#x27;))
+
+
+def cmd_eval(_):
+    p = os.path.join(HERE, &#x27;report_stemming&#x27;, &#x27;stem_eval.json&#x27;)
+    if not os.path.exists(p):
+        raise SystemExit(&#x27;нет report_stemming/stem_eval.json (python analysis/stem_eval.py)&#x27;)
+    d = json.load(open(p, encoding=&#x27;utf-8&#x27;))
+    rows = d.get(&#x27;rows&#x27;) or d.get(&#x27;queries&#x27;) or []
+    f = lambda x: f&#x27;{x:.3f}&#x27;
+    table([(r[&#x27;query&#x27;], fmt(r[&#x27;gold&#x27;]), fmt(r[&#x27;plain&#x27;]), fmt(r[&#x27;stem&#x27;]), f(r[&#x27;F0&#x27;]), f(r[&#x27;F1&#x27;]), f(r[&#x27;F2&#x27;]))
+           for r in rows], (&#x27;запрос&#x27;, &#x27;эталон&#x27;, &#x27;без стем.&#x27;, &#x27;со стем.&#x27;, &#x27;F1 до&#x27;, &#x27;F1 после&#x27;, &#x27;F1 испр.&#x27;))
+    a = d.get(&#x27;avg&#x27;) or {}
+    if a:
+        print(&#x27;\nСреднее по запросам: &#x27; + &#x27;, &#x27;.join(f&#x27;{k} = {v:.3f}&#x27; if isinstance(v, float) else f&#x27;{k} = {v}&#x27;
+                                                for k, v in a.items()))
+    print(&#x27;\nF1 до — без стемминга, после — стемминг Snowball/Портер, испр. — с исправлениями из отчёта.&#x27;)
+
+
+def cmd_errors(_):
+    print(&#x27;Пересечение (overstemming) — разные слова дают одну основу, падает ТОЧНОСТЬ:&#x27;)
+    for a, b in ((&#x27;news&#x27;, &#x27;new&#x27;), (&#x27;general&#x27;, &#x27;generation&#x27;), (&#x27;university&#x27;, &#x27;universe&#x27;), (&#x27;метро&#x27;, &#x27;метров&#x27;)):
+        sa, sb = stems([a, b])
+        print(f&#x27;  {a} -&gt; {sa}   {b} -&gt; {sb}   {&quot;СОВПАЛИ&quot; if sa == sb else &quot;&quot;}&#x27;)
+    print(&#x27;\nНедостаточный стемминг (understemming) — формы одного слова дают разные основы, падает ПОЛНОТА:&#x27;)
+    for grp in ((&#x27;автомобиль&#x27;, &#x27;автомобили&#x27;, &#x27;автомобилей&#x27;), (&#x27;ran&#x27;, &#x27;run&#x27;, &#x27;running&#x27;)):
+        print(&#x27;  &#x27; + &#x27;   &#x27;.join(f&#x27;{w} -&gt; {s}&#x27; for w, s in zip(grp, stems(list(grp)))))
+
+
+if __name__ == &#x27;__main__&#x27;:
+    main(&#x27;ЛР4 «Стемминг»&#x27;, [
+        (&#x27;stem&#x27;, cmd_stem, &#x27;основы слов (интерактивно)&#x27;, None),
+        (&#x27;compare&#x27;, cmd_compare, &#x27;сравнить поиск без стемминга и со стеммингом&#x27;, None),
+        (&#x27;forms&#x27;, cmd_forms, &#x27;словоформы корпуса с той же основой&#x27;, &#x27;слово&#x27;),
+        (&#x27;eval&#x27;, cmd_eval, &#x27;оценка качества: P, R, F1 до и после стемминга&#x27;, None),
+        (&#x27;errors&#x27;, cmd_errors, &#x27;ошибки стемминга: пересечение и недостаточный стемминг&#x27;, None),
+    ])
+</code></pre></details>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>

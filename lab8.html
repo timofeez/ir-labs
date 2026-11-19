@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР8 Поиск — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html" class=on>ЛР8 Поиск</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#1">1. Булева модель поиска</a></li>
+<li><a href="#2">2. Операции над отсортированными списками</a></li>
+<li><a href="#3">3. Разбор запроса</a><ul>
+<li><a href="#_1">Лексер</a></li>
+<li><a href="#_2">Парсер — рекурсивный спуск</a></li>
+<li><a href="#_3">Вычисление дерева</a></li>
+</ul>
+</li>
+<li><a href="#4-searchexe">4. Утилита командной строки search.exe</a></li>
+<li><a href="#5-">5. Веб-сервис</a></li>
+<li><a href="#6">6. Скорость</a></li>
+<li><a href="#7">7. Как проверялась корректность</a></li>
+<li><a href="#8-lab8py">8. Утилита lab8.py</a></li>
+<li><a href="#9">9. Вопросы на защите</a></li>
+<li><a href="#10">10. Полные исходники</a></li>
+</ul>
+</div>
+</aside><h1 id="8">ЛР8. Булев поиск<a class="headerlink" href="#8" title="Permanent link">#</a></h1>
+<blockquote>
+<p><strong>Задание</strong> (Задания-2021.pdf): поиск по булеву индексу. Синтаксис: пробел или <code>&amp;&amp;</code> — И, <code>||</code> — ИЛИ,
+<code>!</code> — НЕ, скобки. Парсер должен быть толерантным к лишним пробелам и операторам. Интерфейс в двух
+видах: <strong>веб-сервис</strong> (стартовая страница с формой и страница выдачи по 50 результатов со ссылкой
+на следующие 50) и <strong>утилита командной строки</strong> (запросы со стандартного ввода, результат — в
+стандартный вывод). В отчёте: скорость запросов, тяжёлые запросы, как проверялась корректность.</p>
+</blockquote>
+<h2 id="1">1. Булева модель поиска<a class="headerlink" href="#1" title="Permanent link">#</a></h2>
+<p>Запрос — логическое выражение из термов: <code>Brutus AND Caesar AND NOT Calpurnia</code>. Документ либо
+удовлетворяет выражению, либо нет — <strong>без степеней «насколько»</strong>, без ранжирования.</p>
+<ul>
+<li><strong>Плюсы:</strong> проста, предсказуема (точно понятно, почему документ найден), быстра.</li>
+<li><strong>Минусы:</strong> нет ранжирования (все найденные «одинаково хороши»); либо слишком много результатов
+  (ИЛИ), либо ноль (длинное И); пользователю трудно писать логические выражения.</li>
+</ul>
+<h2 id="2">2. Операции над отсортированными списками<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<p><strong>И (пересечение)</strong> — два указателя: равны → в ответ и сдвигаем оба; иначе сдвигаем меньший. <strong>O(m + n)</strong>.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_and <span class="ln">строки 80–88</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- операции над списками
+static void op_and(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) i++;
+        else if (a[i] &gt; b[j]) j++;
+        else { r.push(a[i]); i++; j++; }
+    }
+}</code></pre></div>
+
+<p><strong>ИЛИ (объединение)</strong> — слияние двух отсортированных списков, O(m + n):</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_or <span class="ln">строки 89–98</span></div><pre><code class="language-cpp">static void op_or(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); r.reserve(a.n + b.n); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) r.push(a[i++]);
+        else if (a[i] &gt; b[j]) r.push(b[j++]);
+        else { r.push(a[i]); i++; j++; }
+    }
+    while (i &lt; a.n) r.push(a[i++]);
+    while (j &lt; b.n) r.push(b[j++]);
+}</code></pre></div>
+
+<p><strong>НЕ</strong> — дополнение до всех документов, O(N). Но <code>A &amp;&amp; !B</code> выгоднее считать <strong>вычитанием</strong>
+(O(|A| + |B|)), не строя дополнение почти всего корпуса:</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_and_not <span class="ln">строки 99–106</span></div><pre><code class="language-cpp">static void op_and_not(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (size_t i = 0; i &lt; a.n; i++) {
+        while (j &lt; b.n &amp;&amp; b[j] &lt; a[i]) j++;
+        if (j &lt; b.n &amp;&amp; b[j] == a[i]) continue;
+        r.push(a[i]);
+    }
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_not <span class="ln">строки 107–113</span></div><pre><code class="language-cpp">static void op_not(const Vec&lt;uint32_t&gt; &amp;a, uint32_t nDocs, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (uint32_t d = 0; d &lt; nDocs; d++) {
+        if (j &lt; a.n &amp;&amp; a[j] == d) { j++; continue; }
+        r.push(d);
+    }
+}</code></pre></div>
+
+<p><strong>Оптимизации:</strong> И — от коротких списков к длинным (промежуточные результаты маленькие);
+<code>A &amp;&amp; !B</code> — вычитанием; для очень больших корпусов — <strong>skip pointers</strong> (прыжки по √L элементов
+списка при пересечении) — следующие работы.</p>
+<h2 id="3">3. Разбор запроса<a class="headerlink" href="#3" title="Permanent link">#</a></h2>
+<h3 id="_1">Лексер<a class="headerlink" href="#_1" title="Permanent link">#</a></h3>
+<p>Строка → лексемы: <code>(</code>, <code>)</code>, <code>!</code>, <code>&amp;&amp;</code>/<code>&amp;</code>, <code>||</code>/<code>|</code> и слова. Слово прогоняется через <strong>тот же
+токенизатор</strong>, что документы (ЛР3); если индекс основ — ещё и через стеммер (ЛР4). Слово «ВЛ-80»
+даёт два терма, между ними вставляется неявное И:</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — lex <span class="ln">строки 119–148</span></div><pre><code class="language-cpp">static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &amp;out) {
+    out.clear();
+    size_t i = 0;
+    char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
+    while (i &lt; n) {
+        char c = q[i];
+        if (c == &#x27; &#x27; || c == &#x27;\t&#x27; || c == &#x27;\r&#x27; || c == &#x27;\n&#x27;) { i++; continue; }
+        if (c == &#x27;(&#x27;) { out.push({T_LP, 0}); i++; continue; }
+        if (c == &#x27;)&#x27;) { out.push({T_RP, 0}); i++; continue; }
+        if (c == &#x27;!&#x27;) { out.push({T_NOT, 0}); i++; continue; }
+        if (c == &#x27;&amp;&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;&amp;&#x27;) i++; out.push({T_AND, 0}); continue; }
+        if (c == &#x27;|&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;|&#x27;) i++; out.push({T_OR, 0}); continue; }
+        // слово: всё до пробела или спецсимвола; внутри него работает тот же токенизатор, что и в индексаторе
+        size_t st = i;
+        while (i &lt; n &amp;&amp; !strchr(&quot; \t\r\n()!&amp;|&quot;, q[i])) i++;
+        size_t pos = 0; int chars, len;
+        bool first = true;
+        while ((len = next_token(q + st, i - st, pos, tok, chars)) &gt; 0) {
+            // «ВЛ-80» даёт два терма — между ними неявное И
+            if (!first) out.push({T_AND, 0});
+            if (idx.stemmed) {                     // тот же стеммер, что при индексации
+                int sl = stem::stem(tok, len, sb);
+                out.push({T_TERM, idx.find_term(sb, sl)});
+            } else {
+                out.push({T_TERM, idx.find_term(tok, len)});
+            }
+            first = false;
+        }
+    }
+}</code></pre></div>
+
+<h3 id="_2">Парсер — рекурсивный спуск<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
+<p>Грамматика с приоритетом <strong>НЕ &gt; И &gt; ИЛИ</strong>:</p>
+<pre><code>expr  := conj ( '||' conj )*
+conj  := unary ( ['&amp;&amp;'] unary )*        — пробел между операндами = И
+unary := '!' unary | '(' expr ')' | TERM
+</code></pre>
+<p>Каждому правилу — функция; результат — дерево выражения в массиве узлов. <code>ноги || красный автомобиль</code>
+разбирается как <code>ноги || (красный &amp;&amp; автомобиль)</code>.</p>
+<p><strong>Толерантность:</strong> повторные <code>&amp;&amp;</code> пропускаются; оператор без операнда игнорируется; незакрытая <code>(</code>
+закрывается в конце; лишняя <code>)</code> пропускается, а хвост после неё склеивается через И; пустой запрос —
+пустая выдача.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — Parser <span class="ln">строки 158–205</span></div><pre><code class="language-cpp">struct Parser {
+    const Vec&lt;QTok&gt; &amp;t;
+    size_t p = 0;
+    Vec&lt;Node&gt; nodes;
+    explicit Parser(const Vec&lt;QTok&gt; &amp;toks) : t(toks) {}
+
+    int make(NodeType ty, int l, int r, long e = 0) { nodes.push({ty, l, r, e}); return (int)nodes.n - 1; }
+    bool at(TokType ty) const { return p &lt; t.n &amp;&amp; t[p].type == ty; }
+
+    int unary() {
+        if (at(T_NOT)) { p++; int c = unary(); return c &lt; 0 ? -1 : make(N_NOT, c, -1); }
+        if (at(T_LP)) { p++; int e = expr(); if (at(T_RP)) p++; return e; }
+        if (at(T_TERM)) { long e = t[p].entry; p++; return make(N_TERM, -1, -1, e); }
+        return -1;
+    }
+    int conj() {
+        int left = unary();
+        for (;;) {
+            if (at(T_AND)) { p++; continue; }               // «&amp;&amp;» и повторные «&amp;&amp;» просто разделители
+            if (at(T_TERM) || at(T_NOT) || at(T_LP)) {
+                int right = unary();
+                if (right &lt; 0) continue;
+                left = left &lt; 0 ? right : make(N_AND, left, right);
+                continue;
+            }
+            return left;
+        }
+    }
+    int expr() {
+        int left = conj();
+        while (at(T_OR)) {
+            p++;
+            int right = conj();
+            if (right &lt; 0) continue;
+            left = left &lt; 0 ? right : make(N_OR, left, right);
+        }
+        return left;
+    }
+    int parse() {
+        int root = expr();
+        while (p &lt; t.n) {                                   // хвост после лишней «)» — склеиваем через И
+            p++;
+            int more = expr();
+            if (more &gt;= 0) root = root &lt; 0 ? more : make(N_AND, root, more);
+        }
+        return root;
+    }
+};</code></pre></div>
+
+<h3 id="_3">Вычисление дерева<a class="headerlink" href="#_3" title="Permanent link">#</a></h3>
+<p>Рекурсивно снизу вверх; узел <code>A &amp;&amp; !B</code> распознаётся и считается вычитанием:</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — eval <span class="ln">строки 207–222</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- вычисление
+static void eval(const Index &amp;idx, const Vec&lt;Node&gt; &amp;nodes, int v, Vec&lt;uint32_t&gt; &amp;res) {
+    const Node &amp;nd = nodes[v];
+    if (nd.type == N_TERM) { idx.postings_of(nd.entry, res); return; }
+    Vec&lt;uint32_t&gt; a, b;
+    if (nd.type == N_NOT) { eval(idx, nodes, nd.l, a); op_not(a, idx.nDocs, res); a.release(); return; }
+    if (nd.type == N_AND &amp;&amp; nodes[nd.r].type == N_NOT) {    // A &amp;&amp; !B — вычитание без построения дополнения
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nodes[nd.r].l, b); op_and_not(a, b, res);
+    } else if (nd.type == N_AND &amp;&amp; nodes[nd.l].type == N_NOT) {
+        eval(idx, nodes, nd.r, a); eval(idx, nodes, nodes[nd.l].l, b); op_and_not(a, b, res);
+    } else {
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nd.r, b);
+        if (nd.type == N_AND) op_and(a, b, res); else op_or(a, b, res);
+    }
+    a.release(); b.release();
+}</code></pre></div>
+
+<h2 id="4-searchexe">4. Утилита командной строки <code>search.exe</code><a class="headerlink" href="#4-searchexe" title="Permanent link">#</a></h2>
+<pre><code>search index.bin [-n 50]            — каждая строка stdin = запрос, результат в stdout
+search index.bin --paged [-n 50]    — строка = «смещение&lt;TAB&gt;запрос» (для веб-сервиса)
+search index.bin --ids              — номера документов вместо заголовков (для тестов)
+</code></pre>
+<p>Формат вывода: <code>QUERY &lt;запрос&gt;</code>, <code>TOTAL &lt;найдено&gt; TIME_US &lt;мкс&gt;</code>, строки «номер \t заголовок \t URL», <code>END</code>.
+Индекс загружается один раз, дальше запросы обрабатываются в цикле.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — main <span class="ln">строки 224–276</span></div><pre><code class="language-cpp">int main(int argc, char **argv) {
+    if (argc &lt; 2) { fprintf(stderr, &quot;usage: search index.bin [--paged] [-n 50]\n&quot;); return 1; }
+    bool paged = false, idsOnly = false; long limit = 50;
+    for (int i = 2; i &lt; argc; i++) {
+        if (!strcmp(argv[i], &quot;--paged&quot;)) paged = true;
+        else if (!strcmp(argv[i], &quot;--ids&quot;)) idsOnly = true;
+        else if (!strcmp(argv[i], &quot;-n&quot;) &amp;&amp; i + 1 &lt; argc) limit = atol(argv[++i]);
+    }
+    Index idx;
+    double tl = now_sec();
+    if (!idx.load(argv[1])) return 1;
+    fprintf(stderr, &quot;index loaded: %u docs, %u terms%s, %.2f s\n&quot;, idx.nDocs, idx.nTerms,
+            idx.stemmed ? &quot; (stemmed)&quot; : &quot;&quot;, now_sec() - tl);
+
+    Vec&lt;char&gt; line; Vec&lt;QTok&gt; toks; Vec&lt;uint32_t&gt; res;
+    int ch;
+    for (;;) {
+        line.clear();
+        while ((ch = getchar()) != EOF &amp;&amp; ch != &#x27;\n&#x27;) line.push((char)ch);
+        if (ch == EOF &amp;&amp; line.n == 0) break;
+        if (line.n &amp;&amp; line[line.n - 1] == &#x27;\r&#x27;) line.n--;
+        const char *q = line.a; size_t qn = line.n;
+        long offset = 0;
+        if (paged) {
+            size_t i = 0;
+            while (i &lt; qn &amp;&amp; q[i] != &#x27;\t&#x27;) i++;
+            offset = atol(q);               // число до табуляции
+            if (i &lt; qn) { q += i + 1; qn -= i + 1; }
+        }
+
+        double t0 = now_sec();
+        lex(idx, q, qn, toks);
+        Parser ps(toks);
+        int root = ps.parse();
+        if (root &gt;= 0) eval(idx, ps.nodes, root, res); else res.clear();
+        double us = (now_sec() - t0) * 1e6;
+
+        fputs(&quot;QUERY\t&quot;, stdout); fwrite(q, 1, qn, stdout); putchar(&#x27;\n&#x27;);
+        printf(&quot;TOTAL\t%zu\tTIME_US\t%.0f\n&quot;, res.n, us);
+        for (long k = offset; k &lt; (long)res.n &amp;&amp; k &lt; offset + limit; k++) {
+            if (idsOnly) { printf(&quot;%u\n&quot;, res[k]); continue; }
+            const char *title, *url; int tlen, ulen;
+            idx.doc_info(res[k], title, tlen, url, ulen);
+            printf(&quot;%ld\t&quot;, k + 1); fwrite(title, 1, tlen, stdout); putchar(&#x27;\t&#x27;);
+            fwrite(url, 1, ulen, stdout); putchar(&#x27;\n&#x27;);
+        }
+        puts(&quot;END&quot;);
+        fflush(stdout);
+        ps.nodes.release();
+        if (ch == EOF) break;
+    }
+    return 0;
+}</code></pre></div>
+
+<h2 id="5-">5. Веб-сервис<a class="headerlink" href="#5-" title="Permanent link">#</a></h2>
+<p><code>web/server.py</code> (Python, <code>http.server</code>): стартовая страница с формой; страница выдачи — 50
+результатов и ссылка «Следующие 50 результатов» (<code>offset</code>). Поиск выполняет тот же <code>search.exe</code>,
+запущенный один раз как процесс-сервер (общение через stdin/stdout) — индекс загружается однажды.
+Режим со стеммингом: <code>python web/server.py 8080 stem</code>.</p>
+<details class="file"><summary>lab_boolean/web/server.py <span class="ln">(117 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Веб-сервис булева поиска.
+
+Сам поиск выполняет bin/search.exe (C++): сервер один раз запускает его в режиме --paged,
+индекс загружается в память один раз, дальше запросы передаются через stdin/stdout.
+
+Страницы:
+  /                        — форма ввода запроса
+  /search?q=...&amp;page=N     — выдача: форма + 50 результатов (заголовок + ссылка) + ссылка на следующие 50
+
+Запуск: python web/server.py [порт] [stem]   (по умолчанию 8080), затем открыть http://localhost:8080
+        stem — искать по индексу со стеммингом (data/index_stem.bin): без учёта словоформ
+&quot;&quot;&quot;
+import html, os, subprocess, sys, threading, urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
+SEARCH = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;search.exe&#x27;)
+STEM = len(sys.argv) &gt; 2 and sys.argv[2] == &#x27;stem&#x27;
+INDEX = os.path.join(ROOT, &#x27;data&#x27;, &#x27;index_stem.bin&#x27; if STEM else &#x27;index.bin&#x27;)
+MODE = &#x27; (со стеммингом: без учёта словоформ)&#x27; if STEM else &#x27;&#x27;
+PAGE = 50
+
+
+class Engine:
+    &quot;&quot;&quot;Обёртка над процессом search.exe --paged.&quot;&quot;&quot;
+
+    def __init__(self):
+        self.p = subprocess.Popen([SEARCH, INDEX, &#x27;--paged&#x27;, &#x27;-n&#x27;, str(PAGE)], stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, encoding=&#x27;utf-8&#x27;, bufsize=1)
+        self.lock = threading.Lock()
+
+    def query(self, q, offset):
+        q = q.replace(&#x27;\t&#x27;, &#x27; &#x27;).replace(&#x27;\n&#x27;, &#x27; &#x27;).replace(&#x27;\r&#x27;, &#x27; &#x27;)
+        with self.lock:
+            self.p.stdin.write(f&#x27;{offset}\t{q}\n&#x27;); self.p.stdin.flush()
+            self.p.stdout.readline()                                   # QUERY ...
+            _, total, _, us = self.p.stdout.readline().rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;)
+            rows = []
+            while (line := self.p.stdout.readline().rstrip(&#x27;\n&#x27;)) != &#x27;END&#x27;:
+                rank, title, url = line.split(&#x27;\t&#x27;)
+                rows.append((int(rank), title, url))
+        return int(total), float(us), rows
+
+
+STYLE = &quot;&quot;&quot;&lt;style&gt;
+body{font-family:Arial,sans-serif;max-width:860px;margin:24px auto;padding:0 16px;color:#222}
+h1{font-size:26px} h1 a{color:#222;text-decoration:none}
+form{display:flex;gap:8px;margin:12px 0} input[type=text]{flex:1;font-size:17px;padding:8px}
+button{font-size:16px;padding:8px 16px} .meta{color:#666;font-size:14px;margin:8px 0 16px}
+ol{padding-left:44px} li{margin:10px 0} li a.t{font-size:17px} .u{color:#1a7f37;font-size:13px;word-break:break-all}
+.help{color:#555;font-size:14px;line-height:1.6} .next{display:inline-block;margin:16px 0;font-size:17px}
+&lt;/style&gt;&quot;&quot;&quot;
+
+
+def form(q=&#x27;&#x27;):
+    return (f&#x27;&lt;form action=&quot;/search&quot; method=&quot;get&quot;&gt;&lt;input type=&quot;text&quot; name=&quot;q&quot; value=&quot;{html.escape(q)}&quot; &#x27;
+            f&#x27;autofocus placeholder=&quot;например: (электровоз || тепловоз) колея !узкоколейная&quot;&gt;&#x27;
+            f&#x27;&lt;button type=&quot;submit&quot;&gt;Найти&lt;/button&gt;&lt;/form&gt;&#x27;)
+
+
+def page(title, body):
+    return (f&#x27;&lt;!doctype html&gt;&lt;html lang=&quot;ru&quot;&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;title&gt;{html.escape(title)}&lt;/title&gt;&#x27;
+            f&#x27;&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,initial-scale=1&quot;&gt;{STYLE}&lt;/head&gt;&lt;body&gt;{body}&lt;/body&gt;&lt;/html&gt;&#x27;)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def send(self, code, text):
+        data = text.encode(&#x27;utf-8&#x27;)
+        self.send_response(code)
+        self.send_header(&#x27;Content-Type&#x27;, &#x27;text/html; charset=utf-8&#x27;)
+        self.send_header(&#x27;Content-Length&#x27;, str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        u = urllib.parse.urlparse(self.path)
+        args = urllib.parse.parse_qs(u.query)
+        if u.path == &#x27;/&#x27;:
+            body = (&#x27;&lt;h1&gt;Булев поиск: железнодорожный транспорт&lt;/h1&gt;&#x27; + f&#x27;&lt;div class=&quot;meta&quot;&gt;{MODE}&lt;/div&gt;&#x27; + form() +
+                    &#x27;&lt;div class=&quot;help&quot;&gt;Синтаксис: пробел или &lt;b&gt;&amp;amp;&amp;amp;&lt;/b&gt; — И, &lt;b&gt;||&lt;/b&gt; — ИЛИ, &#x27;
+                    &#x27;&lt;b&gt;!&lt;/b&gt; — НЕ, скобки.&lt;br&gt;Примеры: &lt;i&gt;транссибирская магистраль&lt;/i&gt;, &#x27;
+                    &#x27;&lt;i&gt;(электровоз || тепловоз) колея&lt;/i&gt;, &lt;i&gt;паровоз !англия&lt;/i&gt;, &#x27;
+                    &#x27;&lt;i&gt;(maglev || monorail) &amp;amp;&amp;amp; japan&lt;/i&gt;&lt;/div&gt;&#x27;)
+            self.send(200, page(&#x27;Булев поиск&#x27;, body))
+        elif u.path == &#x27;/search&#x27;:
+            q = args.get(&#x27;q&#x27;, [&#x27;&#x27;])[0]
+            try:
+                pg = max(1, int(args.get(&#x27;page&#x27;, [&#x27;1&#x27;])[0]))
+            except ValueError:
+                pg = 1
+            total, us, rows = ENGINE.query(q, (pg - 1) * PAGE)
+            items = &#x27;&#x27;.join(f&#x27;&lt;li value=&quot;{r}&quot;&gt;&lt;a class=&quot;t&quot; href=&quot;{html.escape(url)}&quot;&gt;{html.escape(t)}&lt;/a&gt;&#x27;
+                            f&#x27;&lt;div class=&quot;u&quot;&gt;{html.escape(urllib.parse.unquote(url))}&lt;/div&gt;&lt;/li&gt;&#x27;
+                            for r, t, url in rows)
+            first = (pg - 1) * PAGE + 1
+            meta = (f&#x27;Найдено документов: {total}. Показаны {first}–{first + len(rows) - 1}. &#x27;
+                    f&#x27;Время поиска: {us / 1000:.2f} мс.&#x27; if rows else f&#x27;Найдено документов: {total}.&#x27;)
+            nxt = &#x27;&#x27;
+            if pg * PAGE &lt; total:
+                link = &#x27;/search?&#x27; + urllib.parse.urlencode({&#x27;q&#x27;: q, &#x27;page&#x27;: pg + 1})
+                nxt = f&#x27;&lt;a class=&quot;next&quot; href=&quot;{html.escape(link)}&quot;&gt;Следующие {PAGE} результатов →&lt;/a&gt;&#x27;
+            body = (f&#x27;&lt;h1&gt;&lt;a href=&quot;/&quot;&gt;Булев поиск&lt;/a&gt;&lt;/h1&gt;{form(q)}&lt;div class=&quot;meta&quot;&gt;{meta}{MODE}&lt;/div&gt;&#x27;
+                    f&#x27;&lt;ol&gt;{items}&lt;/ol&gt;{nxt}&#x27;)
+            self.send(200, page(f&#x27;{q} — булев поиск&#x27;, body))
+        else:
+            self.send(404, page(&#x27;404&#x27;, &#x27;&lt;h1&gt;Страница не найдена&lt;/h1&gt;&lt;a href=&quot;/&quot;&gt;На главную&lt;/a&gt;&#x27;))
+
+    def log_message(self, fmt, *a):
+        pass
+
+
+if __name__ == &#x27;__main__&#x27;:
+    port = int(sys.argv[1]) if len(sys.argv) &gt; 1 else 8080
+    ENGINE = Engine()
+    print(f&#x27;Поиск запущен{MODE}: http://localhost:{port}  (Ctrl+C — остановить)&#x27;)
+    ThreadingHTTPServer((&#x27;127.0.0.1&#x27;, port), Handler).serve_forever()
+</code></pre></details>
+
+<h2 id="6">6. Скорость<a class="headerlink" href="#6" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Тип запроса</th>
+<th>Пример</th>
+<th>Найдено</th>
+<th>Время, мкс</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>редкий терм</td>
+<td><code>пельгорского</code></td>
+<td>2</td>
+<td>&lt; 1</td>
+</tr>
+<tr>
+<td>частый терм</td>
+<td><code>железная</code></td>
+<td>3 072</td>
+<td>2</td>
+</tr>
+<tr>
+<td>И из 2 редких</td>
+<td><code>узкоколейная торфопредприятия</code></td>
+<td>34</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ИЛИ из 6</td>
+<td><code>вл80 \|\| вл60 \|\| … \|\| эп1</code></td>
+<td>255</td>
+<td>5</td>
+</tr>
+<tr>
+<td>И + НЕ</td>
+<td><code>паровоз !англия</code></td>
+<td>1 250</td>
+<td>7</td>
+</tr>
+<tr>
+<td>НЕ частого</td>
+<td><code>!the</code></td>
+<td>38 810</td>
+<td>111</td>
+</tr>
+<tr>
+<td>ИЛИ 4 частых</td>
+<td><code>the \|\| of \|\| and \|\| in</code></td>
+<td>27 927</td>
+<td>352</td>
+</tr>
+<tr>
+<td>много НЕ</td>
+<td><code>!the !of !and !in !a</code></td>
+<td>37 044</td>
+<td>714</td>
+</tr>
+</tbody>
+</table>
+<p>1000 случайных запросов: в среднем 59 мкс, медиана 42 мкс, максимум 365 мкс. <strong>Тяжёлые запросы</strong> —
+с частыми термами и НЕ: длинные списки и дополнение до всего корпуса (O(N)).</p>
+<h2 id="7">7. Как проверялась корректность<a class="headerlink" href="#7" title="Permanent link">#</a></h2>
+<ol>
+<li><strong>Мини-корпус</strong> из 6 документов с заранее известными ответами — каждый оператор, приоритет,
+   скобки, толерантность парсера, регистр, ё/е, ударение, дефис (GoogleTest <code>Lab8_Search</code>).</li>
+<li><strong>Полный корпус</strong> (GoogleTest <code>FullCorpus.*</code>): независимый эталон — для каждого из 65 509
+   документов отсортированный массив его термов; ответ на запрос — <strong>перебор всех документов</strong> с
+   вычислением дерева запроса для каждого. 300 случайных запросов (вложенность до 3, И/ИЛИ/НЕ,
+   скобки, разные пробелы, частые и редкие термы) — выдачи совпали <strong>полностью</strong>, и для индекса
+   словоформ, и для индекса основ.</li>
+<li><strong>Веб-сервис</strong> — вручную в браузере: выдача, «следующие 50».</li>
+</ol>
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — search_boolean_operators <span class="ln">строки 363–373</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_boolean_operators) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;красный автомобиль&quot;, 0, 1);              // пробел = И
+    CHECK_QUERY(idx, &quot;красный &amp;&amp; автомобиль&quot;, 0, 1);
+    CHECK_QUERY(idx, &quot;красный || ноги&quot;, 0, 1, 3, 5);
+    CHECK_QUERY(idx, &quot;руки &amp;&amp; !ноги&quot;, 0, 2, 5);                 // вычитание
+    CHECK_QUERY(idx, &quot;!руки&quot;, 0, 0, 1, 4);                      // дополнение
+    CHECK_QUERY(idx, &quot;ноги || красный автомобиль&quot;, 0, 1, 3);   // приоритет: И сильнее ИЛИ
+    CHECK_QUERY(idx, &quot;(красный || желтый) автомобиль&quot;, 0, 1, 2);
+    CHECK_QUERY(idx, &quot;!(руки || красный)&quot;, 0, 0, 4);
+}</code></pre></div>
+
+<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — search_tolerant_parser <span class="ln">строки 382–390</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_tolerant_parser) {
+    Index idx; ASSERT_TRUE(idx.load(plain_index()));
+    CHECK_QUERY(idx, &quot;((красный&quot;, 0, 1, 5);                  // незакрытые скобки
+    CHECK_QUERY(idx, &quot;красный ) автомобиль&quot;, 0, 1);          // лишняя скобка
+    CHECK_QUERY(idx, &quot;красный &amp;&amp; &amp;&amp; автомобиль&quot;, 0, 1);      // повтор оператора
+    CHECK_QUERY(idx, &quot;|| руки ||&quot;, 0, 2, 3, 5);              // оператор без операнда
+    CHECK_QUERY(idx, &quot;   &quot;, 0);                              // пустой запрос
+    CHECK_QUERY(idx, &quot;!&quot;, 0);
+}</code></pre></div>
+
+<h2 id="8-lab8py">8. Утилита <code>lab8.py</code><a class="headerlink" href="#8-lab8py" title="Permanent link">#</a></h2>
+<pre><code>python lab8.py search &quot;(электровоз || тепловоз) колея&quot;   — выдача с листанием по 10
+python lab8.py stem &quot;машинисту поезда&quot;                    — поиск по индексу основ
+python lab8.py explain &quot;ноги || красный автомобиль&quot;       — лексемы, дерево, результат
+python lab8.py bench    — скорость разных типов запросов
+python lab8.py web      — веб-сервис на http://localhost:8080
+</code></pre>
+<h2 id="9">9. Вопросы на защите<a class="headerlink" href="#9" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Как работает пересечение?</strong> Два указателя по отсортированным спискам, O(m + n).</li>
+<li><strong>Приоритет операторов?</strong> НЕ &gt; И &gt; ИЛИ; <code>a || b c</code> = <code>a || (b &amp;&amp; c)</code>.</li>
+<li><strong>Что такое рекурсивный спуск?</strong> Функция на каждое правило грамматики, вызывают друг друга.</li>
+<li><strong>Как толерантность?</strong> Лишние операторы пропускаются, скобки закрываются/игнорируются.</li>
+<li><strong>Почему <code>!the</code> медленный?</strong> Дополнение до 65 тыс. документов.</li>
+<li><strong>Как доказать, что поиск верный?</strong> Сверка с перебором всех документов на 300 случайных запросах.</li>
+<li><strong>Как веб-сервис получает результаты?</strong> Через тот же <code>search.exe</code> (один процесс, stdin/stdout).</li>
+</ul>
+<h2 id="10">10. Полные исходники<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
+<details class="file"><summary>lab_boolean/src/search.cpp <span class="ln">(277 строк)</span></summary><pre><code class="language-cpp">// Булев поиск по индексу index.bin.
+//
+// Синтаксис запросов: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
+// Запуск:
+//   search index.bin [-n 50]            — каждая строка stdin = запрос, результат в stdout
+//   search index.bin --paged [-n 50]    — каждая строка stdin = &quot;смещение&lt;TAB&gt;запрос&quot; (для веб-сервиса)
+//   search index.bin --ids [-n N]       — вместо заголовков печатать внутренние номера документов (для тестов)
+#include &quot;common.h&quot;
+#include &quot;stem.h&quot;
+
+// ---------------------------------------------------------------- загруженный индекс
+struct Index {
+    char *data = nullptr;
+    uint64_t size = 0;
+    const char *docs = nullptr, *dict = nullptr, *termstr = nullptr, *postings = nullptr;
+    uint32_t nDocs = 0, nTerms = 0;
+    bool stemmed = false;          // в индексе основы слов -&gt; слова запроса тоже стеммируются
+
+    bool load(const char *path) {
+        FILE *f = fopen(path, &quot;rb&quot;);
+        if (!f) { fprintf(stderr, &quot;cannot open %s\n&quot;, path); return false; }
+        #ifdef _WIN32
+        _fseeki64(f, 0, SEEK_END); size = (uint64_t)_ftelli64(f); _fseeki64(f, 0, SEEK_SET);
+#else
+        fseeko(f, 0, SEEK_END); size = (uint64_t)ftello(f); fseeko(f, 0, SEEK_SET);
+#endif
+        data = (char *)malloc(size);
+        if (fread(data, 1, size, f) != size) { fprintf(stderr, &quot;read error\n&quot;); return false; }
+        fclose(f);
+        if (memcmp(data, INDEX_MAGIC, 4) != 0) { fprintf(stderr, &quot;bad magic\n&quot;); return false; }
+        if (rd32(data + 4) != INDEX_VERSION) { fprintf(stderr, &quot;unsupported version\n&quot;); return false; }
+        uint32_t nsec = rd32(data + 8);
+        for (uint32_t i = 0; i &lt; nsec; i++) {
+            const char *e = data + HEADER_SIZE + i * SECTION_ENTRY_SIZE;
+            uint32_t type = rd32(e);
+            const char *p = data + rd64(e + 8);
+            if (type == SEC_DOCS) docs = p;
+            else if (type == SEC_DICT) dict = p;
+            else if (type == SEC_TERMSTR) termstr = p;
+            else if (type == SEC_POSTINGS) postings = p;
+            // неизвестные секции пропускаются — так формат расширяется без поломки старых программ
+        }
+        if (!docs || !dict || !termstr || !postings) { fprintf(stderr, &quot;missing section\n&quot;); return false; }
+        nDocs = rd32(docs);
+        nTerms = rd32(dict);
+        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;   // флаги заголовка
+        return true;
+    }
+
+    // Двоичный поиск терма в отсортированном словаре. Возвращает номер записи или -1.
+    long find_term(const char *s, int n) const {
+        long lo = 0, hi = (long)nTerms - 1;
+        while (lo &lt;= hi) {
+            long mid = (lo + hi) / 2;
+            const char *e = dict + 4 + (size_t)mid * DICT_ENTRY_SIZE;
+            int c = cmp_bytes(termstr + rd32(e), rd16(e + 4), s, n);
+            if (c == 0) return mid;
+            if (c &lt; 0) lo = mid + 1; else hi = mid - 1;
+        }
+        return -1;
+    }
+
+    void postings_of(long entry, Vec&lt;uint32_t&gt; &amp;out) const {
+        out.clear();
+        if (entry &lt; 0) return;
+        const char *e = dict + 4 + (size_t)entry * DICT_ENTRY_SIZE;
+        uint32_t df = rd32(e + 8);
+        out.resize(df);
+        memcpy(out.a, postings + rd64(e + 16), (size_t)df * 4);
+    }
+
+    // Заголовок и URL документа из прямого индекса.
+    void doc_info(uint32_t d, const char *&amp;title, int &amp;tl, const char *&amp;url, int &amp;ul) const {
+        const char *r = docs + rd64(docs + 4 + 8ull * d);
+        tl = rd16(r + 5); title = r + 7;
+        ul = rd16(r + 7 + tl); url = r + 9 + tl;
+    }
+};
+
+// ---------------------------------------------------------------- операции над списками
+static void op_and(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) i++;
+        else if (a[i] &gt; b[j]) j++;
+        else { r.push(a[i]); i++; j++; }
+    }
+}
+static void op_or(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); r.reserve(a.n + b.n); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) r.push(a[i++]);
+        else if (a[i] &gt; b[j]) r.push(b[j++]);
+        else { r.push(a[i]); i++; j++; }
+    }
+    while (i &lt; a.n) r.push(a[i++]);
+    while (j &lt; b.n) r.push(b[j++]);
+}
+static void op_and_not(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (size_t i = 0; i &lt; a.n; i++) {
+        while (j &lt; b.n &amp;&amp; b[j] &lt; a[i]) j++;
+        if (j &lt; b.n &amp;&amp; b[j] == a[i]) continue;
+        r.push(a[i]);
+    }
+}
+static void op_not(const Vec&lt;uint32_t&gt; &amp;a, uint32_t nDocs, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (uint32_t d = 0; d &lt; nDocs; d++) {
+        if (j &lt; a.n &amp;&amp; a[j] == d) { j++; continue; }
+        r.push(d);
+    }
+}
+
+// ---------------------------------------------------------------- лексер запроса
+enum TokType { T_TERM, T_AND, T_OR, T_NOT, T_LP, T_RP };
+struct QTok { TokType type; long entry; };   // entry — номер терма в словаре (-1, если терма нет)
+
+static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &amp;out) {
+    out.clear();
+    size_t i = 0;
+    char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
+    while (i &lt; n) {
+        char c = q[i];
+        if (c == &#x27; &#x27; || c == &#x27;\t&#x27; || c == &#x27;\r&#x27; || c == &#x27;\n&#x27;) { i++; continue; }
+        if (c == &#x27;(&#x27;) { out.push({T_LP, 0}); i++; continue; }
+        if (c == &#x27;)&#x27;) { out.push({T_RP, 0}); i++; continue; }
+        if (c == &#x27;!&#x27;) { out.push({T_NOT, 0}); i++; continue; }
+        if (c == &#x27;&amp;&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;&amp;&#x27;) i++; out.push({T_AND, 0}); continue; }
+        if (c == &#x27;|&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;|&#x27;) i++; out.push({T_OR, 0}); continue; }
+        // слово: всё до пробела или спецсимвола; внутри него работает тот же токенизатор, что и в индексаторе
+        size_t st = i;
+        while (i &lt; n &amp;&amp; !strchr(&quot; \t\r\n()!&amp;|&quot;, q[i])) i++;
+        size_t pos = 0; int chars, len;
+        bool first = true;
+        while ((len = next_token(q + st, i - st, pos, tok, chars)) &gt; 0) {
+            // «ВЛ-80» даёт два терма — между ними неявное И
+            if (!first) out.push({T_AND, 0});
+            if (idx.stemmed) {                     // тот же стеммер, что при индексации
+                int sl = stem::stem(tok, len, sb);
+                out.push({T_TERM, idx.find_term(sb, sl)});
+            } else {
+                out.push({T_TERM, idx.find_term(tok, len)});
+            }
+            first = false;
+        }
+    }
+}
+
+// ---------------------------------------------------------------- парсер (рекурсивный спуск)
+// or  := and ( &#x27;||&#x27; and )*
+// and := unary ( [&#x27;&amp;&amp;&#x27;] unary )*        — пробел между операндами = И
+// unary := &#x27;!&#x27; unary | &#x27;(&#x27; or &#x27;)&#x27; | TERM
+// Парсер толерантен: лишние операторы и скобки пропускаются, незакрытые скобки закрываются.
+enum NodeType { N_TERM, N_AND, N_OR, N_NOT };
+struct Node { NodeType type; int l, r; long entry; };
+
+struct Parser {
+    const Vec&lt;QTok&gt; &amp;t;
+    size_t p = 0;
+    Vec&lt;Node&gt; nodes;
+    explicit Parser(const Vec&lt;QTok&gt; &amp;toks) : t(toks) {}
+
+    int make(NodeType ty, int l, int r, long e = 0) { nodes.push({ty, l, r, e}); return (int)nodes.n - 1; }
+    bool at(TokType ty) const { return p &lt; t.n &amp;&amp; t[p].type == ty; }
+
+    int unary() {
+        if (at(T_NOT)) { p++; int c = unary(); return c &lt; 0 ? -1 : make(N_NOT, c, -1); }
+        if (at(T_LP)) { p++; int e = expr(); if (at(T_RP)) p++; return e; }
+        if (at(T_TERM)) { long e = t[p].entry; p++; return make(N_TERM, -1, -1, e); }
+        return -1;
+    }
+    int conj() {
+        int left = unary();
+        for (;;) {
+            if (at(T_AND)) { p++; continue; }               // «&amp;&amp;» и повторные «&amp;&amp;» просто разделители
+            if (at(T_TERM) || at(T_NOT) || at(T_LP)) {
+                int right = unary();
+                if (right &lt; 0) continue;
+                left = left &lt; 0 ? right : make(N_AND, left, right);
+                continue;
+            }
+            return left;
+        }
+    }
+    int expr() {
+        int left = conj();
+        while (at(T_OR)) {
+            p++;
+            int right = conj();
+            if (right &lt; 0) continue;
+            left = left &lt; 0 ? right : make(N_OR, left, right);
+        }
+        return left;
+    }
+    int parse() {
+        int root = expr();
+        while (p &lt; t.n) {                                   // хвост после лишней «)» — склеиваем через И
+            p++;
+            int more = expr();
+            if (more &gt;= 0) root = root &lt; 0 ? more : make(N_AND, root, more);
+        }
+        return root;
+    }
+};
+
+// ---------------------------------------------------------------- вычисление
+static void eval(const Index &amp;idx, const Vec&lt;Node&gt; &amp;nodes, int v, Vec&lt;uint32_t&gt; &amp;res) {
+    const Node &amp;nd = nodes[v];
+    if (nd.type == N_TERM) { idx.postings_of(nd.entry, res); return; }
+    Vec&lt;uint32_t&gt; a, b;
+    if (nd.type == N_NOT) { eval(idx, nodes, nd.l, a); op_not(a, idx.nDocs, res); a.release(); return; }
+    if (nd.type == N_AND &amp;&amp; nodes[nd.r].type == N_NOT) {    // A &amp;&amp; !B — вычитание без построения дополнения
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nodes[nd.r].l, b); op_and_not(a, b, res);
+    } else if (nd.type == N_AND &amp;&amp; nodes[nd.l].type == N_NOT) {
+        eval(idx, nodes, nd.r, a); eval(idx, nodes, nodes[nd.l].l, b); op_and_not(a, b, res);
+    } else {
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nd.r, b);
+        if (nd.type == N_AND) op_and(a, b, res); else op_or(a, b, res);
+    }
+    a.release(); b.release();
+}
+
+int main(int argc, char **argv) {
+    if (argc &lt; 2) { fprintf(stderr, &quot;usage: search index.bin [--paged] [-n 50]\n&quot;); return 1; }
+    bool paged = false, idsOnly = false; long limit = 50;
+    for (int i = 2; i &lt; argc; i++) {
+        if (!strcmp(argv[i], &quot;--paged&quot;)) paged = true;
+        else if (!strcmp(argv[i], &quot;--ids&quot;)) idsOnly = true;
+        else if (!strcmp(argv[i], &quot;-n&quot;) &amp;&amp; i + 1 &lt; argc) limit = atol(argv[++i]);
+    }
+    Index idx;
+    double tl = now_sec();
+    if (!idx.load(argv[1])) return 1;
+    fprintf(stderr, &quot;index loaded: %u docs, %u terms%s, %.2f s\n&quot;, idx.nDocs, idx.nTerms,
+            idx.stemmed ? &quot; (stemmed)&quot; : &quot;&quot;, now_sec() - tl);
+
+    Vec&lt;char&gt; line; Vec&lt;QTok&gt; toks; Vec&lt;uint32_t&gt; res;
+    int ch;
+    for (;;) {
+        line.clear();
+        while ((ch = getchar()) != EOF &amp;&amp; ch != &#x27;\n&#x27;) line.push((char)ch);
+        if (ch == EOF &amp;&amp; line.n == 0) break;
+        if (line.n &amp;&amp; line[line.n - 1] == &#x27;\r&#x27;) line.n--;
+        const char *q = line.a; size_t qn = line.n;
+        long offset = 0;
+        if (paged) {
+            size_t i = 0;
+            while (i &lt; qn &amp;&amp; q[i] != &#x27;\t&#x27;) i++;
+            offset = atol(q);               // число до табуляции
+            if (i &lt; qn) { q += i + 1; qn -= i + 1; }
+        }
+
+        double t0 = now_sec();
+        lex(idx, q, qn, toks);
+        Parser ps(toks);
+        int root = ps.parse();
+        if (root &gt;= 0) eval(idx, ps.nodes, root, res); else res.clear();
+        double us = (now_sec() - t0) * 1e6;
+
+        fputs(&quot;QUERY\t&quot;, stdout); fwrite(q, 1, qn, stdout); putchar(&#x27;\n&#x27;);
+        printf(&quot;TOTAL\t%zu\tTIME_US\t%.0f\n&quot;, res.n, us);
+        for (long k = offset; k &lt; (long)res.n &amp;&amp; k &lt; offset + limit; k++) {
+            if (idsOnly) { printf(&quot;%u\n&quot;, res[k]); continue; }
+            const char *title, *url; int tlen, ulen;
+            idx.doc_info(res[k], title, tlen, url, ulen);
+            printf(&quot;%ld\t&quot;, k + 1); fwrite(title, 1, tlen, stdout); putchar(&#x27;\t&#x27;);
+            fwrite(url, 1, ulen, stdout); putchar(&#x27;\n&#x27;);
+        }
+        puts(&quot;END&quot;);
+        fflush(stdout);
+        ps.nodes.release();
+        if (ch == EOF) break;
+    }
+    return 0;
+}
+</code></pre></details>
+<details class="file"><summary>lab_boolean/tests/bench.py <span class="ln">(64 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Замер скорости поиска (для отчёта).
+
+1) Запросы разных типов: каждый выполняется 50 раз, берётся медиана времени (TIME_US из search.exe —
+   время разбора и вычисления запроса без вывода).
+2) 1000 случайных запросов из 1–3 частых термов: среднее время и пропускная способность.
+Запуск: python tests/bench.py
+&quot;&quot;&quot;
+import os, random, statistics, subprocess, sys, time
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
+SEARCH, INDEX = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;search.exe&#x27;), os.path.join(ROOT, &#x27;data&#x27;, &#x27;index.bin&#x27;)
+sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+
+QUERIES = [
+    (&#x27;редкий терм&#x27;, &#x27;пельгорского&#x27;),
+    (&#x27;частый терм&#x27;, &#x27;железная&#x27;),
+    (&#x27;самый частый терм&#x27;, &#x27;the&#x27;),
+    (&#x27;И из 2 редких&#x27;, &#x27;узкоколейная торфопредприятия&#x27;),
+    (&#x27;И из 3 термов&#x27;, &#x27;электровоз переменного тока&#x27;),
+    (&#x27;И из 4 частых&#x27;, &#x27;the of and in&#x27;),
+    (&#x27;ИЛИ из 6 термов&#x27;, &#x27;вл80 || вл60 || вл85 || чс2 || чс4 || эп1&#x27;),
+    (&#x27;ИЛИ из 4 частых&#x27;, &#x27;the || of || and || in&#x27;),
+    (&#x27;И + НЕ&#x27;, &#x27;паровоз !англия&#x27;),
+    (&#x27;НЕ частого терма&#x27;, &#x27;!the&#x27;),
+    (&#x27;НЕ редкого терма&#x27;, &#x27;!пельгорского&#x27;),
+    (&#x27;сложный со скобками&#x27;, &#x27;((электровоз || тепловоз) &amp;&amp; (колея || ширина)) !узкоколейная&#x27;),
+    (&#x27;ИЛИ частых + НЕ&#x27;, &#x27;(the || of || and || in || a) &amp;&amp; !railway&#x27;),
+    (&#x27;много НЕ&#x27;, &#x27;!the !of !and !in !a&#x27;),
+]
+
+
+def run(queries):
+    p = subprocess.run([SEARCH, INDEX, &#x27;-n&#x27;, &#x27;0&#x27;], input=&#x27;\n&#x27;.join(queries) + &#x27;\n&#x27;,
+                       capture_output=True, encoding=&#x27;utf-8&#x27;)
+    out = []
+    for line in p.stdout.split(&#x27;\n&#x27;):
+        if line.startswith(&#x27;TOTAL&#x27;):
+            _, total, _, us = line.split(&#x27;\t&#x27;)
+            out.append((int(total), float(us)))
+    return out, p.stderr.strip()
+
+
+if __name__ == &#x27;__main__&#x27;:
+    t = time.time()
+    _, load = run([&#x27;&#x27;])
+    print(f&#x27;Загрузка индекса: {load}  (процесс целиком {time.time() - t:.2f} с)\n&#x27;)
+    print(f&#x27;{&quot;Тип запроса&quot;:28} {&quot;Найдено&quot;:&gt;8} {&quot;Медиана, мкс&quot;:&gt;13}   Запрос&#x27;)
+    for name, q in QUERIES:
+        res, _ = run([q] * 50)
+        med = statistics.median(us for _, us in res)
+        print(f&#x27;{name:28} {res[0][0]:&gt;8} {med:&gt;13.0f}   {q}&#x27;)
+
+    rnd = random.Random(1)
+    words = (&#x27;железная дорога станция линия поезд локомотив вагон метро электровоз паровоз &#x27;
+             &#x27;railway station line train locomotive the of and in tram&#x27;).split()
+    qs = [&#x27; &#x27;.join(rnd.choice(words) for _ in range(rnd.randint(1, 3))) for _ in range(1000)]
+    t = time.time()
+    res, _ = run(qs)
+    wall = time.time() - t
+    us = [u for _, u in res]
+    print(f&#x27;\n1000 случайных запросов (1–3 терма): среднее {statistics.mean(us):.0f} мкс, &#x27;
+          f&#x27;медиана {statistics.median(us):.0f} мкс, максимум {max(us):.0f} мкс; &#x27;
+          f&#x27;весь прогон с запуском процесса и загрузкой индекса — {wall:.2f} с&#x27;)
+</code></pre></details>
+<details class="file"><summary>lab_boolean/lab8.py <span class="ln">(127 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР8 «Булев поиск» — утилита для проверок и демонстрации.
+
+  python lab8.py                                   — меню
+  python lab8.py search &quot;(электровоз || тепловоз) колея&quot;   — поиск (без аргумента — интерактивно)
+  python lab8.py stem &quot;машинисту поезда&quot;           — то же по индексу основ (ЛР4)
+  python lab8.py explain &quot;ноги || красный автомобиль&quot;    — как разбирается запрос (лексемы и дерево)
+  python lab8.py bench                             — скорость разных типов запросов
+  python lab8.py web                               — веб-сервис на http://localhost:8080
+Синтаксис: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
+&quot;&quot;&quot;
+import os, re, subprocess, sys, time
+from labtool import HERE, fmt, main, repl, search, table
+
+
+def show(q, index=&#x27;index.bin&#x27;):
+    page = 0
+    while True:
+        total, us, docs = search(q, index, n=10, offset=page * 10)
+        print(f&#x27;  найдено {fmt(total)} документов за {us} мкс&#x27; + (f&#x27;, показаны {page * 10 + 1}–{page * 10 + len(docs)}&#x27; if docs else &#x27;&#x27;))
+        for k, (title, url) in enumerate(docs, page * 10 + 1):
+            print(f&#x27;  {k:4}. {title}\n        {url}&#x27;)
+        if (page + 1) * 10 &gt;= total or not sys.stdin.isatty():
+            return
+        try:
+            if input(&#x27;  [Enter — следующие 10, любая буква — новый запрос] &#x27;).strip():
+                return
+        except (EOFError, KeyboardInterrupt):
+            return
+        page += 1
+
+
+def cmd_search(arg, index=&#x27;index.bin&#x27;):
+    if arg:
+        show(arg, index)
+    else:
+        repl(&#x27;запрос&gt; &#x27;, lambda s: show(s, index))
+
+
+def cmd_stem(arg):
+    cmd_search(arg, &#x27;index_stem.bin&#x27;)
+
+
+TOK = re.compile(r&#x27;\s*(\(|\)|!|&amp;&amp;?|\|\|?|[^\s()!&amp;|]+)&#x27;)
+
+
+def cmd_explain(arg):
+    q = arg or input(&#x27;запрос: &#x27;)
+    toks = [t for t in TOK.findall(q) if t]
+    names = {&#x27;(&#x27;: &#x27;LP&#x27;, &#x27;)&#x27;: &#x27;RP&#x27;, &#x27;!&#x27;: &#x27;NOT&#x27;, &#x27;&amp;&#x27;: &#x27;AND&#x27;, &#x27;&amp;&amp;&#x27;: &#x27;AND&#x27;, &#x27;|&#x27;: &#x27;OR&#x27;, &#x27;||&#x27;: &#x27;OR&#x27;}
+    print(&#x27;лексемы: &#x27; + &#x27;  &#x27;.join(names.get(t, f&#x27;TERM({t})&#x27;) for t in toks))
+    pos = [0]
+
+    def at(*v):
+        return pos[0] &lt; len(toks) and names.get(toks[pos[0]], &#x27;TERM&#x27;) in v
+
+    def unary():
+        if at(&#x27;NOT&#x27;):
+            pos[0] += 1; c = unary(); return (&#x27;НЕ&#x27;, c) if c else None
+        if at(&#x27;LP&#x27;):
+            pos[0] += 1; e = expr()
+            if at(&#x27;RP&#x27;): pos[0] += 1
+            return e
+        if at(&#x27;TERM&#x27;):
+            t = toks[pos[0]]; pos[0] += 1; return t
+        return None
+
+    def conj():
+        left = unary()
+        while True:
+            if at(&#x27;AND&#x27;):
+                pos[0] += 1; continue
+            if at(&#x27;TERM&#x27;, &#x27;NOT&#x27;, &#x27;LP&#x27;):
+                r = unary()
+                if r: left = (&#x27;И&#x27;, left, r) if left else r
+                continue
+            return left
+
+    def expr():
+        left = conj()
+        while at(&#x27;OR&#x27;):
+            pos[0] += 1; r = conj()
+            if r: left = (&#x27;ИЛИ&#x27;, left, r) if left else r
+        return left
+
+    tree = expr()
+
+    def draw(n, ind=&#x27;&#x27;):
+        if isinstance(n, tuple):
+            print(ind + n[0]); [draw(c, ind + &#x27;   &#x27;) for c in n[1:]]
+        else:
+            print(ind + str(n))
+    print(&#x27;дерево (приоритет: НЕ &gt; И &gt; ИЛИ):&#x27;)
+    draw(tree, &#x27;  &#x27;)
+    total, us, _ = search(q, n=1)
+    print(f&#x27;результат: {fmt(total)} документов, {us} мкс&#x27;)
+
+
+def cmd_bench(_):
+    qs = [(&#x27;редкий терм&#x27;, &#x27;пельгорского&#x27;), (&#x27;частый терм&#x27;, &#x27;железная&#x27;), (&#x27;И из 2&#x27;, &#x27;узкоколейная торфопредприятия&#x27;),
+          (&#x27;ИЛИ из 6&#x27;, &#x27;вл80 || вл60 || вл85 || чс2 || чс4 || эп1&#x27;), (&#x27;И + НЕ&#x27;, &#x27;паровоз !англия&#x27;),
+          (&#x27;НЕ частого&#x27;, &#x27;!the&#x27;), (&#x27;много НЕ&#x27;, &#x27;!the !of !and !in !a&#x27;),
+          (&#x27;скобки&#x27;, &#x27;((электровоз || тепловоз) &amp;&amp; (колея || ширина)) !узкоколейная&#x27;)]
+    rows = []
+    for name, q in qs:
+        best = min(search(q, n=1)[1] for _ in range(5))
+        total = search(q, n=1)[0]
+        rows.append((name, q[:40], fmt(total), best))
+    table(rows, (&#x27;тип&#x27;, &#x27;запрос&#x27;, &#x27;найдено&#x27;, &#x27;мкс (лучшее из 5)&#x27;))
+
+
+def cmd_web(_):
+    print(&#x27;Веб-сервис: http://localhost:8080   (Ctrl+C — остановить)&#x27;)
+    try:
+        subprocess.run([sys.executable, os.path.join(HERE, &#x27;web&#x27;, &#x27;server.py&#x27;), &#x27;8080&#x27;], cwd=HERE)
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == &#x27;__main__&#x27;:
+    main(&#x27;ЛР8 «Булев поиск»&#x27;, [
+        (&#x27;search&#x27;, cmd_search, &#x27;поиск (интерактивно, листание по 10)&#x27;, None),
+        (&#x27;stem&#x27;, cmd_stem, &#x27;поиск по индексу основ (без учёта словоформ)&#x27;, None),
+        (&#x27;explain&#x27;, cmd_explain, &#x27;разбор запроса: лексемы, дерево, результат&#x27;, &#x27;запрос&#x27;),
+        (&#x27;bench&#x27;, cmd_bench, &#x27;скорость запросов разных типов&#x27;, None),
+        (&#x27;web&#x27;, cmd_web, &#x27;запустить веб-сервис (localhost:8080)&#x27;, None),
+    ])
+</code></pre></details>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>
