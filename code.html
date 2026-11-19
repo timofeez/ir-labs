@@ -781,7 +781,7 @@ TEST(Lab1_Corpus, all_documents_valid_and_unique) {
 }
 </code></pre></details>
 <p><strong>Сборка ЛР1</strong> (утилита и тесты): CMake + CTest.</p>
-<details class="file"><summary>lab1/CMakeLists.txt <span class="ln">(32 строк)</span></summary><pre><code class="language-plaintext"># ЛР1 на C++: утилита bin/lab1.exe и тесты GoogleTest (bin/test_lab1.exe).
+<details class="file"><summary>lab1/CMakeLists.txt <span class="ln">(33 строк)</span></summary><pre><code class="language-plaintext"># ЛР1 на C++: утилита bin/lab1.exe и тесты GoogleTest (bin/test_lab1.exe).
 #   cmake --preset default  -&gt;  cmake --build --preset default  -&gt;  ctest --preset default
 # Общий код (UTF-8, токенизатор, меню) и GoogleTest берутся из ../lab_boolean.
 cmake_minimum_required(VERSION 3.16)
@@ -797,7 +797,8 @@ add_executable(lab1 tools/lab1.cpp)
 if(WIN32)
   target_link_libraries(lab1 shell32)
 endif()
-set_target_properties(lab1 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+target_compile_definitions(lab1 PRIVATE LAB_SUBDIR=&quot;lab1&quot;)
+set_target_properties(lab1 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)   # общая папка ir_labs/bin
 
 set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
@@ -832,7 +833,7 @@ gtest_discover_tests(test_lab1 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_T
 | `src/gudok.py` | «Гудок»: список статей из sitemap + выкачка HTML (с докачкой) → `data/gudok_raw.jsonl.gz` |
 | `src/extract.py` | выделение текста (wikitext и HTML) + статистика → `data/*_text.jsonl`, `data/corpus_stats.json` |
 | `src/corpus.py` | консольный просмотр корпуса |
-| `tools/lab1.cpp` | утилита для проверок и демонстрации (C++), `bin/lab1.exe` |
+| `tools/lab1.cpp` | утилита для проверок и демонстрации (C++), `..\bin\lab1.exe` |
 | `tests/test_lab1.cpp` | 14 тестов на C++ (GoogleTest): очистка разметки, разбор корпуса, проверка всего корпуса |
 | `CMakeLists.txt`, `CMakePresets.json` | сборка утилиты и тестов (CMake + CTest) |
 | `tests/results.txt` | результат прогона тестов |
@@ -876,7 +877,7 @@ python src\corpus.py random
 Кодировка всех файлов — UTF-8.
 
 ## Утилита для проверок и демонстрации
-`bin\lab1.exe` (C++) — меню; команды: `stats`, `meta`, `lengths`, `find &lt;заголовок&gt;`, `compare &lt;id&gt;`, `clean &quot;&lt;wikitext&gt;&quot;`, `robots`, `random` (`bin\lab1.exe help` — список).
+`..\bin\lab1.exe` (C++) — меню; команды: `stats`, `meta`, `lengths`, `find &lt;заголовок&gt;`, `compare &lt;id&gt;`, `clean &quot;&lt;wikitext&gt;&quot;`, `robots`, `random` (`..\bin\lab1.exe help` — список).
 </code></pre></details>
 
 <h2 id="2-lab2-python-cockroachdb-c">ЛР2 — <code>lab2</code> (робот — Python + CockroachDB; утилита и тесты — C++)<a class="headerlink" href="#2-lab2-python-cockroachdb-c" title="Permanent link">#</a></h2>
@@ -2238,7 +2239,7 @@ TEST(Lab2_Cluster, on_conflict_does_not_duplicate) {
 }
 </code></pre></details>
 
-<details class="file"><summary>lab2/CMakeLists.txt <span class="ln">(32 строк)</span></summary><pre><code class="language-plaintext"># ЛР2 на C++: утилита bin/lab2.exe и тесты GoogleTest (bin/test_lab2.exe).
+<details class="file"><summary>lab2/CMakeLists.txt <span class="ln">(33 строк)</span></summary><pre><code class="language-plaintext"># ЛР2 на C++: утилита bin/lab2.exe и тесты GoogleTest (bin/test_lab2.exe).
 #   cmake --preset default  -&gt;  cmake --build --preset default  -&gt;  ctest --preset default
 # Общий код (UTF-8, меню) и GoogleTest берутся из ../lab_boolean.
 cmake_minimum_required(VERSION 3.16)
@@ -2254,7 +2255,8 @@ add_executable(lab2 tools/lab2.cpp)
 if(WIN32)
   target_link_libraries(lab2 shell32)
 endif()
-set_target_properties(lab2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+target_compile_definitions(lab2 PRIVATE LAB_SUBDIR=&quot;lab2&quot;)
+set_target_properties(lab2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)   # общая папка ir_labs/bin
 
 set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
@@ -2288,7 +2290,7 @@ gtest_discover_tests(test_lab2 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_T
 | `progress.py` | прогресс обкачки: процент, скорость, оставшееся время (можно запускать во время работы робота) |
 | `report_results.py` | таблица результатов для отчёта (из базы) |
 | `ЗАЩИТА.md` | шпаргалка к защите (теория + что показывать) |
-| `tools/lab2.cpp` | утилита для проверок и демонстрации (C++), `bin/lab2.exe` |
+| `tools/lab2.cpp` | утилита для проверок и демонстрации (C++), `..\bin\lab2.exe` |
 | `tests/test_lab2.cpp` | 20 тестов на C++ (GoogleTest): нормализация URL, robots.txt, распределённая БД (3 узла, 3 реплики, переключение, нет дублей) |
 | `CMakeLists.txt`, `CMakePresets.json` | сборка утилиты и тестов (CMake + CTest) |
 | `tests/results.txt` | результат прогона тестов |
@@ -2329,7 +2331,7 @@ pdflatex report.tex
 
 
 ## Утилита для проверок и демонстрации
-`bin\lab2.exe` — меню; команды: `cluster` (узлы и реплики), `nodes`, `failover`, `stats`, `frontier`, `show &lt;часть URL&gt;`, `normalize &lt;url&gt;`, `robots &lt;url&gt;`, `sql &quot;SELECT ...&quot;`, `crawl &lt;N&gt;`.
+`..\bin\lab2.exe` — меню; команды: `cluster` (узлы и реплики), `nodes`, `failover`, `stats`, `frontier`, `show &lt;часть URL&gt;`, `normalize &lt;url&gt;`, `robots &lt;url&gt;`, `sql &quot;SELECT ...&quot;`, `crawl &lt;N&gt;`.
 Перед запуском — `start_cluster.bat` (3 узла CockroachDB, данные в `C:\ir_labs_crdb`), остановка — `stop_cluster.bat`.
 </code></pre></details>
 
@@ -3500,7 +3502,7 @@ int main(int argc, char **argv) {
 
 <h3 id="_2">Сборка и тесты<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
 <p><strong>Сборка CMake</strong>: пять программ, GoogleTest из <code>third_party</code>, по программе тестов на каждую лабу (<code>bin/test_lab3_tokenizer.exe</code> …); <code>gtest_discover_tests</code> делает каждый TEST отдельным тестом CTest.</p>
-<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(49 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(50 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
 #
 #   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
 #   cmake --build --preset default  (сборка программ и тестов)
@@ -3523,13 +3525,14 @@ foreach(prog indexer search tokenize termfreq stemtest)
   set_target_properties(${prog} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 endforeach()
 
-# Утилиты для демонстрации (C++): по программе на лабораторную — bin/lab3.exe ... bin/lab8.exe
+# Утилиты для демонстрации (C++): по программе на лабораторную — общая папка ir_labs/bin (lab3.exe ... lab8.exe)
 foreach(t lab3 lab4 lab5 lab7 lab8)
   add_executable(${t} tools/${t}.cpp)
   if(WIN32)
     target_link_libraries(${t} shell32)
   endif()
-  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+  target_compile_definitions(${t} PRIVATE LAB_SUBDIR=&quot;lab_boolean&quot;)
+  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 endforeach()
 
 # GoogleTest (исходники лежат в third_party/googletest, версия 1.15.2)
@@ -5079,7 +5082,7 @@ if __name__ == &#x27;__main__&#x27;:
     print(&#x27;ok&#x27;)
 </code></pre></details>
 <p>Общие части утилит ЛР3–8 (C++): <code>tool.h</code> — аргументы и ввод в UTF-8, меню, файлы; <code>engine.h</code> — подключение кода поиска.</p>
-<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(241 строк)</span></summary><pre><code class="language-cpp">// Общая часть утилит для демонстрации (lab1.exe ... lab8.exe):
+<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(247 строк)</span></summary><pre><code class="language-cpp">// Общая часть утилит для демонстрации (lab1.exe ... lab8.exe):
 // аргументы командной строки и ввод с консоли в UTF-8 (кириллица в Windows), меню, чтение файлов,
 // запуск внешних программ. Утилиты — это обвязка для показа; сама поисковая система (src/) написана без STL.
 #pragma once
@@ -5175,6 +5178,12 @@ inline std::string project_dir() {
     std::string s = &quot;./bin/x&quot;;
 #endif
     for (int k = 0; k &lt; 2; k++) { size_t q = s.find_last_of(&quot;/\\&quot;); if (q != std::string::npos) s.resize(q); }
+#if defined(LAB_SUBDIR) &amp;&amp; defined(_WIN32)
+    // утилиты всех лаб лежат в общей папке ir_labs\bin; данные лабы — в ir_labs\&lt;LAB_SUBDIR&gt;
+    std::string sub = s + &quot;\\&quot; LAB_SUBDIR;
+    DWORD at = GetFileAttributesW(to_wide(sub).c_str());
+    if (at != INVALID_FILE_ATTRIBUTES &amp;&amp; (at &amp; FILE_ATTRIBUTE_DIRECTORY)) return sub;
+#endif
     return s;
 }
 // Утилита при старте переходит в папку проекта, поэтому все пути — относительные (data/..., bin/...).
@@ -5388,7 +5397,7 @@ inline std::string normalize(const std::string &amp;w, bool stem) {
 
 }  // namespace eng
 </code></pre></details>
-<p>Утилита ЛР3 (C++, <code>bin/lab3.exe</code>): токены своего текста, статистика корпуса.</p>
+<p>Утилита ЛР3 (C++, <code>bin\lab3.exe</code>): токены своего текста, статистика корпуса.</p>
 <details class="file"><summary>lab_boolean/tools/lab3.cpp <span class="ln">(131 строк)</span></summary><pre><code class="language-cpp">// ЛР3 «Токенизация» — утилита для проверок и демонстрации.
 //
 //   lab3                                     — меню
@@ -5520,7 +5529,7 @@ int main(int argc, char **argv) {
     }, tool::args(argc, argv));
 }
 </code></pre></details>
-<p>Утилита ЛР4 (C++, <code>bin/lab4.exe</code>): основы слов, поиск с/без стемминга.</p>
+<p>Утилита ЛР4 (C++, <code>bin\lab4.exe</code>): основы слов, поиск с/без стемминга.</p>
 <details class="file"><summary>lab_boolean/tools/lab4.cpp <span class="ln">(78 строк)</span></summary><pre><code class="language-cpp">// ЛР4 «Стемминг» — утилита для проверок и демонстрации.
 //
 //   lab4                                   — меню
@@ -5599,7 +5608,7 @@ int main(int argc, char **argv) {
     }, tool::args(argc, argv));
 }
 </code></pre></details>
-<p>Утилита ЛР5 (C++, <code>bin/lab5.exe</code>): топ термов, частота слова, проверка закона Ципфа.</p>
+<p>Утилита ЛР5 (C++, <code>bin\lab5.exe</code>): топ термов, частота слова, проверка закона Ципфа.</p>
 <details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(152 строк)</span></summary><pre><code class="language-cpp">// ЛР5 «Закон Ципфа» — утилита для проверок и демонстрации.
 //
 //   lab5              — меню
@@ -5752,7 +5761,7 @@ int main(int argc, char **argv) {
     }, tool::args(argc, argv));
 }
 </code></pre></details>
-<p>Утилита ЛР7 (C++, <code>bin/lab7.exe</code>): статистика индекса, posting-лист терма.</p>
+<p>Утилита ЛР7 (C++, <code>bin\lab7.exe</code>): статистика индекса, posting-лист терма.</p>
 <details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(111 строк)</span></summary><pre><code class="language-cpp">// ЛР7 «Булев индекс» — утилита для проверок и демонстрации.
 //
 //   lab7              — меню
@@ -5864,7 +5873,7 @@ int main(int argc, char **argv) {
     }, tool::args(argc, argv));
 }
 </code></pre></details>
-<p>Утилита ЛР8 (C++, <code>bin/lab8.exe</code>): интерактивный булев поиск, разбор запроса.</p>
+<p>Утилита ЛР8 (C++, <code>bin\lab8.exe</code>): интерактивный булев поиск, разбор запроса.</p>
 <details class="file"><summary>lab_boolean/tools/lab8.cpp <span class="ln">(116 строк)</span></summary><pre><code class="language-cpp">// ЛР8 «Булев поиск» — утилита для проверок и демонстрации.
 //
 //   lab8                                         — меню

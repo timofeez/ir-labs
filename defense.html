@@ -29,7 +29,7 @@
 </aside><h1 id="_1">Как сдавать: что показывать и что говорить<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
 <h2 id="5">Перед сдачей (5 минут)<a class="headerlink" href="#5" title="Permanent link">#</a></h2>
 <ol>
-<li>Запустить кластер базы ЛР2: двойной щелчок по <code>lab2\start_cluster.bat</code> (или <code>lab2\bin\lab2.exe cluster</code>
+<li>Запустить кластер базы ЛР2: двойной щелчок по <code>lab2\start_cluster.bat</code> (или <code>bin\lab2.exe cluster</code>
    — проверить, что 3 узла живы).</li>
 <li>Проверить тесты C++ (в каждой из папок <code>lab1</code>, <code>lab2</code>, <code>lab_boolean</code>): <code>ctest --preset default</code> →
    <code>100% tests passed out of 14 / 20 / 29</code>. Если программ ещё нет: <code>cmake --preset default</code>, затем <code>cmake --build --preset default</code>.</li>
@@ -48,27 +48,27 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab1\bin\lab1.exe stats</code></td>
+<td><code>bin\lab1.exe stats</code></td>
 <td>65 509 документов, 2 источника (Википедия ru+en = один), 36 млн слов</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>lab1\bin\lab1.exe compare 140304</code></td>
+<td><code>bin\lab1.exe compare 140304</code></td>
 <td>вот wikitext, вот чистый текст: убраны шаблоны, сноски, разметка</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab1\bin\lab1.exe clean "'''Электровоз''' [[ВЛ80\|ВЛ-80]]&lt;ref&gt;x&lt;/ref&gt;"</code></td>
+<td><code>bin\lab1.exe clean "'''Электровоз''' [[ВЛ80\|ВЛ-80]]&lt;ref&gt;x&lt;/ref&gt;"</code></td>
 <td>цепочка регулярок, шаблоны в цикле</td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>lab1\bin\lab1.exe meta</code></td>
+<td><code>bin\lab1.exe meta</code></td>
 <td>метаданные: карточки, координаты; выпуск, рубрика, автор</td>
 </tr>
 <tr>
 <td>5</td>
-<td><code>lab1\bin\lab1.exe robots</code></td>
+<td><code>bin\lab1.exe robots</code></td>
 <td>sitemap «Гудка» из robots.txt, lastmod</td>
 </tr>
 </tbody>
@@ -85,7 +85,7 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab2\bin\lab2.exe cluster</code></td>
+<td><code>bin\lab2.exe cluster</code></td>
 <td>распределённая БД CockroachDB: 3 узла, каждый диапазон в 3 копиях, Raft</td>
 </tr>
 <tr>
@@ -95,12 +95,12 @@
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab2\bin\lab2.exe stats</code>, <code>frontier</code></td>
+<td><code>bin\lab2.exe stats</code>, <code>frontier</code></td>
 <td>65 тыс. документов, очередь по состояниям</td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>lab2\bin\lab2.exe show ВЛ80</code></td>
+<td><code>bin\lab2.exe show ВЛ80</code></td>
 <td>поля: нормализованный URL, сырой HTML, источник, дата Unix</td>
 </tr>
 <tr>
@@ -110,12 +110,12 @@
 </tr>
 <tr>
 <td>6</td>
-<td>закрыть окно <code>crdb-node3</code> → <code>lab2\bin\lab2.exe nodes</code></td>
+<td>закрыть окно <code>crdb-node3</code> → <code>bin\lab2.exe nodes</code></td>
 <td>узел упал — база работает (кворум 2 из 3)</td>
 </tr>
 <tr>
 <td>7</td>
-<td><code>lab2\bin\lab2.exe normalize ...</code>, <code>robots ...</code></td>
+<td><code>bin\lab2.exe normalize ...</code>, <code>robots ...</code></td>
 <td>нормализация URL, robots.txt</td>
 </tr>
 <tr>
@@ -137,22 +137,22 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab_boolean\bin\lab3.exe text "Электровоз ВЛ-80 проехал Санкт-Петербург, т. е. 14,4 км"</code></td>
+<td><code>bin\lab3.exe text "Электровоз ВЛ-80 проехал Санкт-Петербург, т. е. 14,4 км"</code></td>
 <td>правила: буквы/цифры — слово, остальное — разделитель</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>lab_boolean\bin\lab3.exe stats</code></td>
+<td><code>bin\lab3.exe stats</code></td>
 <td>36 млн токенов, 5,43 символа, 0,0043 мс/КБ</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab_boolean\bin\lab3.exe speed</code></td>
+<td><code>bin\lab3.exe speed</code></td>
 <td>время растёт линейно, O(n)</td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>lab_boolean\bin\lab3.exe bad</code></td>
+<td><code>bin\lab3.exe bad</code></td>
 <td>неудачные токены и исправления</td>
 </tr>
 </tbody>
@@ -169,22 +169,22 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab_boolean\bin\lab4.exe stem "электровозами станциями running"</code></td>
+<td><code>bin\lab4.exe stem "электровозами станциями running"</code></td>
 <td>Snowball / Портер</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>lab_boolean\bin\lab4.exe compare "машинисту поезда"</code></td>
+<td><code>bin\lab4.exe compare "машинисту поезда"</code></td>
 <td>204 → 2 354 документа: выросла полнота</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab_boolean\bin\lab4.exe forms электровоз</code></td>
+<td><code>bin\lab4.exe forms электровоз</code></td>
 <td>все словоформы с одной основой и их частоты</td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>lab_boolean\bin\lab4.exe errors</code></td>
+<td><code>bin\lab4.exe errors</code></td>
 <td>news → new: пересечение, как исправить</td>
 </tr>
 </tbody>
@@ -201,17 +201,17 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab_boolean\bin\lab5.exe plot</code></td>
+<td><code>bin\lab5.exe plot</code></td>
 <td>график log-log, прямые Ципфа и Мандельброта</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>lab_boolean\bin\lab5.exe ranks</code></td>
+<td><code>bin\lab5.exe ranks</code></td>
 <td>где расходится и почему (2 языка, хвост, нет лемматизации)</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab_boolean\bin\lab5.exe summary</code></td>
+<td><code>bin\lab5.exe summary</code></td>
 <td>hapax 42,5 %, константы P, ρ, B</td>
 </tr>
 </tbody>
@@ -228,17 +228,17 @@
 <tbody>
 <tr>
 <td>1</td>
-<td><code>lab_boolean\bin\lab7.exe info</code></td>
+<td><code>bin\lab7.exe info</code></td>
 <td>642 тыс. термов, 4,9 с, терм 8,38 vs токен 5,43</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>lab_boolean\bin\lab7.exe format</code></td>
+<td><code>bin\lab7.exe format</code></td>
 <td>свой бинарный формат: BIDX, таблица секций — расширяемый</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab_boolean\bin\lab7.exe term вагон</code></td>
+<td><code>bin\lab7.exe term вагон</code></td>
 <td>запись словаря: df, список документов</td>
 </tr>
 </tbody>
@@ -265,12 +265,12 @@
 </tr>
 <tr>
 <td>3</td>
-<td><code>lab_boolean\bin\lab8.exe explain "ноги \|\| красный автомобиль"</code></td>
+<td><code>bin\lab8.exe explain "ноги \|\| красный автомобиль"</code></td>
 <td>лексер, рекурсивный спуск, приоритет</td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>lab_boolean\bin\lab8.exe bench</code></td>
+<td><code>bin\lab8.exe bench</code></td>
 <td>скорость, тяжёлые запросы</td>
 </tr>
 <tr>
@@ -353,7 +353,7 @@
 </table>
 <h2 id="-">Если что-то не работает<a class="headerlink" href="#-" title="Permanent link">#</a></h2>
 <ul>
-<li><strong>Кластер не отвечает</strong> — запустить <code>lab2\start_cluster.bat</code>; подождать 15 с; <code>lab2\bin\lab2.exe cluster</code>.</li>
+<li><strong>Кластер не отвечает</strong> — запустить <code>lab2\start_cluster.bat</code>; подождать 15 с; <code>bin\lab2.exe cluster</code>.</li>
 <li><strong>Нет <code>bin\*.exe</code></strong> — <code>cd lab_boolean</code> → <code>cmake --preset default</code> → <code>cmake --build --preset default</code>.</li>
 <li><strong>Нет <code>data\index.bin</code></strong> — <code>run.bat</code> в <code>lab_boolean</code> (подготовка корпуса и индексов, ~2 мин).</li>
 <li><strong>Русские буквы «кракозябрами» в cmd</strong> — <code>chcp 65001</code>.</li>

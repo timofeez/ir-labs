@@ -263,7 +263,7 @@ static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) 
 <p><strong>Расширяемость:</strong> новые данные — <strong>новые секции</strong> (позиции слов для фразового поиска, сжатые
 списки, веса tf-idf): старые программы читают таблицу секций и неизвестные типы просто пропускают.
 Поле флагов уже использовано в ЛР4 (индекс основ), резервные поля — на будущее.</p>
-<p>Реальные значения моего индекса (<code>lab_boolean\bin\lab7.exe format</code>):</p>
+<p>Реальные значения моего индекса (<code>bin\lab7.exe format</code>):</p>
 <pre><code>0..3    42 49 44 58   сигнатура BIDX          DOCS      смещение 112          размер 8 456 596
 4..7    01 00 00 00   версия 1                DICT      смещение 8 456 712    размер 15 410 980
 8..11   04 00 00 00   4 секции                TERMSTR   смещение 23 867 696   размер 8 806 181
@@ -465,11 +465,11 @@ df), прямой индекс, нормализация. Плюс <code>FullCor
 }</code></pre></div>
 
 <h2 id="8-lab7exe-c">8. Утилита <code>lab7.exe</code> (C++)<a class="headerlink" href="#8-lab7exe-c" title="Permanent link">#</a></h2>
-<pre><code>lab_boolean\bin\lab7.exe info          — статистика индексации
-lab_boolean\bin\lab7.exe format        — заголовок и таблица секций index.bin побайтово
-lab_boolean\bin\lab7.exe term вагон    — запись словаря: df = 2 050, первые документы списка
-lab_boolean\bin\lab7.exe doc 5         — прямой индекс: заголовок и URL по номеру
-lab_boolean\bin\lab7.exe dict электровоз   — соседи в отсортированном словаре
+<pre><code>bin\lab7.exe info          — статистика индексации
+bin\lab7.exe format        — заголовок и таблица секций index.bin побайтово
+bin\lab7.exe term вагон    — запись словаря: df = 2 050, первые документы списка
+bin\lab7.exe doc 5         — прямой индекс: заголовок и URL по номеру
+bin\lab7.exe dict электровоз   — соседи в отсортированном словаре
 </code></pre>
 <h2 id="9">9. Вопросы на защите<a class="headerlink" href="#9" title="Permanent link">#</a></h2>
 <ul>

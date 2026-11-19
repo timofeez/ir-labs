@@ -66,7 +66,7 @@
 29/29 Test #29: FullCorpus.StemIndexMatchesReferenceOn300Queries .......   Passed    9.86 sec
 100% tests passed out of 29
 </code></pre>
-<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(49 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(50 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
 #
 #   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
 #   cmake --build --preset default  (сборка программ и тестов)
@@ -89,13 +89,14 @@ foreach(prog indexer search tokenize termfreq stemtest)
   set_target_properties(${prog} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 endforeach()
 
-# Утилиты для демонстрации (C++): по программе на лабораторную — bin/lab3.exe ... bin/lab8.exe
+# Утилиты для демонстрации (C++): по программе на лабораторную — общая папка ir_labs/bin (lab3.exe ... lab8.exe)
 foreach(t lab3 lab4 lab5 lab7 lab8)
   add_executable(${t} tools/${t}.cpp)
   if(WIN32)
     target_link_libraries(${t} shell32)
   endif()
-  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+  target_compile_definitions(${t} PRIVATE LAB_SUBDIR=&quot;lab_boolean&quot;)
+  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 endforeach()
 
 # GoogleTest (исходники лежат в third_party/googletest, версия 1.15.2)
