@@ -1,0 +1,1465 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Алгоритмы — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="algorithms.html" class=on>Алгоритмы</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#1">ЛР1 — сбор корпуса</a><ul>
+<li><a href="#_2">Обход категорий Википедии в ширину</a></li>
+<li><a href="#html">Извлечение текста из HTML</a></li>
+</ul>
+</li>
+<li><a href="#2">ЛР2 — поисковый робот и распределённая БД</a><ul>
+<li><a href="#url">Нормализация URL</a></li>
+<li><a href="#robotstxt">robots.txt и вежливость</a></li>
+<li><a href="#_3">Обход очереди с возобновлением</a></li>
+<li><a href="#_4">Повторный обход: обнаружение изменений</a></li>
+<li><a href="#_5">Распределённая БД: подключение к любому живому узлу</a></li>
+<li><a href="#cockroachdb">Шардирование и репликация (внутри CockroachDB)</a></li>
+</ul>
+</li>
+<li><a href="#3">ЛР3 — токенизация</a><ul>
+<li><a href="#utf-8">Декодирование UTF-8</a></li>
+<li><a href="#_6">Токенизация</a></li>
+</ul>
+</li>
+<li><a href="#4">ЛР4 — стемминг</a><ul>
+<li><a href="#snowball">Русский: алгоритм Портера (Snowball)</a></li>
+<li><a href="#_7">Английский: классический алгоритм Портера</a></li>
+</ul>
+</li>
+<li><a href="#5">ЛР5 — закон Ципфа</a><ul>
+<li><a href="#-">Хеш-таблица термов (подсчёт частот)</a></li>
+<li><a href="#_8">Сортировка по частоте</a></li>
+<li><a href="#fr-c-r">Проверка закона: f(r) ≈ C / r</a></li>
+</ul>
+</li>
+<li><a href="#7">ЛР7 — булев индекс</a><ul>
+<li><a href="#_9">Сбор пар (терм, документ)</a></li>
+<li><a href="#_10">Сортировка постингов подсчётом</a></li>
+<li><a href="#_11">Сортировка словаря слиянием</a></li>
+<li><a href="#indexbin">Формат index.bin</a></li>
+</ul>
+</li>
+<li><a href="#8">ЛР8 — булев поиск</a><ul>
+<li><a href="#_12">Загрузка индекса и двоичный поиск терма</a></li>
+<li><a href="#_13">Лексер и парсер (рекурсивный спуск)</a></li>
+<li><a href="#_14">Операции над отсортированными списками</a></li>
+<li><a href="#_15">Вычисление дерева запроса</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</aside><h1 id="_1">Все алгоритмы по лабораторным<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
+<p>Сводка всех алгоритмов, которые используются в работах: идея, сложность и <strong>где это в коде</strong>
+(фрагменты ниже вставлены прямо из исходников). Подробная теория — на страницах лабораторных.</p>
+<table>
+<thead>
+<tr>
+<th>ЛР</th>
+<th>Алгоритм</th>
+<th>Файл и функция</th>
+<th>Сложность</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Обход дерева категорий в ширину (BFS)</td>
+<td><code>lab1/src/crawl.py</code> → <code>collect_titles</code></td>
+<td>O(V + E)</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Очистка HTML/вики-разметки</td>
+<td><code>lab1/src/extract.py</code> → <code>clean_html</code>, <code>clean</code></td>
+<td>O(длина текста)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Нормализация URL</td>
+<td><code>lab2/robot.py</code> → <code>normalize_url</code></td>
+<td>O(длина URL)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Проверка robots.txt + вежливая задержка</td>
+<td><code>lab2/robot.py</code> → <code>Robot.allowed</code>, <code>Robot.get</code></td>
+<td>O(1) на запрос (кеш)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Обход очереди (frontier) с возобновлением</td>
+<td><code>lab2/robot.py</code> → <code>Robot.crawl_frontier</code></td>
+<td>O(числа URL)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Обнаружение изменений по хешу</td>
+<td><code>lab2/robot.py</code> → <code>content_hash</code>, <code>Robot.recrawl</code></td>
+<td>O(размер страницы)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Отказоустойчивое подключение к кластеру</td>
+<td><code>lab2/db.py</code> → <code>connect_any</code></td>
+<td>O(число узлов)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Шардирование диапазонами + репликация Raft</td>
+<td>CockroachDB (настройка <code>start_cluster.bat</code>)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Декодирование UTF-8</td>
+<td><code>common.h</code> → <code>utf8_decode</code>, <code>utf8_encode</code></td>
+<td>O(1) на символ</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Токенизация конечным автоматом</td>
+<td><code>common.h</code> → <code>char_class</code>, <code>to_lower</code>, <code>next_token</code></td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Стемминг Портера (Snowball) для русского</td>
+<td><code>stem.h</code> → <code>stem_ru</code>, <code>longest</code>, <code>cut</code></td>
+<td>O(длина слова)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Стемминг Портера для английского</td>
+<td><code>stem.h</code> → <code>stem_en</code></td>
+<td>O(длина слова)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Подсчёт частот хеш-таблицей</td>
+<td><code>common.h</code> → <code>TermTable</code> (FNV-1a, открытая адресация)</td>
+<td>O(1) в среднем на токен</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Сортировка слиянием по частоте</td>
+<td><code>termfreq.cpp</code> → <code>sort_by_freq</code></td>
+<td>O(T log T)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>МНК для закона Ципфа / Мандельброта</td>
+<td><code>analysis/zipf.py</code> → <code>linreg</code>, <code>mandelbrot</code></td>
+<td>O(T)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Сбор пар (терм, документ) без повторов</td>
+<td><code>indexer.cpp</code> (main, цикл по документам)</td>
+<td>O(токенов)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Сортировка подсчётом постингов</td>
+<td><code>indexer.cpp</code> (main)</td>
+<td>O(P + T)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Сортировка слиянием словаря</td>
+<td><code>indexer.cpp</code> → <code>merge_sort_terms</code></td>
+<td>O(T log T)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Двоичный поиск терма в словаре</td>
+<td><code>search.cpp</code> → <code>Index::find_term</code></td>
+<td>O(log T)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Лексер запроса</td>
+<td><code>search.cpp</code> → <code>lex</code></td>
+<td>O(длина запроса)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Парсер рекурсивным спуском</td>
+<td><code>search.cpp</code> → <code>Parser</code></td>
+<td>O(длина запроса)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Пересечение / объединение / разность / дополнение списков</td>
+<td><code>search.cpp</code> → <code>op_and</code>, <code>op_or</code>, <code>op_and_not</code>, <code>op_not</code></td>
+<td>O(</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Вычисление дерева запроса</td>
+<td><code>search.cpp</code> → <code>eval</code></td>
+<td>O(сумма длин списков)</td>
+</tr>
+</tbody>
+</table>
+<p>Обозначения: n — длина текста, T — число термов в словаре, P — число пар (терм, документ).</p>
+<hr />
+<h2 id="1">ЛР1 — сбор корпуса<a class="headerlink" href="#1" title="Permanent link">#</a></h2>
+<h3 id="_2">Обход категорий Википедии в ширину<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
+<p>Корневая категория «Железнодорожный транспорт» — вершина графа, подкатегории — рёбра. Обход в ширину
+(очередь) с множеством посещённых категорий: каждая категория обрабатывается один раз, даже если
+она входит в несколько родительских (в Википедии граф категорий содержит циклы). Ограничение по
+числу категорий не даёт уйти в нерелевантные ветки.</p>
+<div class="code"><div class="code-title">lab1/src/crawl.py — members <span class="ln">строки 27–35</span></div><pre><code class="language-python">def members(url, cat):
+    cont = {}
+    while True:
+        d = api(url, action=&#x27;query&#x27;, list=&#x27;categorymembers&#x27;, cmtitle=cat,
+                cmlimit=500, cmtype=&#x27;page|subcat&#x27;, **cont)
+        yield from d[&#x27;query&#x27;][&#x27;categorymembers&#x27;]
+        if &#x27;continue&#x27; not in d:
+            return
+        cont = d[&#x27;continue&#x27;]</code></pre></div>
+<div class="code"><div class="code-title">lab1/src/crawl.py — collect_titles <span class="ln">строки 38–52</span></div><pre><code class="language-python">def collect_titles(name, max_cats):
+    url, root, depth = SOURCES[name]
+    seen_cat, pages = {root}, {}
+    level = [root]
+    for dep in range(depth + 1):
+        nxt = []
+        for cat in level:
+            for m in members(url, cat):
+                if m[&#x27;ns&#x27;] == 0:
+                    pages.setdefault(m[&#x27;pageid&#x27;], m[&#x27;title&#x27;])
+                elif m[&#x27;ns&#x27;] == 14 and m[&#x27;title&#x27;] not in seen_cat and len(seen_cat) &lt; max_cats:
+                    seen_cat.add(m[&#x27;title&#x27;]); nxt.append(m[&#x27;title&#x27;])
+        print(f&#x27;{name}: depth {dep}, cats {len(seen_cat)}, pages {len(pages)}&#x27;, flush=True)
+        level = nxt
+    return pages, len(seen_cat)</code></pre></div>
+
+<h3 id="html">Извлечение текста из HTML<a class="headerlink" href="#html" title="Permanent link">#</a></h3>
+<p>Последовательность регулярных преобразований: удалить скрипты, стили, служебные блоки → заменить
+блочные теги переводами строк → удалить остальные теги → раскодировать HTML-сущности →
+нормализовать пробелы. Каждый шаг — один линейный проход.</p>
+<div class="code"><div class="code-title">lab1/src/extract.py — clean_html <span class="ln">строки 44–75</span></div><pre><code class="language-python">def clean_html(html):
+    soup = BeautifulSoup(html, &#x27;lxml&#x27;)
+    body = soup.select_one(&#x27;article.article-block__main-body&#x27;)
+    header = soup.select_one(&#x27;div.article-header&#x27;)
+    meta = {
+        &#x27;issue&#x27;: bool(header and header.find(&#x27;h2&#x27;) and &#x27;Выпуск&#x27; in header.find(&#x27;h2&#x27;).get_text()),
+        &#x27;photo&#x27;: bool(header and header.select_one(&#x27;.article-header__img img&#x27;)),
+        &#x27;subheadings&#x27;: bool(body and body.find(&#x27;b&#x27;)),
+        &#x27;author&#x27;: bool(body and body.select_one(&#x27;div.avt&#x27;)),
+        &#x27;rubric&#x27;: False,
+    }
+    if body is None:
+        return &#x27;&#x27;, meta
+    for el in body.select(&#x27;div.avt, script, style&#x27;):
+        el.decompose()
+    for br in body.find_all(&#x27;br&#x27;):
+        br.replace_with(&#x27;\n&#x27;)
+    text = body.get_text()
+    m = RUBRIC.match(text)
+    if m:
+        meta[&#x27;rubric&#x27;] = True
+        text = text[m.end():]
+    text = re.sub(r&#x27;[ \t\xa0]+&#x27;, &#x27; &#x27;, text)
+    text = re.sub(r&#x27;\n\s*\n\s*(\n\s*)+&#x27;, &#x27;\n\n&#x27;, text)
+    paragraphs = text.strip().split(&#x27;\n\n&#x27;)
+    bold = body.find_all(&#x27;b&#x27;)
+    last = paragraphs[-1].strip()
+    if bold and bold[-1].get_text(strip=True) and bold[-1].get_text(strip=True) in last \
+            and len(last.split()) &lt;= 20 and len(paragraphs) &gt; 1:
+        meta[&#x27;author&#x27;] = True
+        paragraphs = paragraphs[:-1]
+    return &#x27;\n\n&#x27;.join(p.strip() for p in paragraphs).strip(), meta</code></pre></div>
+<div class="code"><div class="code-title">lab1/src/extract.py — clean <span class="ln">строки 23–41</span></div><pre><code class="language-python">def clean(wt):
+    t = TAIL.sub(&#x27;&#x27;, wt)
+    t = COMMENT.sub(&#x27;&#x27;, t)
+    t = REF.sub(&#x27;&#x27;, t)
+    for _ in range(5):
+        t2 = TEMPLATE.sub(&#x27;&#x27;, t)
+        if t2 == t:
+            break
+        t = t2
+    t = TABLE.sub(&#x27;&#x27;, t)
+    t = FILE.sub(&#x27;&#x27;, t)
+    t = LINK.sub(r&#x27;\1&#x27;, t)
+    t = EXTLINK.sub(r&#x27;\1&#x27;, t)
+    t = TAG.sub(&#x27;&#x27;, t)
+    t = HEADING.sub(r&#x27;\1&#x27;, t)
+    t = FORMAT.sub(&#x27;&#x27;, t)
+    t = re.sub(r&#x27;^[*#:;]+\s*&#x27;, &#x27;&#x27;, t, flags=re.M)
+    t = re.sub(r&#x27;\n{3,}&#x27;, &#x27;\n\n&#x27;, t)
+    return t.strip()</code></pre></div>
+
+<hr />
+<h2 id="2">ЛР2 — поисковый робот и распределённая БД<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<h3 id="url">Нормализация URL<a class="headerlink" href="#url" title="Permanent link">#</a></h3>
+<p>Чтобы одна страница не скачивалась дважды под разными адресами: относительная ссылка → абсолютная,
+схема и хост в нижний регистр, удаление <code>#фрагмента</code>, служебных параметров, лишних <code>/</code>.
+Нормализованный URL — уникальный ключ в таблицах <code>documents</code> и <code>frontier</code>.</p>
+<div class="code"><div class="code-title">lab2/robot.py — normalize_url <span class="ln">строки 42–66</span></div><pre><code class="language-python">def normalize_url(url, base=None):
+    &quot;&quot;&quot;Приводит URL к единому виду, чтобы одна страница не скачивалась дважды:
+    схема и хост в нижнем регистре, http -&gt; https для Википедии, мобильная версия -&gt; обычная, без порта по умолчанию,
+    без #фрагмента, единое %-кодирование пути, пробелы -&gt; «_»,
+    /w/index.php?title=X&amp;pagefrom=Y -&gt; /wiki/X?pagefrom=Y (путь /w/ запрещён в robots.txt Википедии),
+    из параметров остаются только значимые (KEEP_QUERY), отсортированные.&quot;&quot;&quot;
+    if base:
+        url = urljoin(base, url)
+    p = urlsplit(url.strip())
+    scheme = (p.scheme or &#x27;https&#x27;).lower()
+    host = (p.hostname or &#x27;&#x27;).lower()
+    if scheme == &#x27;http&#x27; and host.endswith(&#x27;wikipedia.org&#x27;):
+        scheme = &#x27;https&#x27;                      # Википедия доступна только по https
+    host = re.sub(r&#x27;^([a-z\-]+)\.m\.(wikipedia\.org)$&#x27;, r&#x27;\1.\2&#x27;, host)
+    if p.port and p.port not in (80, 443):
+        host = f&#x27;{host}:{p.port}&#x27;
+    path = unquote(p.path).replace(&#x27; &#x27;, &#x27;_&#x27;)
+    query = [(k, v.replace(&#x27; &#x27;, &#x27;_&#x27;)) for k, v in parse_qsl(p.query, keep_blank_values=False) if k in KEEP_QUERY]
+    title = dict(query).get(&#x27;title&#x27;)
+    query = [(k, v) for k, v in query if k != &#x27;title&#x27;]
+    if path == &#x27;/w/index.php&#x27; and title:
+        path = &#x27;/wiki/&#x27; + title
+    path = quote(path, safe=SAFE)
+    q = urlencode(sorted(query), quote_via=quote, safe=SAFE)
+    return urlunsplit((scheme, host, path or &#x27;/&#x27;, q, &#x27;&#x27;))</code></pre></div>
+
+<h3 id="robotstxt">robots.txt и вежливость<a class="headerlink" href="#robotstxt" title="Permanent link">#</a></h3>
+<p>Для каждого хоста robots.txt скачивается один раз и кешируется; перед каждым запросом проверяется
+разрешение и выдерживается задержка между запросами к одному сайту.</p>
+<div class="code"><div class="code-title">lab2/robot.py — Robot.allowed <span class="ln">строки 146–164</span></div><pre><code class="language-python">    def allowed(self, url):
+        &quot;&quot;&quot;Разрешает ли robots.txt сайта скачивать этот URL. robots.txt скачивается один раз на хост;
+        если в нём указан Crawl-delay для нашего робота, задержка увеличивается до него.&quot;&quot;&quot;
+        if not self.respect_robots:
+            return True
+        p = urlsplit(url)
+        key = f&#x27;{p.scheme}://{p.netloc}&#x27;
+        if key not in self.robots:
+            rp = urllib.robotparser.RobotFileParser()
+            r = self.get(key + &#x27;/robots.txt&#x27;)
+            if r is not None and r.status_code == 200:
+                rp.parse(r.text.splitlines())
+            else:
+                rp.allow_all = True                    # нет robots.txt — ограничений нет
+            cd = rp.crawl_delay(self.http.headers[&#x27;User-Agent&#x27;])
+            if cd:
+                self.delay = max(self.delay, float(cd))
+            self.robots[key] = rp
+        return self.robots[key].can_fetch(self.http.headers[&#x27;User-Agent&#x27;], url)</code></pre></div>
+<div class="code"><div class="code-title">lab2/robot.py — Robot.get <span class="ln">строки 126–144</span></div><pre><code class="language-python">    def get(self, url, headers=None):
+        &quot;&quot;&quot;GET с паузой между запросами (logic.delay) и повторами при ошибках.&quot;&quot;&quot;
+        for attempt in range(self.retries):
+            wait = self.delay - (time.perf_counter() - self.last_request)
+            if wait &gt; 0:
+                time.sleep(wait)
+            self.last_request = time.perf_counter()
+            self.requests_done += 1
+            try:
+                r = self.http.get(url, headers=headers or {}, timeout=self.timeout)
+                if r.status_code in (200, 304, 404):
+                    return r
+                if r.status_code == 429 or r.status_code &gt;= 500:
+                    time.sleep(min(60, 3 * 2 ** attempt))
+                    continue
+                return r
+            except requests.RequestException:
+                time.sleep(min(60, 3 * 2 ** attempt))
+        return None</code></pre></div>
+
+<h3 id="_3">Обход очереди с возобновлением<a class="headerlink" href="#_3" title="Permanent link">#</a></h3>
+<p>Очередь URL хранится в БД (<code>frontier</code>), а не в памяти. Робот берёт пачку необработанных URL, скачивает,
+сохраняет документ (<code>INSERT … ON CONFLICT DO NOTHING</code> — повторная вставка не создаёт дубль) и
+помечает URL обработанным. После остановки и запуска обход продолжается с того же места.</p>
+<div class="code"><div class="code-title">lab2/robot.py — Robot.crawl_frontier <span class="ln">строки 284–320</span></div><pre><code class="language-python">    def crawl_frontier(self):
+        &quot;&quot;&quot;Обход очереди. Возвращает True, если что-то было сделано.&quot;&quot;&quot;
+        did = False
+        while not self.stop:
+            row = self.db.execute(&quot;SELECT id, url, source, kind, depth, is_cont, lastmod FROM frontier &quot;
+                                  &quot;WHERE state=&#x27;new&#x27; ORDER BY id LIMIT 1&quot;).fetchone()
+            if not row:
+                self.db.commit()          # закрыть читающую транзакцию: следующий шаг увидит свежие данные
+                return did
+            did = True
+            fid, url, source, kind, depth, _, lastmod = row
+            if kind == &#x27;article&#x27; and self.db.execute(&#x27;SELECT 1 FROM documents WHERE url=?&#x27;, (url,)).fetchone():
+                self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
+                self.db.commit()
+                continue
+            if not self.allowed(url):
+                self.db.execute(&quot;UPDATE frontier SET state=&#x27;skipped&#x27;, error=&#x27;robots.txt&#x27; WHERE id=?&quot;, (fid,))
+                self.db.commit()
+                continue
+            r = self.get(url)
+            if r is None or r.status_code != 200:
+                err = &#x27;no response&#x27; if r is None else f&#x27;HTTP {r.status_code}&#x27;
+                self.db.execute(&quot;UPDATE frontier SET state=&#x27;error&#x27;, error=? WHERE id=?&quot;, (err, fid))
+            elif kind == &#x27;category&#x27;:
+                self.process_category(row, r.text)
+                self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
+            else:
+                dup = self.duplicate_of(url, source, r)
+                if dup:                         # «Content seen?» — этот документ уже есть в базе
+                    self.db.execute(&quot;UPDATE frontier SET state=&#x27;duplicate&#x27;, error=? WHERE id=?&quot;, (dup, fid))
+                else:
+                    self.save_document(self.canonical(url, r), source, r, int(time.time()), lastmod)
+                    self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
+            self.db.commit()   # после каждой страницы: остановка в любой момент ничего не теряет
+            self.progress(kind, url)
+            if self.max_requests and self.requests_done &gt;= self.max_requests:
+                self.stop = True</code></pre></div>
+<div class="code"><div class="code-title">lab2/robot.py — Robot.save_document <span class="ln">строки 270–282</span></div><pre><code class="language-python">    def save_document(self, url, source, r, now, sitemap_lastmod=None):
+        html = r.content
+        h = content_hash(html, self.selector(source))
+        blob = zlib.compress(html, 6) if self.compress else html
+        self.db.execute(
+            &#x27;INSERT INTO documents(url, source, title, html, compressed, html_size, content_hash, last_modified,&#x27;
+            &#x27; crawled_at, checked_at, sitemap_lastmod, hash_v) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)&#x27;
+            &#x27; ON CONFLICT(url) DO UPDATE SET title=excluded.title, html=excluded.html, compressed=excluded.compressed,&#x27;
+            &#x27; html_size=excluded.html_size, content_hash=excluded.content_hash, last_modified=excluded.last_modified,&#x27;
+            &#x27; crawled_at=excluded.crawled_at, checked_at=excluded.checked_at, sitemap_lastmod=excluded.sitemap_lastmod,&#x27;
+            &#x27; hash_v=excluded.hash_v, versions=documents.versions+1&#x27;,
+            (url, source, self.page_title(html, url), blob, int(self.compress), len(html), h,
+             r.headers.get(&#x27;Last-Modified&#x27;), now, now, sitemap_lastmod, HASH_V))</code></pre></div>
+
+<h3 id="_4">Повторный обход: обнаружение изменений<a class="headerlink" href="#_4" title="Permanent link">#</a></h3>
+<p>Хеш (SHA-1) текста основного блока страницы сравнивается с сохранённым: если совпал — документ не
+перезаписывается; изменился — обновляется. Хешируется только содержательная часть, иначе меню или
+счётчики давали бы ложные «изменения».</p>
+<div class="code"><div class="code-title">lab2/robot.py — content_hash <span class="ln">строки 80–87</span></div><pre><code class="language-python">def content_hash(html, selector):
+    &quot;&quot;&quot;SHA-1 содержимого статьи. Хешируется не вся страница, а только блок статьи (selector):
+    меню, реклама и блоки «популярное» меняются от запроса к запросу, а статья — нет.&quot;&quot;&quot;
+    if selector:
+        el = BeautifulSoup(html, &#x27;lxml&#x27;).select_one(selector)
+        if el is not None:
+            return hashlib.sha1(el.get_text(&#x27; &#x27;, strip=True).encode(&#x27;utf-8&#x27;)).hexdigest()
+    return hashlib.sha1(html).hexdigest()</code></pre></div>
+<div class="code"><div class="code-title">lab2/robot.py — Robot.recrawl <span class="ln">строки 332–376</span></div><pre><code class="language-python">    def recrawl(self):
+        &quot;&quot;&quot;Переобкачка: проверяем документы, у которых истёк recrawl_interval.
+        Источник с sitemap: карта сайта перечитывается, и страница запрашивается, только если её
+        lastmod изменился. Остальные: условный GET If-Modified-Since. В обоих случаях новая версия
+        сохраняется, только если изменилось содержимое статьи (хеш).&quot;&quot;&quot;
+        did = False
+        pass_start = int(time.time())
+        due = pass_start - self.recrawl_interval
+        fresh = {}                                    # источник -&gt; {url: lastmod} из перечитанной карты сайта
+        for s in self.sources.values():
+            if s.get(&#x27;type&#x27;) == &#x27;sitemap&#x27; and self.db.execute(
+                    &#x27;SELECT 1 FROM documents WHERE source=? AND checked_at &lt;= ? AND checked_at &lt; ? LIMIT 1&#x27;,
+                    (s[&#x27;name&#x27;], due, pass_start)).fetchone():
+                fresh[s[&#x27;name&#x27;]] = self.read_sitemap(s)
+        while not self.stop:
+            now = int(time.time())
+            # только документы, проверенные до начала этого прохода, — каждый проверяется один раз
+            row = self.db.execute(&#x27;SELECT url, source, last_modified, content_hash, hash_v, sitemap_lastmod &#x27;
+                                  &#x27;FROM documents WHERE checked_at &lt;= ? AND checked_at &lt; ? ORDER BY checked_at LIMIT 1&#x27;,
+                                  (due, pass_start)).fetchone()
+            if not row:
+                self.db.commit()
+                return did
+            did = True
+            url, source, last_modified, old_hash, hash_v, sm_old = row
+            if source in fresh and fresh[source].get(url) == sm_old and sm_old:
+                # дата в карте сайта та же — страница не менялась, запрос не нужен
+                self.db.execute(&#x27;UPDATE documents SET checked_at=? WHERE url=?&#x27;, (now, url))
+                status = &#x27;sitemap: not modified&#x27;
+            else:
+                # условный запрос: сервер вернёт 304 Not Modified и пустое тело, если страница не менялась
+                r = self.get(url, {&#x27;If-Modified-Since&#x27;: last_modified} if last_modified else None)
+                old = self.stored_hash(url, source, old_hash, hash_v)
+                new_lastmod = fresh.get(source, {}).get(url, sm_old)
+                if r is not None and r.status_code == 200 and content_hash(r.content, self.selector(source)) != old:
+                    self.save_document(url, source, r, now, new_lastmod)   # изменилась — сохраняем новую версию
+                    status = &#x27;updated&#x27;
+                else:
+                    self.db.execute(&#x27;UPDATE documents SET checked_at=?, sitemap_lastmod=? WHERE url=?&#x27;,
+                                    (now, new_lastmod, url))
+                    status = &#x27;not modified&#x27; if r is not None and r.status_code == 304 else &#x27;same content&#x27;
+            self.db.commit()
+            self.progress(&#x27;recrawl &#x27; + status, url)
+            if self.max_requests and self.requests_done &gt;= self.max_requests:
+                self.stop = True</code></pre></div>
+
+<h3 id="_5">Распределённая БД: подключение к любому живому узлу<a class="headerlink" href="#_5" title="Permanent link">#</a></h3>
+<p>Клиент знает адреса всех трёх узлов и подключается к первому отвечающему; при обрыве —
+переподключается к следующему. Любой узел CockroachDB принимает любой SQL-запрос и сам
+перенаправляет его к нужным шардам.</p>
+<div class="code"><div class="code-title">lab2/db.py — connect_any <span class="ln">строки 55–66</span></div><pre><code class="language-python">def connect_any(hosts, database, user, autocommit=False):
+    &quot;&quot;&quot;Подключение к первому доступному узлу кластера.&quot;&quot;&quot;
+    last = None
+    for h in hosts:
+        host, _, port = h.partition(&#x27;:&#x27;)
+        try:
+            return psycopg.connect(host=host, port=int(port or 26257), user=user, dbname=database,
+                                   autocommit=autocommit, connect_timeout=2,
+                                   application_name=&#x27;mai-ir-robot&#x27;), h
+        except psycopg.OperationalError as e:
+            last = e
+    raise RuntimeError(f&#x27;ни один узел кластера не доступен ({&quot;, &quot;.join(hosts)}): {last}&#x27;)</code></pre></div>
+<div class="code"><div class="code-title">lab2/db.py — Db.reconnect <span class="ln">строки 97–103</span></div><pre><code class="language-python">    def reconnect(self):
+        &quot;&quot;&quot;Переподключение (к любому живому узлу), если соединение оборвалось.&quot;&quot;&quot;
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+        self.conn, self.node = connect_any(self.hosts, self.database, self.user)</code></pre></div>
+
+<h3 id="cockroachdb">Шардирование и репликация (внутри CockroachDB)<a class="headerlink" href="#cockroachdb" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>Шардирование диапазонами ключа (range partitioning).</strong> Таблица упорядочена по первичному ключу и
+  нарезана на диапазоны (ranges). Диапазон больше 512 МБ автоматически делится пополам. Таблица
+  <code>documents</code> сейчас — 5 диапазонов (301–491 МБ), их главные копии (leaseholder) на разных узлах,
+  поэтому нагрузка распределена.</li>
+<li><strong>Репликация по Raft.</strong> У каждого диапазона 3 копии; запись подтверждается, когда её записало
+  большинство (2 из 3). Падение одного узла не останавливает базу — это показывает
+  <code>python lab2.py failover</code>.</li>
+<li>Посмотреть: <code>SHOW RANGES FROM TABLE robot.documents WITH DETAILS;</code> или веб-консоль
+  http://localhost:8091.</li>
+</ul>
+<details class="file"><summary>lab2/start_cluster.bat <span class="ln">(31 строк)</span></summary><pre><code class="language-dos">@echo off
+rem Distributed database for the crawler: CockroachDB cluster of 3 nodes on this computer.
+rem   node 1: SQL localhost:26257, RPC 26357, web console http://localhost:8091
+rem   node 2: SQL localhost:26258, RPC 26358, http 8092
+rem   node 3: SQL localhost:26259, RPC 26359, http 8093
+rem Node data: %CRDB_DATA%\node1..node3 (default C:\ir_labs_crdb).
+rem Stop: stop_cluster.bat. Starting again brings up the same cluster with the same data.
+setlocal
+cd /d &quot;%~dp0&quot;
+chcp 65001 &gt;nul
+if &quot;%CRDB_BIN%&quot;==&quot;&quot; set &quot;CRDB_BIN=D:\ir_labs_data\cockroach\cockroach.exe&quot;
+if &quot;%CRDB_DATA%&quot;==&quot;&quot; set &quot;CRDB_DATA=C:\ir_labs_crdb&quot;
+if not exist &quot;%CRDB_BIN%&quot; (
+    echo cockroach.exe not found: %CRDB_BIN%  - unpack CockroachDB for Windows and set CRDB_BIN
+    exit /b 1
+)
+set &quot;JOIN=localhost:26357,localhost:26358,localhost:26359&quot;
+set &quot;OPTS=--insecure --join=%JOIN% --cache=256MiB --max-sql-memory=256MiB&quot;
+for %%N in (1 2 3) do if not exist &quot;%CRDB_DATA%\node%%N&quot; mkdir &quot;%CRDB_DATA%\node%%N&quot;
+start &quot;crdb-node1&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&quot;%CRDB_DATA%\node1&quot; --listen-addr=localhost:26357 --sql-addr=localhost:26257 --http-addr=localhost:8091
+start &quot;crdb-node2&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&quot;%CRDB_DATA%\node2&quot; --listen-addr=localhost:26358 --sql-addr=localhost:26258 --http-addr=localhost:8092
+start &quot;crdb-node3&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&quot;%CRDB_DATA%\node3&quot; --listen-addr=localhost:26359 --sql-addr=localhost:26259 --http-addr=localhost:8093
+echo Waiting for the nodes to start...
+timeout /t 10 /nobreak &gt;nul
+rem init is needed only on the very first start; on an existing cluster it just reports that
+&quot;%CRDB_BIN%&quot; init --insecure --host=localhost:26357 2&gt;nul
+timeout /t 3 /nobreak &gt;nul
+&quot;%CRDB_BIN%&quot; node status --insecure --host=localhost:26257
+echo.
+echo Cluster web console: http://localhost:8091
+</code></pre></details>
+
+<hr />
+<h2 id="3">ЛР3 — токенизация<a class="headerlink" href="#3" title="Permanent link">#</a></h2>
+<h3 id="utf-8">Декодирование UTF-8<a class="headerlink" href="#utf-8" title="Permanent link">#</a></h3>
+<p>Количество байт символа определяется по старшим битам первого байта (<code>0xxxxxxx</code> — 1 байт,
+<code>110xxxxx</code> — 2, <code>1110xxxx</code> — 3, <code>11110xxx</code> — 4); остальные байты дают по 6 бит. Битая
+последовательность заменяется и пропускается, чтобы токенизатор никогда не зацикливался.</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — utf8_decode <span class="ln">строки 42–53</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- UTF-8 и токенизация
+// Декодирует один символ UTF-8 начиная с s[i], сдвигает i.
+static inline uint32_t utf8_decode(const unsigned char *s, size_t n, size_t &amp;i) {
+    unsigned c = s[i];
+    if (c &lt; 0x80) { i++; return c; }
+    int len = c &gt;= 0xF0 ? 4 : c &gt;= 0xE0 ? 3 : c &gt;= 0xC0 ? 2 : 1;
+    if (len == 1 || i + len &gt; n) { i++; return 0xFFFD; }
+    uint32_t cp = c &amp; (0xFF &gt;&gt; (len + 1));
+    for (int k = 1; k &lt; len; k++) cp = (cp &lt;&lt; 6) | (s[i + k] &amp; 0x3F);
+    i += len;
+    return cp;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — utf8_encode <span class="ln">строки 55–64</span></div><pre><code class="language-cpp">static inline int utf8_encode(uint32_t c, char *o) {
+    if (c &lt; 0x80) { o[0] = (char)c; return 1; }
+    if (c &lt; 0x800) { o[0] = (char)(0xC0 | (c &gt;&gt; 6)); o[1] = (char)(0x80 | (c &amp; 0x3F)); return 2; }
+    if (c &lt; 0x10000) {
+        o[0] = (char)(0xE0 | (c &gt;&gt; 12)); o[1] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F));
+        o[2] = (char)(0x80 | (c &amp; 0x3F)); return 3;
+    }
+    o[0] = (char)(0xF0 | (c &gt;&gt; 18)); o[1] = (char)(0x80 | ((c &gt;&gt; 12) &amp; 0x3F));
+    o[2] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F)); o[3] = (char)(0x80 | (c &amp; 0x3F)); return 4;
+}</code></pre></div>
+
+<h3 id="_6">Токенизация<a class="headerlink" href="#_6" title="Permanent link">#</a></h3>
+<p>Конечный автомат по классам символов: буквы и цифры образуют токен; дефис и точка внутри слова
+(«ВЛ-80», «3.5») оставляются, если с обеих сторон буквы/цифры; всё остальное — разделитель.
+Токен приводится к нижнему регистру, «ё» → «е», ударения удаляются. Один проход по тексту — O(n).</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — char_class <span class="ln">строки 66–74</span></div><pre><code class="language-cpp">// Класс символа: 1 — часть слова, 2 — игнорируемый (знак ударения), 0 — разделитель.
+static inline int char_class(uint32_t c) {
+    if ((c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;) || (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) || (c &gt;= &#x27;0&#x27; &amp;&amp; c &lt;= &#x27;9&#x27;)) return 1;
+    if (c &gt;= 0x300 &amp;&amp; c &lt;= 0x36F) return 2;                 // комбинируемые диакритики (ударения)
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0x24F &amp;&amp; c != 0xD7 &amp;&amp; c != 0xF7) return 1;  // латиница с диакритикой
+    if (c &gt;= 0x370 &amp;&amp; c &lt;= 0x3FF) return 1;                 // греческий
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x4FF) return 1;                 // кириллица
+    return 0;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — to_lower <span class="ln">строки 76–85</span></div><pre><code class="language-cpp">// Понижение регистра + нормализация «ё» -&gt; «е».
+static inline uint32_t to_lower(uint32_t c) {
+    if (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) return c + 32;
+    if (c == 0x401 || c == 0x451) return 0x435;             // Ё, ё -&gt; е
+    if (c &gt;= 0x410 &amp;&amp; c &lt;= 0x42F) return c + 0x20;          // А-Я
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x40F) return c + 0x50;          // Ѐ-Џ
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0xDE &amp;&amp; c != 0xD7) return c + 0x20;
+    if (c &gt;= 0x391 &amp;&amp; c &lt;= 0x3AB) return c + 0x20;          // греческие заглавные
+    return c;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — next_token <span class="ln">строки 89–109</span></div><pre><code class="language-cpp">// Читает следующий токен из s[0..n) начиная с pos.
+// В out пишется нормализованный терм (UTF-8, нижний регистр), возвращается его длина в байтах
+// (0 — токенов больше нет). В chars — длина в символах.
+static inline int next_token(const char *s, size_t n, size_t &amp;pos, char *out, int &amp;chars) {
+    const unsigned char *u = (const unsigned char *)s;
+    int len = 0; chars = 0;
+    while (pos &lt; n) {
+        size_t start = pos;
+        uint32_t c = utf8_decode(u, n, pos);
+        int cls = char_class(c);
+        if (cls == 1) {
+            if (len + 4 &lt;= MAX_TERM_BYTES) { len += utf8_encode(to_lower(c), out + len); chars++; }
+        } else if (cls == 0) {
+            if (len &gt; 0) { pos = start; break; }
+        }
+        // cls == 2: знак ударения внутри слова просто пропускается
+    }
+    // разделитель, на котором остановились, пропустим при следующем вызове
+    if (len &gt; 0 &amp;&amp; pos &lt; n) { size_t p = pos; utf8_decode(u, n, p); pos = p; }
+    return len;
+}</code></pre></div>
+
+<hr />
+<h2 id="4">ЛР4 — стемминг<a class="headerlink" href="#4" title="Permanent link">#</a></h2>
+<h3 id="snowball">Русский: алгоритм Портера (Snowball)<a class="headerlink" href="#snowball" title="Permanent link">#</a></h3>
+<ol>
+<li>Найти область <strong>RV</strong> — часть слова после первой гласной, и <strong>R2</strong> — после второго сочетания
+   «гласная + согласная».</li>
+<li>Шаг 1: отрезать окончание совершенного деепричастия; если нет — возвратную частицу (-ся/-сь), затем
+   окончание прилагательного/причастия, глагола или существительного (всегда самое длинное из группы
+   и только внутри RV).</li>
+<li>Шаг 2: отрезать «и». Шаг 3: словообразовательный суффикс «ост/ость» в R2.</li>
+<li>Шаг 4: «нн» → «н», суффикс превосходной степени «ейш(е)», мягкий знак.</li>
+</ol>
+<p>Поиск самого длинного окончания — по таблицам окончаний (<code>longest</code>), отрезание — <code>cut</code>.</p>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — longest <span class="ln">строки 58–68</span></div><pre><code class="language-cpp">// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
+static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
+    int best = -1;
+    for (int k = 0; k &lt; t.n; k++) {
+        const Suf &amp;s = t.s[k];
+        if (s.n &gt; n - lim) continue;
+        if (memcmp(w + n - s.n, s.c, s.n * sizeof(uint32_t)) != 0) continue;
+        if (best &lt; 0 || s.n &gt; t.s[best].n) best = k;
+    }
+    return best;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — cut <span class="ln">строки 69–81</span></div><pre><code class="language-cpp">// Как «among ... delete» в Snowball: берётся самое длинное окончание; если для него не выполнено
+// условие группы 1 (перед ним «а»/«я»), шаг не выполняется (более короткие не пробуются).
+static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
+    int k = longest(t, w, n, lim);
+    if (k &lt; 0) return false;
+    int L = t.s[k].n;
+    if (t.s[k].grp == 1) {
+        int p = n - L - 1;
+        if (p &lt; lim || (w[p] != RU_A &amp;&amp; w[p] != RU_YA)) return false;
+    }
+    n -= L;
+    return true;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem_ru <span class="ln">строки 83–128</span></div><pre><code class="language-cpp">static int stem_ru(uint32_t *w, int n) {
+    ru_init();
+    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
+    int pV = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+    if (i &lt; n) {
+        pV = i + 1; i = pV;
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        if (i &lt; n) {
+            i++;                                       // i = p1
+            while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+            if (i &lt; n) {
+                i++;
+                while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
+                if (i &lt; n) p2 = i + 1;
+            }
+        }
+    }
+    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
+    if (!cut(PERF, w, n, pV)) {
+        cut(REFL, w, n, pV);
+        int k = longest(ADJ, w, n, pV);
+        if (k &gt;= 0) {
+            n -= ADJ.s[k].n;
+            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+        } else if (!cut(VERB, w, n, pV)) {
+            cut(NOUN, w, n, pV);
+        }
+    }
+    // Шаг 2: «и» на конце
+    if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
+    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
+    int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
+    if (k &gt;= 0) n -= DERIV.s[k].n;
+    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
+    k = longest(SUPER, w, n, pV);
+    if (k &gt;= 0) {
+        n -= SUPER.s[k].n;
+        if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) n--;
+    } else if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) {
+        n--;
+    } else if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_SOFT) {
+        n--;
+    }
+    return n;
+}</code></pre></div>
+
+<h3 id="_7">Английский: классический алгоритм Портера<a class="headerlink" href="#_7" title="Permanent link">#</a></h3>
+<p>Пять шагов правил вида «(условие на меру m) суффикс1 → суффикс2»: множественное число и -ed/-ing
+(шаг 1), двойные суффиксы (-ational → -ate, шаги 2–3), отбрасывание -ance, -ment и т.п. (шаг 4),
+финальное -e и двойное -ll (шаг 5). Мера m — число последовательностей «гласные+согласные».</p>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem_en <span class="ln">строки 166–236</span></div><pre><code class="language-cpp">static int stem_en(char *w, int n) {
+    if (n &lt;= 0) return n;
+    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
+    if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
+    for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
+    // Области R1, R2
+    int p1 = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+    if (i &lt; n) {
+        i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++;
+        if (i &lt; n) {
+            p1 = i + 1; i = p1;
+            while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+            if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
+        }
+    }
+    // Шаг 1a
+    if (ends(w, n, &quot;sses&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ies&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ss&quot;)) {}
+    else if (ends(w, n, &quot;s&quot;)) n -= 1;
+    // Шаг 1b
+    if (ends(w, n, &quot;eed&quot;)) {
+        if (n - 3 &gt;= p1) n -= 1;
+    } else {
+        int L = ends(w, n, &quot;ing&quot;) ? 3 : ends(w, n, &quot;ed&quot;) ? 2 : 0;
+        if (L &amp;&amp; has_vowel(w, n - L)) {
+            n -= L;
+            if (ends(w, n, &quot;at&quot;) || ends(w, n, &quot;bl&quot;) || ends(w, n, &quot;iz&quot;)) w[n++] = &#x27;e&#x27;;
+            else if (n &gt;= 2 &amp;&amp; w[n - 1] == w[n - 2] &amp;&amp; strchr(&quot;bdfgmnprt&quot;, w[n - 1])) n--;
+            else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
+        }
+    }
+    // Шаг 1c
+    if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
+    // Шаг 2 (в R1)
+    static const Rule S2[] = {
+        {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
+        {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
+        {&quot;ator&quot;, &quot;ate&quot;}, {&quot;alli&quot;, &quot;al&quot;}, {&quot;alism&quot;, &quot;al&quot;}, {&quot;aliti&quot;, &quot;al&quot;}, {&quot;fulness&quot;, &quot;ful&quot;},
+        {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
+    int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
+    // Шаг 3 (в R1)
+    static const Rule S3[] = {
+        {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
+    k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
+    // Шаг 4 (в R2)
+    static const Rule S4[] = {
+        {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
+        {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
+        {&quot;iti&quot;, &quot;&quot;}, {&quot;ous&quot;, &quot;&quot;}, {&quot;ive&quot;, &quot;&quot;}, {&quot;ize&quot;, &quot;&quot;}, {&quot;ion&quot;, &quot;&quot;}};
+    k = en_longest(S4, sizeof(S4) / sizeof(S4[0]), w, n);
+    if (k &gt;= 0) {
+        int L = (int)strlen(S4[k].suf);
+        if (n - L &gt;= p2) {
+            if (strcmp(S4[k].suf, &quot;ion&quot;) != 0) n -= L;
+            else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
+        }
+    }
+    // Шаг 5a: конечное «e»
+    if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
+        int c = n - 1;
+        if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
+    }
+    // Шаг 5b: «ll» -&gt; «l» в R2
+    if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
+    for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
+    return n;
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/stem.h — stem <span class="ln">строки 10–264</span></div><pre><code class="language-cpp">namespace stem {
+
+const int MAXW = 64;                      // как MAX_TERM_BYTES: длиннее термов не бывает
+
+// ---------------------------------------------------------------- русский (Snowball)
+struct Suf { uint32_t c[8]; int n; int grp; };       // grp = 1: перед окончанием должна стоять «а» или «я»
+struct Table { Suf s[48]; int n; };
+
+static void add(Table &amp;t, const char *u, int grp) {
+    Suf &amp;x = t.s[t.n++];
+    size_t i = 0, n = strlen(u);
+    x.n = 0; x.grp = grp;
+    while (i &lt; n) x.c[x.n++] = utf8_decode((const unsigned char *)u, n, i);
+}
+static void add_all(Table &amp;t, const char *list, int grp) {     // слова через пробел
+    char buf[32]; int k = 0;
+    for (const char *p = list;; p++) {
+        if (*p == &#x27; &#x27; || *p == 0) { if (k) { buf[k] = 0; add(t, buf, grp); k = 0; } if (!*p) break; }
+        else buf[k++] = *p;
+    }
+}
+
+static Table PERF, ADJ, PART, REFL, VERB, NOUN, DERIV, SUPER;
+static bool ru_ready = false;
+
+static void ru_init() {
+    if (ru_ready) return;
+    add_all(PERF, &quot;в вши вшись&quot;, 1);
+    add_all(PERF, &quot;ив ивши ившись ыв ывши ывшись&quot;, 2);
+    add_all(ADJ, &quot;ее ие ые ое ими ыми ей ий ый ой ем им ым ом его ого ему ому их ых ую юю ая яя ою ею&quot;, 2);
+    add_all(PART, &quot;ем нн вш ющ щ&quot;, 1);
+    add_all(PART, &quot;ивш ывш ующ&quot;, 2);
+    add_all(REFL, &quot;ся сь&quot;, 2);
+    add_all(VERB, &quot;ла на ете йте ли й л ем н ло но ет ют ны ть ешь нно&quot;, 1);
+    add_all(VERB, &quot;ила ыла ена ейте уйте ите или ыли ей уй ил ыл им ым ен ило ыло ено ят ует уют ит ыт ены ить ыть ишь ую ю&quot;, 2);
+    add_all(NOUN, &quot;а ев ов ие ье е иями ями ами еи ии и ией ей ой ий й иям ям ием ем ам ом о у ах иях ях ы ь ию ью ю ия ья я&quot;, 2);
+    add_all(DERIV, &quot;ост ость&quot;, 2);
+    add_all(SUPER, &quot;ейш ейше&quot;, 2);
+    ru_ready = true;
+}
+
+const uint32_t RU_A = 0x430, RU_YA = 0x44F, RU_I = 0x438, RU_N = 0x43D, RU_SOFT = 0x44C;
+
+static bool ru_vowel(uint32_t c) {         // а е и о у ы э ю я
+    return c == 0x430 || c == 0x435 || c == 0x438 || c == 0x43E || c == 0x443 ||
+           c == 0x44B || c == 0x44D || c == 0x44E || c == 0x44F;
+}
+
+// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
+static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
+    int best = -1;
+    for (int k = 0; k &lt; t.n; k++) {
+        const Suf &amp;s = t.s[k];
+        if (s.n &gt; n - lim) continue;
+        if (memcmp(w + n - s.n, s.c, s.n * sizeof(uint32_t)) != 0) continue;
+        if (best &lt; 0 || s.n &gt; t.s[best].n) best = k;
+    }
+    return best;
+}
+// Как «among ... delete» в Snowball: берётся самое длинное окончание; если для него не выполнено
+// условие группы 1 (перед ним «а»/«я»), шаг не выполняется (более короткие не пробуются).
+static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
+    int k = longest(t, w, n, lim);
+    if (k &lt; 0) return false;
+    int L = t.s[k].n;
+    if (t.s[k].grp == 1) {
+        int p = n - L - 1;
+        if (p &lt; lim || (w[p] != RU_A &amp;&amp; w[p] != RU_YA)) return false;
+    }
+    n -= L;
+    return true;
+}
+
+static int stem_ru(uint32_t *w, int n) {
+    ru_init();
+    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
+    int pV = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+    if (i &lt; n) {
+        pV = i + 1; i = pV;
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        if (i &lt; n) {
+            i++;                                       // i = p1
+            while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
+            if (i &lt; n) {
+                i++;
+                while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
+                if (i &lt; n) p2 = i + 1;
+            }
+        }
+    }
+    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
+    if (!cut(PERF, w, n, pV)) {
+        cut(REFL, w, n, pV);
+        int k = longest(ADJ, w, n, pV);
+        if (k &gt;= 0) {
+            n -= ADJ.s[k].n;
+            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+        } else if (!cut(VERB, w, n, pV)) {
+            cut(NOUN, w, n, pV);
+        }
+    }
+    // Шаг 2: «и» на конце
+    if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
+    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
+    int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
+    if (k &gt;= 0) n -= DERIV.s[k].n;
+    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
+    k = longest(SUPER, w, n, pV);
+    if (k &gt;= 0) {
+        n -= SUPER.s[k].n;
+        if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) n--;
+    } else if (n - 2 &gt;= pV &amp;&amp; w[n - 1] == RU_N &amp;&amp; w[n - 2] == RU_N) {
+        n--;
+    } else if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_SOFT) {
+        n--;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------- английский (Портер)
+static bool en_v(char c) { return c == &#x27;a&#x27; || c == &#x27;e&#x27; || c == &#x27;i&#x27; || c == &#x27;o&#x27; || c == &#x27;u&#x27; || c == &#x27;y&#x27;; }
+
+static bool ends(const char *w, int n, const char *s) {
+    int L = (int)strlen(s);
+    return L &lt;= n &amp;&amp; memcmp(w + n - L, s, L) == 0;
+}
+// «Короткий слог» на конце w[0..n): согласная (не w, x, Y), перед ней гласная, перед ней согласная
+static bool shortv(const char *w, int n) {
+    if (n &lt; 3) return false;
+    char c = w[n - 1];
+    return !en_v(c) &amp;&amp; c != &#x27;w&#x27; &amp;&amp; c != &#x27;x&#x27; &amp;&amp; c != &#x27;Y&#x27; &amp;&amp; en_v(w[n - 2]) &amp;&amp; !en_v(w[n - 3]);
+}
+static bool has_vowel(const char *w, int n) {
+    for (int i = 0; i &lt; n; i++) if (en_v(w[i])) return true;
+    return false;
+}
+
+struct Rule { const char *suf; const char *rep; };
+
+// Самое длинное правило из списка, подходящее к концу слова; -1, если ни одно не подходит
+static int en_longest(const Rule *r, int cnt, const char *w, int n) {
+    int best = -1, bl = -1;
+    for (int k = 0; k &lt; cnt; k++) {
+        int L = (int)strlen(r[k].suf);
+        if (L &gt; bl &amp;&amp; ends(w, n, r[k].suf)) { best = k; bl = L; }
+    }
+    return best;
+}
+static void replace_end(char *w, int &amp;n, int cut_len, const char *rep) {
+    n -= cut_len;
+    int L = (int)strlen(rep);
+    memcpy(w + n, rep, L);
+    n += L;
+}
+
+static int stem_en(char *w, int n) {
+    if (n &lt;= 0) return n;
+    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
+    if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
+    for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
+    // Области R1, R2
+    int p1 = n, p2 = n, i = 0;
+    while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+    if (i &lt; n) {
+        i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++;
+        if (i &lt; n) {
+            p1 = i + 1; i = p1;
+            while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
+            if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
+        }
+    }
+    // Шаг 1a
+    if (ends(w, n, &quot;sses&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ies&quot;)) n -= 2;
+    else if (ends(w, n, &quot;ss&quot;)) {}
+    else if (ends(w, n, &quot;s&quot;)) n -= 1;
+    // Шаг 1b
+    if (ends(w, n, &quot;eed&quot;)) {
+        if (n - 3 &gt;= p1) n -= 1;
+    } else {
+        int L = ends(w, n, &quot;ing&quot;) ? 3 : ends(w, n, &quot;ed&quot;) ? 2 : 0;
+        if (L &amp;&amp; has_vowel(w, n - L)) {
+            n -= L;
+            if (ends(w, n, &quot;at&quot;) || ends(w, n, &quot;bl&quot;) || ends(w, n, &quot;iz&quot;)) w[n++] = &#x27;e&#x27;;
+            else if (n &gt;= 2 &amp;&amp; w[n - 1] == w[n - 2] &amp;&amp; strchr(&quot;bdfgmnprt&quot;, w[n - 1])) n--;
+            else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
+        }
+    }
+    // Шаг 1c
+    if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
+    // Шаг 2 (в R1)
+    static const Rule S2[] = {
+        {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
+        {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
+        {&quot;ator&quot;, &quot;ate&quot;}, {&quot;alli&quot;, &quot;al&quot;}, {&quot;alism&quot;, &quot;al&quot;}, {&quot;aliti&quot;, &quot;al&quot;}, {&quot;fulness&quot;, &quot;ful&quot;},
+        {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
+    int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
+    // Шаг 3 (в R1)
+    static const Rule S3[] = {
+        {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
+    k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
+    if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
+    // Шаг 4 (в R2)
+    static const Rule S4[] = {
+        {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
+        {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
+        {&quot;iti&quot;, &quot;&quot;}, {&quot;ous&quot;, &quot;&quot;}, {&quot;ive&quot;, &quot;&quot;}, {&quot;ize&quot;, &quot;&quot;}, {&quot;ion&quot;, &quot;&quot;}};
+    k = en_longest(S4, sizeof(S4) / sizeof(S4[0]), w, n);
+    if (k &gt;= 0) {
+        int L = (int)strlen(S4[k].suf);
+        if (n - L &gt;= p2) {
+            if (strcmp(S4[k].suf, &quot;ion&quot;) != 0) n -= L;
+            else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
+        }
+    }
+    // Шаг 5a: конечное «e»
+    if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
+        int c = n - 1;
+        if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
+    }
+    // Шаг 5b: «ll» -&gt; «l» в R2
+    if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
+    for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
+    return n;
+}
+
+// ---------------------------------------------------------------- общий вход
+// Основа терма s[0..n) (UTF-8, нижний регистр) -&gt; out; возвращает длину основы в байтах.
+static int stem(const char *s, int n, char *out) {
+    bool en = n &gt; 0, ru = n &gt; 0;
+    uint32_t cp[MAXW]; int m = 0;
+    size_t i = 0;
+    while (i &lt; (size_t)n &amp;&amp; m &lt; MAXW) {
+        uint32_t c = utf8_decode((const unsigned char *)s, n, i);
+        cp[m++] = c;
+        if (!(c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;)) en = false;
+        if (!(c &gt;= 0x430 &amp;&amp; c &lt;= 0x44F)) ru = false;
+    }
+    if (en) {
+        memcpy(out, s, n);
+        return stem_en(out, n);
+    }
+    if (ru) {
+        m = stem_ru(cp, m);
+        int len = 0;
+        for (int j = 0; j &lt; m; j++) len += utf8_encode(cp[j], out + len);
+        return len;
+    }
+    memcpy(out, s, n);
+    return n;
+}
+
+}  // namespace stem</code></pre></div>
+
+<hr />
+<h2 id="5">ЛР5 — закон Ципфа<a class="headerlink" href="#5" title="Permanent link">#</a></h2>
+<h3 id="-">Хеш-таблица термов (подсчёт частот)<a class="headerlink" href="#-" title="Permanent link">#</a></h3>
+<p>Своя хеш-таблица без STL: хеш FNV-1a от байтов терма, открытая адресация с линейным пробированием,
+при заполнении больше половины — увеличение в 2 раза и перехеширование. Каждый токен — O(1) в среднем.</p>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — fnv1a <span class="ln">строки 175–179</span></div><pre><code class="language-cpp">    static uint32_t fnv1a(const char *s, int n) {
+        uint32_t h = 2166136261u;
+        for (int i = 0; i &lt; n; i++) { h ^= (unsigned char)s[i]; h *= 16777619u; }
+        return h;
+    }</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — rehash <span class="ln">строки 180–190</span></div><pre><code class="language-cpp">    void rehash(size_t newcap) {
+        Slot *ns = (Slot *)malloc(newcap * sizeof(Slot));
+        for (size_t i = 0; i &lt; newcap; i++) ns[i].id = UINT32_MAX;
+        for (size_t i = 0; i &lt; cap; i++) {
+            if (slots[i].id == UINT32_MAX) continue;
+            size_t j = slots[i].hash &amp; (newcap - 1);
+            while (ns[j].id != UINT32_MAX) j = (j + 1) &amp; (newcap - 1);
+            ns[j] = slots[i];
+        }
+        free(slots); slots = ns; cap = newcap;
+    }</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — get_or_add <span class="ln">строки 191–208</span></div><pre><code class="language-cpp">    // Возвращает id терма; если терма ещё нет — добавляет. isNew = true для нового.
+    uint32_t get_or_add(const char *s, int n, bool &amp;isNew) {
+        if (size * 2 &gt;= cap) rehash(cap ? cap * 2 : 1 &lt;&lt; 16);
+        uint32_t h = fnv1a(s, n);
+        size_t j = h &amp; (cap - 1);
+        while (slots[j].id != UINT32_MAX) {
+            uint32_t id = slots[j].id;
+            if (slots[j].hash == h &amp;&amp; len[id] == n &amp;&amp; memcmp(pool.a + off[id], s, n) == 0) {
+                isNew = false; return id;
+            }
+            j = (j + 1) &amp; (cap - 1);
+        }
+        uint32_t id = (uint32_t)size++;
+        slots[j].hash = h; slots[j].id = id;
+        off.push((uint32_t)pool.n); len.push((uint8_t)n); pool.append(s, n);
+        isNew = true;
+        return id;
+    }</code></pre></div>
+
+<h3 id="_8">Сортировка по частоте<a class="headerlink" href="#_8" title="Permanent link">#</a></h3>
+<p>Итеративная сортировка слиянием (снизу вверх) номеров термов по убыванию частоты; стабильная, поэтому
+при равной частоте сохраняется порядок первого появления. O(T log T), дополнительная память O(T).</p>
+<div class="code"><div class="code-title">lab_boolean/src/termfreq.cpp — sort_by_freq <span class="ln">строки 11–28</span></div><pre><code class="language-cpp">// Сортировка слиянием номеров термов по убыванию частоты (стабильная: при равной частоте —
+// в порядке первого появления терма в корпусе).
+static void sort_by_freq(uint32_t *a, size_t n) {
+    uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
+    uint32_t *src = a, *dst = tmp;
+    for (size_t width = 1; width &lt; n; width *= 2) {
+        for (size_t lo = 0; lo &lt; n; lo += 2 * width) {
+            size_t mid = lo + width &lt; n ? lo + width : n, hi = lo + 2 * width &lt; n ? lo + 2 * width : n;
+            size_t i = lo, j = mid, k = lo;
+            while (i &lt; mid &amp;&amp; j &lt; hi) dst[k++] = g_freq[src[j]] &gt; g_freq[src[i]] ? src[j++] : src[i++];
+            while (i &lt; mid) dst[k++] = src[i++];
+            while (j &lt; hi) dst[k++] = src[j++];
+        }
+        uint32_t *t = src; src = dst; dst = t;
+    }
+    if (src != a) memcpy(a, src, n * sizeof(uint32_t));
+    free(tmp);
+}</code></pre></div>
+
+<h3 id="fr-c-r">Проверка закона: f(r) ≈ C / r<a class="headerlink" href="#fr-c-r" title="Permanent link">#</a></h3>
+<p>Ранги и частоты логарифмируются, по МНК строится прямая log f = log C − s·log r (для закона Ципфа
+s ≈ 1). Закон Мандельброта f = P / (r + ρ)^B подбирается перебором ρ с МНК для остальных параметров.</p>
+<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — linreg <span class="ln">строки 49–54</span></div><pre><code class="language-python">def linreg(xs, ys):
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+    a = my - b * mx
+    err = sum((y - a - b * x) ** 2 for x, y in zip(xs, ys)) / len(xs)
+    return a, b, err</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — mandelbrot <span class="ln">строки 57–69</span></div><pre><code class="language-python">def mandelbrot(freqs):
+    &quot;&quot;&quot;Подбор P, ρ, B по точкам, равномерным в log r (иначе регрессию задавил бы хвост из единиц).
+    Хвост с частотами 1–2 (горизонтальные «ступеньки» из-за дискретности частот) в подгонку не входит.&quot;&quot;&quot;
+    last = max(i for i, f in enumerate(freqs, 1) if f &gt;= 3)
+    ranks = log_sample(last)
+    best = None
+    for rho in [x / 2 for x in range(0, 401)]:             # ρ от 0 до 200 с шагом 0,5
+        xs = [math.log(r + rho) for r in ranks]
+        ys = [math.log(freqs[r - 1]) for r in ranks]
+        a, b, err = linreg(xs, ys)
+        if best is None or err &lt; best[3]:
+            best = (math.exp(a), rho, -b, err)
+    return best</code></pre></div>
+
+<hr />
+<h2 id="7">ЛР7 — булев индекс<a class="headerlink" href="#7" title="Permanent link">#</a></h2>
+<h3 id="_9">Сбор пар (терм, документ)<a class="headerlink" href="#_9" title="Permanent link">#</a></h3>
+<p>Каждый токен документа → id терма из хеш-таблицы (при <code>--stem</code> — id его основы; стемминг выполняется
+один раз на словоформу). Массив <code>lastDoc[term]</code> хранит последний документ, где встретился терм, —
+так каждая пара (терм, документ) добавляется ровно один раз без поиска.</p>
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 85–114</span></div><pre><code class="language-cpp">        // индексируем заголовок и текст
+        for (int part = 2; part &lt;= 4; part += 2) {
+            const char *p = f[part]; size_t pn = fl[part], pos = 0;
+            textBytes += pn;
+            int chars, tlen;
+            while ((tlen = next_token(p, pn, pos, tok, chars)) &gt; 0) {
+                tokens++; tokenChars += chars;
+                bool isNew;
+                uint32_t id = tt.get_or_add(tok, tlen, isNew);
+                if (useStem) {
+                    if (isNew) {                       // новая словоформа: находим её основу
+                        bool newStem;
+                        int sl = stem::stem(tok, tlen, sb);
+                        toStem.push(stemTab.get_or_add(sb, sl, newStem));
+                        if (newStem) lastDoc.push(UINT32_MAX);
+                    }
+                    id = toStem[id];                   // в индекс идёт основа
+                } else if (isNew) {
+                    lastDoc.push(UINT32_MAX);
+                }
+                if (lastDoc[id] != docNo) {            // каждая пара (терм, документ) — один раз
+                    lastDoc[id] = docNo;
+                    pairs.push(((uint64_t)id &lt;&lt; 32) | docNo);
+                }
+            }
+        }
+        docNo++;
+        if (docNo % 5000 == 0) fprintf(stderr, &quot;indexed %u docs\n&quot;, docNo);
+    }
+    fclose(in);</code></pre></div>
+
+<h3 id="_10">Сортировка постингов подсчётом<a class="headerlink" href="#_10" title="Permanent link">#</a></h3>
+<p>Сначала считается df каждого терма, префиксные суммы дают начало списка каждого терма, затем пары
+раскладываются по местам. Документы обрабатывались по порядку, поэтому каждый список сразу
+отсортирован по возрастанию номеров. O(P + T) вместо O(P log P).</p>
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 116–133</span></div><pre><code class="language-cpp">    TermTable &amp;ix = useStem ? stemTab : tt;   // таблица термов индекса: основы или словоформы
+
+    // ---- сортировка постингов по термам: сортировка подсчётом (стабильная, O(n))
+    size_t T = ix.size;
+    Vec&lt;uint64_t&gt; start; start.resize(T + 1);
+    memset(start.a, 0, (T + 1) * sizeof(uint64_t));
+    for (size_t i = 0; i &lt; pairs.n; i++) start[(pairs[i] &gt;&gt; 32) + 1]++;
+    for (size_t t = 0; t &lt; T; t++) start[t + 1] += start[t];
+    Vec&lt;uint32_t&gt; postings; postings.resize(pairs.n);
+    {
+        Vec&lt;uint64_t&gt; fill; fill.resize(T);
+        memcpy(fill.a, start.a, T * sizeof(uint64_t));
+        for (size_t i = 0; i &lt; pairs.n; i++)
+            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];   // документы уже по возрастанию
+        fill.release();
+    }
+    pairs.release();
+</code></pre></div>
+
+<h3 id="_11">Сортировка словаря слиянием<a class="headerlink" href="#_11" title="Permanent link">#</a></h3>
+<p>Словарь в файле упорядочен по строкам термов — это нужно для двоичного поиска в ЛР8.</p>
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp — merge_sort_terms <span class="ln">строки 10–34</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- сортировка слиянием
+// Сортирует массив id термов по строкам термов (восходящая, итеративная, стабильная).
+static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
+    uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
+    uint32_t *src = a, *dst = tmp;
+    for (size_t width = 1; width &lt; n; width *= 2) {
+        for (size_t lo = 0; lo &lt; n; lo += 2 * width) {
+            size_t mid = lo + width &lt; n ? lo + width : n;
+            size_t hi = lo + 2 * width &lt; n ? lo + 2 * width : n;
+            size_t i = lo, j = mid, k = lo;
+            while (i &lt; mid &amp;&amp; j &lt; hi) {
+                uint32_t x = src[i], y = src[j];
+                if (cmp_bytes(tt.pool.a + tt.off[y], tt.len[y], tt.pool.a + tt.off[x], tt.len[x]) &lt; 0)
+                    dst[k++] = src[j++];
+                else
+                    dst[k++] = src[i++];
+            }
+            while (i &lt; mid) dst[k++] = src[i++];
+            while (j &lt; hi) dst[k++] = src[j++];
+        }
+        uint32_t *t = src; src = dst; dst = t;
+    }
+    if (src != a) memcpy(a, src, n * sizeof(uint32_t));
+    free(tmp);
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/common.h — cmp_bytes <span class="ln">строки 129–135</span></div><pre><code class="language-cpp">// Сравнение байтовых строк (лексикографически по беззнаковым байтам).
+static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
+    size_t m = la &lt; lb ? la : lb;
+    int r = memcmp(a, b, m);
+    if (r) return r;
+    return la &lt; lb ? -1 : la &gt; lb ? 1 : 0;
+}</code></pre></div>
+
+<h3 id="indexbin">Формат index.bin<a class="headerlink" href="#indexbin" title="Permanent link">#</a></h3>
+<p>Заголовок → прямой индекс (DOCS: источник, pageid, заголовок, URL) → словарь (DICT: смещение строки,
+df, смещение списка) → списки документов (POSTINGS, uint32) → строки термов (TERMSTR).</p>
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 140–180</span></div><pre><code class="language-cpp">    // ---- запись файла
+    FILE *out = fopen(argv[2], &quot;wb&quot;);
+    if (!out) { fprintf(stderr, &quot;cannot create %s\n&quot;, argv[2]); return 1; }
+    const uint32_t NSEC = 4;
+    uint64_t szDocs = 4 + 8ull * docNo + docsBlob.n;
+    uint64_t szDict = 4 + (uint64_t)DICT_ENTRY_SIZE * T;
+    uint64_t szStr = ix.pool.n;
+    uint64_t szPost = 4ull * postings.n;
+    uint64_t offDocs = align8(HEADER_SIZE + SECTION_ENTRY_SIZE * NSEC);
+    uint64_t offDict = align8(offDocs + szDocs);
+    uint64_t offStr = align8(offDict + szDict);
+    uint64_t offPost = align8(offStr + szStr);
+
+    fwrite(INDEX_MAGIC, 1, 4, out); w32(out, INDEX_VERSION); w32(out, NSEC); w32(out, useStem ? FLAG_STEMMED : 0);
+    uint32_t types[NSEC] = {SEC_DOCS, SEC_DICT, SEC_TERMSTR, SEC_POSTINGS};
+    uint64_t offs[NSEC] = {offDocs, offDict, offStr, offPost}, sizes[NSEC] = {szDocs, szDict, szStr, szPost};
+    for (uint32_t i = 0; i &lt; NSEC; i++) { w32(out, types[i]); w32(out, 0); w64(out, offs[i]); w64(out, sizes[i]); }
+    uint64_t pos = HEADER_SIZE + SECTION_ENTRY_SIZE * NSEC;
+
+    pad8(out, pos);                                            // DOCS
+    w32(out, docNo);
+    uint64_t base = 4 + 8ull * docNo;
+    for (uint32_t d = 0; d &lt; docNo; d++) w64(out, base + docOff[d]);
+    fwrite(docsBlob.a, 1, docsBlob.n, out);
+    pos += szDocs; pad8(out, pos);
+
+    w32(out, (uint32_t)T);                                     // DICT (в порядке сортировки)
+    for (size_t i = 0; i &lt; T; i++) {
+        uint32_t t = order[i];
+        w32(out, ix.off[t]); w16(out, ix.len[t]); w16(out, 0);
+        w32(out, (uint32_t)(start[t + 1] - start[t]));        // df
+        w32(out, 0);                                           // зарезервировано
+        w64(out, start[t] * 4);                                // смещение списка в POSTINGS
+    }
+    pos += szDict; pad8(out, pos);
+
+    fwrite(ix.pool.a, 1, ix.pool.n, out);                      // TERMSTR
+    pos += szStr; pad8(out, pos);
+
+    fwrite(postings.a, 4, postings.n, out);                    // POSTINGS
+    pos += szPost;</code></pre></div>
+
+<hr />
+<h2 id="8">ЛР8 — булев поиск<a class="headerlink" href="#8" title="Permanent link">#</a></h2>
+<h3 id="_12">Загрузка индекса и двоичный поиск терма<a class="headerlink" href="#_12" title="Permanent link">#</a></h3>
+<p>Файл индекса читается целиком; поиск терма в отсортированном словаре — двоичный поиск, O(log T).</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — load <span class="ln">строки 19–48</span></div><pre><code class="language-cpp">    bool load(const char *path) {
+        FILE *f = fopen(path, &quot;rb&quot;);
+        if (!f) { fprintf(stderr, &quot;cannot open %s\n&quot;, path); return false; }
+        #ifdef _WIN32
+        _fseeki64(f, 0, SEEK_END); size = (uint64_t)_ftelli64(f); _fseeki64(f, 0, SEEK_SET);
+#else
+        fseeko(f, 0, SEEK_END); size = (uint64_t)ftello(f); fseeko(f, 0, SEEK_SET);
+#endif
+        data = (char *)malloc(size);
+        if (fread(data, 1, size, f) != size) { fprintf(stderr, &quot;read error\n&quot;); return false; }
+        fclose(f);
+        if (memcmp(data, INDEX_MAGIC, 4) != 0) { fprintf(stderr, &quot;bad magic\n&quot;); return false; }
+        if (rd32(data + 4) != INDEX_VERSION) { fprintf(stderr, &quot;unsupported version\n&quot;); return false; }
+        uint32_t nsec = rd32(data + 8);
+        for (uint32_t i = 0; i &lt; nsec; i++) {
+            const char *e = data + HEADER_SIZE + i * SECTION_ENTRY_SIZE;
+            uint32_t type = rd32(e);
+            const char *p = data + rd64(e + 8);
+            if (type == SEC_DOCS) docs = p;
+            else if (type == SEC_DICT) dict = p;
+            else if (type == SEC_TERMSTR) termstr = p;
+            else if (type == SEC_POSTINGS) postings = p;
+            // неизвестные секции пропускаются — так формат расширяется без поломки старых программ
+        }
+        if (!docs || !dict || !termstr || !postings) { fprintf(stderr, &quot;missing section\n&quot;); return false; }
+        nDocs = rd32(docs);
+        nTerms = rd32(dict);
+        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;   // флаги заголовка
+        return true;
+    }</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — find_term <span class="ln">строки 50–61</span></div><pre><code class="language-cpp">    // Двоичный поиск терма в отсортированном словаре. Возвращает номер записи или -1.
+    long find_term(const char *s, int n) const {
+        long lo = 0, hi = (long)nTerms - 1;
+        while (lo &lt;= hi) {
+            long mid = (lo + hi) / 2;
+            const char *e = dict + 4 + (size_t)mid * DICT_ENTRY_SIZE;
+            int c = cmp_bytes(termstr + rd32(e), rd16(e + 4), s, n);
+            if (c == 0) return mid;
+            if (c &lt; 0) lo = mid + 1; else hi = mid - 1;
+        }
+        return -1;
+    }</code></pre></div>
+
+<h3 id="_13">Лексер и парсер (рекурсивный спуск)<a class="headerlink" href="#_13" title="Permanent link">#</a></h3>
+<p>Грамматика (приоритет: <code>!</code> выше И, И выше ИЛИ):</p>
+<pre><code>or    := and ( '||' and )*
+and   := unary ( ['&amp;&amp;'] unary )*      пробел между словами = И
+unary := '!' unary | '(' or ')' | TERM
+</code></pre>
+<p>Каждому правилу соответствует функция; результат — дерево запроса в массиве узлов. Парсер
+толерантен: лишние операторы пропускаются, незакрытые скобки закрываются.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — lex <span class="ln">строки 119–148</span></div><pre><code class="language-cpp">static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &amp;out) {
+    out.clear();
+    size_t i = 0;
+    char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
+    while (i &lt; n) {
+        char c = q[i];
+        if (c == &#x27; &#x27; || c == &#x27;\t&#x27; || c == &#x27;\r&#x27; || c == &#x27;\n&#x27;) { i++; continue; }
+        if (c == &#x27;(&#x27;) { out.push({T_LP, 0}); i++; continue; }
+        if (c == &#x27;)&#x27;) { out.push({T_RP, 0}); i++; continue; }
+        if (c == &#x27;!&#x27;) { out.push({T_NOT, 0}); i++; continue; }
+        if (c == &#x27;&amp;&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;&amp;&#x27;) i++; out.push({T_AND, 0}); continue; }
+        if (c == &#x27;|&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;|&#x27;) i++; out.push({T_OR, 0}); continue; }
+        // слово: всё до пробела или спецсимвола; внутри него работает тот же токенизатор, что и в индексаторе
+        size_t st = i;
+        while (i &lt; n &amp;&amp; !strchr(&quot; \t\r\n()!&amp;|&quot;, q[i])) i++;
+        size_t pos = 0; int chars, len;
+        bool first = true;
+        while ((len = next_token(q + st, i - st, pos, tok, chars)) &gt; 0) {
+            // «ВЛ-80» даёт два терма — между ними неявное И
+            if (!first) out.push({T_AND, 0});
+            if (idx.stemmed) {                     // тот же стеммер, что при индексации
+                int sl = stem::stem(tok, len, sb);
+                out.push({T_TERM, idx.find_term(sb, sl)});
+            } else {
+                out.push({T_TERM, idx.find_term(tok, len)});
+            }
+            first = false;
+        }
+    }
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — Parser <span class="ln">строки 158–205</span></div><pre><code class="language-cpp">struct Parser {
+    const Vec&lt;QTok&gt; &amp;t;
+    size_t p = 0;
+    Vec&lt;Node&gt; nodes;
+    explicit Parser(const Vec&lt;QTok&gt; &amp;toks) : t(toks) {}
+
+    int make(NodeType ty, int l, int r, long e = 0) { nodes.push({ty, l, r, e}); return (int)nodes.n - 1; }
+    bool at(TokType ty) const { return p &lt; t.n &amp;&amp; t[p].type == ty; }
+
+    int unary() {
+        if (at(T_NOT)) { p++; int c = unary(); return c &lt; 0 ? -1 : make(N_NOT, c, -1); }
+        if (at(T_LP)) { p++; int e = expr(); if (at(T_RP)) p++; return e; }
+        if (at(T_TERM)) { long e = t[p].entry; p++; return make(N_TERM, -1, -1, e); }
+        return -1;
+    }
+    int conj() {
+        int left = unary();
+        for (;;) {
+            if (at(T_AND)) { p++; continue; }               // «&amp;&amp;» и повторные «&amp;&amp;» просто разделители
+            if (at(T_TERM) || at(T_NOT) || at(T_LP)) {
+                int right = unary();
+                if (right &lt; 0) continue;
+                left = left &lt; 0 ? right : make(N_AND, left, right);
+                continue;
+            }
+            return left;
+        }
+    }
+    int expr() {
+        int left = conj();
+        while (at(T_OR)) {
+            p++;
+            int right = conj();
+            if (right &lt; 0) continue;
+            left = left &lt; 0 ? right : make(N_OR, left, right);
+        }
+        return left;
+    }
+    int parse() {
+        int root = expr();
+        while (p &lt; t.n) {                                   // хвост после лишней «)» — склеиваем через И
+            p++;
+            int more = expr();
+            if (more &gt;= 0) root = root &lt; 0 ? more : make(N_AND, root, more);
+        }
+        return root;
+    }
+};</code></pre></div>
+
+<h3 id="_14">Операции над отсортированными списками<a class="headerlink" href="#_14" title="Permanent link">#</a></h3>
+<p>Два указателя идут по спискам одновременно, на каждом шаге продвигается тот, у кого номер меньше.
+Пересечение (И), объединение (ИЛИ), разность (И НЕ) — O(|A| + |B|). Отрицание отдельного терма —
+дополнение до всех документов, O(N). Запрос <code>a !b</code> вычисляется как разность без построения дополнения.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_and <span class="ln">строки 80–88</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- операции над списками
+static void op_and(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) i++;
+        else if (a[i] &gt; b[j]) j++;
+        else { r.push(a[i]); i++; j++; }
+    }
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_or <span class="ln">строки 89–98</span></div><pre><code class="language-cpp">static void op_or(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); r.reserve(a.n + b.n); size_t i = 0, j = 0;
+    while (i &lt; a.n &amp;&amp; j &lt; b.n) {
+        if (a[i] &lt; b[j]) r.push(a[i++]);
+        else if (a[i] &gt; b[j]) r.push(b[j++]);
+        else { r.push(a[i]); i++; j++; }
+    }
+    while (i &lt; a.n) r.push(a[i++]);
+    while (j &lt; b.n) r.push(b[j++]);
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_and_not <span class="ln">строки 99–106</span></div><pre><code class="language-cpp">static void op_and_not(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (size_t i = 0; i &lt; a.n; i++) {
+        while (j &lt; b.n &amp;&amp; b[j] &lt; a[i]) j++;
+        if (j &lt; b.n &amp;&amp; b[j] == a[i]) continue;
+        r.push(a[i]);
+    }
+}</code></pre></div>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — op_not <span class="ln">строки 107–113</span></div><pre><code class="language-cpp">static void op_not(const Vec&lt;uint32_t&gt; &amp;a, uint32_t nDocs, Vec&lt;uint32_t&gt; &amp;r) {
+    r.clear(); size_t j = 0;
+    for (uint32_t d = 0; d &lt; nDocs; d++) {
+        if (j &lt; a.n &amp;&amp; a[j] == d) { j++; continue; }
+        r.push(d);
+    }
+}</code></pre></div>
+
+<h3 id="_15">Вычисление дерева запроса<a class="headerlink" href="#_15" title="Permanent link">#</a></h3>
+<p>Рекурсивный обход дерева: лист — список документов терма из индекса, внутренний узел — операция над
+результатами детей.</p>
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — eval <span class="ln">строки 207–222</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- вычисление
+static void eval(const Index &amp;idx, const Vec&lt;Node&gt; &amp;nodes, int v, Vec&lt;uint32_t&gt; &amp;res) {
+    const Node &amp;nd = nodes[v];
+    if (nd.type == N_TERM) { idx.postings_of(nd.entry, res); return; }
+    Vec&lt;uint32_t&gt; a, b;
+    if (nd.type == N_NOT) { eval(idx, nodes, nd.l, a); op_not(a, idx.nDocs, res); a.release(); return; }
+    if (nd.type == N_AND &amp;&amp; nodes[nd.r].type == N_NOT) {    // A &amp;&amp; !B — вычитание без построения дополнения
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nodes[nd.r].l, b); op_and_not(a, b, res);
+    } else if (nd.type == N_AND &amp;&amp; nodes[nd.l].type == N_NOT) {
+        eval(idx, nodes, nd.r, a); eval(idx, nodes, nodes[nd.l].l, b); op_and_not(a, b, res);
+    } else {
+        eval(idx, nodes, nd.l, a); eval(idx, nodes, nd.r, b);
+        if (nd.type == N_AND) op_and(a, b, res); else op_or(a, b, res);
+    }
+    a.release(); b.release();
+}</code></pre></div>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();</script>
+</body></html>
