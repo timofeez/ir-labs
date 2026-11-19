@@ -8,7 +8,7 @@
 <script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
 </head><body>
-<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="architecture.html">Архитектура</a><a href="algorithms.html">Алгоритмы</a><a href="annotated.html">Код построчно</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html" class=on>Весь код</a></nav>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="commands.html">Как запускать</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="architecture.html">Архитектура</a><a href="algorithms.html">Алгоритмы</a><a href="annotated.html">Код построчно</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html" class=on>Весь код</a></nav>
 <main><aside class="toc"><b>На странице</b><div class="toc">
 <ul>
 <li><a href="#1-lab1-python-c">ЛР1 — lab1 (сбор корпуса — Python; утилита и тесты — C++)</a></li>
@@ -5079,7 +5079,7 @@ if __name__ == &#x27;__main__&#x27;:
     print(&#x27;ok&#x27;)
 </code></pre></details>
 <p>Общие части утилит ЛР3–8 (C++): <code>tool.h</code> — аргументы и ввод в UTF-8, меню, файлы; <code>engine.h</code> — подключение кода поиска.</p>
-<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(240 строк)</span></summary><pre><code class="language-cpp">// Общая часть утилит для демонстрации (lab1.exe ... lab8.exe):
+<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(241 строк)</span></summary><pre><code class="language-cpp">// Общая часть утилит для демонстрации (lab1.exe ... lab8.exe):
 // аргументы командной строки и ввод с консоли в UTF-8 (кириллица в Windows), меню, чтение файлов,
 // запуск внешних программ. Утилиты — это обвязка для показа; сама поисковая система (src/) написана без STL.
 #pragma once
@@ -5144,6 +5144,7 @@ inline bool read_line(std::string &amp;out) {
 #endif
     int c; bool any = false;
     while ((c = getchar()) != EOF &amp;&amp; c != &#x27;\n&#x27;) { any = true; if (c != &#x27;\r&#x27;) out.push_back((char)c); }
+    if (out.compare(0, 3, &quot;\xEF\xBB\xBF&quot;) == 0) out.erase(0, 3);      // метка BOM из перенаправленного ввода
     return any || c == &#x27;\n&#x27;;
 }
 
@@ -6066,7 +6067,7 @@ bin\test_lab8_search.exe                            тесты ЛР8 напря�
 
 <h2 id="_3">Сайт и отчёт<a class="headerlink" href="#_3" title="Permanent link">#</a></h2>
 <p>Генератор этого сайта: Markdown + вставка кода прямо из исходников.</p>
-<details class="file"><summary>site_src/make_site.py <span class="ln">(192 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генератор сайта с теорией и кодом для GitHub Pages.
+<details class="file"><summary>site_src/make_site.py <span class="ln">(193 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генератор сайта с теорией и кодом для GitHub Pages.
 
 Исходники страниц — Markdown в site_src/*.md. Внутри можно вставлять код прямо из проекта:
   @@code lab1/src/extract.py::clean@@        — функция / класс / метод по имени (Python и C++)
@@ -6087,6 +6088,7 @@ OUT = os.path.join(ROOT, &#x27;docs&#x27;)
 
 PAGES = [  # (файл .md, html, заголовок в меню)
     (&#x27;index.md&#x27;, &#x27;index.html&#x27;, &#x27;Главная&#x27;),
+    (&#x27;commands.md&#x27;, &#x27;commands.html&#x27;, &#x27;Как запускать&#x27;),
     (&#x27;lab1.md&#x27;, &#x27;lab1.html&#x27;, &#x27;ЛР1 Корпус&#x27;),
     (&#x27;lab2.md&#x27;, &#x27;lab2.html&#x27;, &#x27;ЛР2 Робот&#x27;),
     (&#x27;lab3.md&#x27;, &#x27;lab3.html&#x27;, &#x27;ЛР3 Токенизация&#x27;),

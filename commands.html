@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Как запускать — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="commands.html" class=on>Как запускать</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="architecture.html">Архитектура</a><a href="algorithms.html">Алгоритмы</a><a href="annotated.html">Код построчно</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#0-2">0. Перед началом — база данных ЛР2</a></li>
+<li><a href="#1-c-googletest-ctest">1. Тесты (C++, GoogleTest + CTest)</a></li>
+<li><a href="#2">2. Утилиты</a><ul>
+<li><a href="#1-lab1binlab1exe">ЛР1 — корпус: lab1\bin\lab1.exe</a></li>
+<li><a href="#2-lab2binlab2exe">ЛР2 — робот и распределённая БД: lab2\bin\lab2.exe</a></li>
+<li><a href="#3-lab_booleanbinlab3exe">ЛР3 — токенизация: lab_boolean\bin\lab3.exe</a></li>
+<li><a href="#4-lab_booleanbinlab4exe">ЛР4 — стемминг: lab_boolean\bin\lab4.exe</a></li>
+<li><a href="#5-lab_booleanbinlab5exe">ЛР5 — закон Ципфа: lab_boolean\bin\lab5.exe</a></li>
+<li><a href="#7-lab_booleanbinlab7exe">ЛР7 — индекс: lab_boolean\bin\lab7.exe</a></li>
+<li><a href="#8-lab_booleanbinlab8exe">ЛР8 — булев поиск: lab_boolean\bin\lab8.exe</a></li>
+</ul>
+</li>
+<li><a href="#3-">3. Если что-то не работает</a></li>
+</ul>
+</div>
+</aside><h1 id="_1">Как запускать<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
+<p>Все команды выполняются в терминале (VS Code: <strong>Terminal → New Terminal</strong>) из папки <code>ir_labs</code>,
+если не сказано другое. Утилиты и тесты написаны на C++ и уже собраны.</p>
+<h2 id="0-2">0. Перед началом — база данных ЛР2<a class="headerlink" href="#0-2" title="Permanent link">#</a></h2>
+<p>База (CockroachDB, 3 узла) нужна только для ЛР2. После перезагрузки компьютера её нужно запустить заново.</p>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что делает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab2\start_cluster.bat</code></td>
+<td>запускает 3 узла базы (окна <code>crdb-node1..3</code>), ждать ~15 секунд</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe cluster</code></td>
+<td>проверка: у всех трёх узлов <code>is_live = true</code> — база работает</td>
+</tr>
+<tr>
+<td><code>lab2\stop_cluster.bat</code></td>
+<td>корректно остановить базу</td>
+</tr>
+</tbody>
+</table>
+<p>Веб-консоль базы: <a href="http://localhost:8091">http://localhost:8091</a>.</p>
+<h2 id="1-c-googletest-ctest">1. Тесты (C++, GoogleTest + CTest)<a class="headerlink" href="#1-c-googletest-ctest" title="Permanent link">#</a></h2>
+<p>В каждой папке лабы — одна и та же команда:</p>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что делает</th>
+<th>Результат</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cd lab1</code> → <code>ctest --preset default</code></td>
+<td>тесты ЛР1: очистка вики-разметки, разбор корпуса, весь корпус</td>
+<td><code>100% tests passed out of 14</code></td>
+</tr>
+<tr>
+<td><code>cd lab2</code> → <code>ctest --preset default</code></td>
+<td>тесты ЛР2: нормализация URL, robots.txt, распределённая БД (нужна запущенная база)</td>
+<td><code>100% tests passed out of 20</code></td>
+</tr>
+<tr>
+<td><code>cd lab_boolean</code> → <code>ctest --preset default</code></td>
+<td>тесты ЛР3–8: токенизатор, стеммер, частоты, индекс, поиск, полный корпус</td>
+<td><code>100% tests passed out of 29</code></td>
+</tr>
+<tr>
+<td><code>ctest --preset default -R Lab8</code></td>
+<td>только тесты одной лабы (<code>Lab3</code>, <code>Lab4</code>, <code>Lab5</code>, <code>Lab7</code>, <code>Lab8</code>, <code>FullCorpus</code>)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>ctest --preset default -N</code></td>
+<td>список всех тестов без запуска</td>
+<td></td>
+</tr>
+<tr>
+<td><code>bin\test_lab8_search.exe</code></td>
+<td>тесты одной лабы напрямую — подробный вывод GoogleTest</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><code>cd ..</code> — вернуться в папку <code>ir_labs</code>.</p>
+<p><strong>Если пишет, что нет программ</strong> — собрать (в папке лабы):</p>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что делает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cmake --preset default</code></td>
+<td>настройка сборки (один раз)</td>
+</tr>
+<tr>
+<td><code>cmake --build --preset default</code></td>
+<td>сборка утилит и тестов</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2">2. Утилиты<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<p>Без слов после имени программы открывается <strong>меню</strong>: ввести номер пункта → Enter, <code>0</code> — выход.
+Можно сразу писать команду: <code>lab8.exe search электровоз</code>.</p>
+<h3 id="1-lab1binlab1exe">ЛР1 — корпус: <code>lab1\bin\lab1.exe</code><a class="headerlink" href="#1-lab1binlab1exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab1\bin\lab1.exe stats</code></td>
+<td>статистика корпуса по источникам: документы, байты, слова, медиана</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe meta</code></td>
+<td>доля документов с метаданными (карточки, координаты, сноски…)</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe lengths</code></td>
+<td>гистограмма длины документов</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe find электровоз</code></td>
+<td>поиск документов по заголовку</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe compare 63729</code></td>
+<td>документ до (вики-разметка) и после очистки</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe clean</code></td>
+<td>очистка своего кусочка вики-разметки (Enter — пример)</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe robots</code></td>
+<td>robots.txt и карта сайта «Гудка» (живой запрос)</td>
+</tr>
+<tr>
+<td><code>lab1\bin\lab1.exe random</code></td>
+<td>случайный документ</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-lab2binlab2exe">ЛР2 — робот и распределённая БД: <code>lab2\bin\lab2.exe</code><a class="headerlink" href="#2-lab2binlab2exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab2\bin\lab2.exe cluster</code></td>
+<td>3 узла, шарды (диапазоны) и 3 реплики каждого</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe failover</code></td>
+<td><strong>отказ узла</strong>: первый недоступен → подключение к следующему</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe nodes</code></td>
+<td>один запрос через каждый узел — данные одинаковые</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe stats</code></td>
+<td>документы по источникам, размеры, очередь</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe frontier</code></td>
+<td>очередь обхода по состояниям</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe show ВЛ80</code></td>
+<td>документ из базы по заголовку</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe normalize</code></td>
+<td>нормализация URL (Enter — примеры)</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe robots https://ru.wikipedia.org/w/index.php?title=X</code></td>
+<td>разрешён ли адрес в robots.txt</td>
+</tr>
+<tr>
+<td><code>lab2\bin\lab2.exe sql "SELECT source, count(*) FROM documents GROUP BY 1"</code></td>
+<td>свой SQL-запрос</td>
+</tr>
+<tr>
+<td><code>cd lab2</code> → <code>python robot.py config.yaml</code></td>
+<td>запуск самого робота; Ctrl+C — остановка, повторный запуск продолжает</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-lab_booleanbinlab3exe">ЛР3 — токенизация: <code>lab_boolean\bin\lab3.exe</code><a class="headerlink" href="#3-lab_booleanbinlab3exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean\bin\lab3.exe text Электровоз ВЛ-80 проехал Санкт-Петербург</code></td>
+<td>токены текста</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab3.exe stats</code></td>
+<td>токены всего корпуса, средняя длина, скорость</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab3.exe speed</code></td>
+<td>время от объёма текста — линейно, O(n)</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab3.exe bad</code></td>
+<td>неудачные случаи и как исправить</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab3.exe utf8 Жa</code></td>
+<td>байты UTF-8 и класс символа</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-lab_booleanbinlab4exe">ЛР4 — стемминг: <code>lab_boolean\bin\lab4.exe</code><a class="headerlink" href="#4-lab_booleanbinlab4exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean\bin\lab4.exe stem электровозами станциями running</code></td>
+<td>основы слов</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab4.exe compare машинисту поезда</code></td>
+<td>поиск без стемминга и со стеммингом</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab4.exe forms электровоз</code></td>
+<td>все словоформы корпуса с той же основой</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab4.exe errors</code></td>
+<td>ошибки стемминга</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5-lab_booleanbinlab5exe">ЛР5 — закон Ципфа: <code>lab_boolean\bin\lab5.exe</code><a class="headerlink" href="#5-lab_booleanbinlab5exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean\bin\lab5.exe top 20</code></td>
+<td>частые термы, f·r, предсказание Ципфа</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab5.exe word вагон</code></td>
+<td>ранг и частота слова</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab5.exe summary</code></td>
+<td>токены, термы, hapax, константы</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab5.exe ranks</code></td>
+<td>Ципф и Мандельброт на рангах 1, 10, 100…</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab5.exe plot</code></td>
+<td>график log-log в консоли</td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-lab_booleanbinlab7exe">ЛР7 — индекс: <code>lab_boolean\bin\lab7.exe</code><a class="headerlink" href="#7-lab_booleanbinlab7exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe info</code></td>
+<td>статистика индексации</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe format</code></td>
+<td>файл index.bin побайтово: заголовок, секции</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe term вагон</code></td>
+<td>posting-лист: df и документы</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe doc 5</code></td>
+<td>прямой индекс: документ по номеру</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe dict вагон</code></td>
+<td>соседи в отсортированном словаре</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab7.exe build</code></td>
+<td>пересобрать индексы</td>
+</tr>
+</tbody>
+</table>
+<h3 id="8-lab_booleanbinlab8exe">ЛР8 — булев поиск: <code>lab_boolean\bin\lab8.exe</code><a class="headerlink" href="#8-lab_booleanbinlab8exe" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Что показывает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lab_boolean\bin\lab8.exe search</code></td>
+<td>интерактивный поиск (пустая строка — выход)</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab8.exe search (электровоз \|\| тепловоз) колея</code></td>
+<td>поиск одного запроса</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab8.exe stem машинисту поезда</code></td>
+<td>поиск по индексу основ</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab8.exe explain ноги \|\| красный автомобиль</code></td>
+<td>разбор запроса: лексемы и дерево</td>
+</tr>
+<tr>
+<td><code>lab_boolean\bin\lab8.exe bench</code></td>
+<td>скорость разных типов запросов</td>
+</tr>
+<tr>
+<td><code>cd lab_boolean</code> → <code>python web\server.py 8080</code></td>
+<td>веб-поиск на <a href="http://localhost:8080">http://localhost:8080</a></td>
+</tr>
+</tbody>
+</table>
+<p>Синтаксис запросов: пробел или <code>&amp;&amp;</code> — И, <code>||</code> — ИЛИ, <code>!</code> — НЕ, скобки.</p>
+<h2 id="3-">3. Если что-то не работает<a class="headerlink" href="#3-" title="Permanent link">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Проблема</th>
+<th>Что сделать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>«нет exe» / «не является командой»</td>
+<td>в папке лабы: <code>cmake --preset default</code>, <code>cmake --build --preset default</code></td>
+</tr>
+<tr>
+<td>ЛР2: «ни один узел не отвечает»</td>
+<td><code>lab2\start_cluster.bat</code>, подождать 15 с</td>
+</tr>
+<tr>
+<td>тесты ЛР2 «Skipped»</td>
+<td>база не запущена — то же самое</td>
+</tr>
+<tr>
+<td>«нет индекса»</td>
+<td><code>lab_boolean\bin\lab7.exe build</code></td>
+</tr>
+</tbody>
+</table>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>
+</body></html>
