@@ -84,19 +84,16 @@ frequency) — длина списка. Списки отсортированы,
    сравнение UTF-8): O(T log T) гарантированно, стабильно, годится для внешней памяти.</li>
 <li><strong>Запись файла</strong> по секциям.</li>
 </ol>
-<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 65–117</span></div><pre><code class="language-cpp">    while (lr.next()) {
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 56–104</span></div><pre><code class="language-cpp">    while (lr.next()) {
         char *s = lr.line.a; size_t n = lr.line.n;
         if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
-        // разбор полей: источник, pageid, заголовок, URL, текст
         char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
         for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++) {
             if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
         }
         if (k &lt; 5) continue;
 
-        // запись прямого индекса: u8 источник, u32 pageid, u16+байты заголовок, u16+байты URL
         docOff.push(docsBlob.n);
-        // источник: 0 = ruwiki, 1 = enwiki, 2 = gudok (газета «Гудок»)
         uint8_t source = (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;e&#x27;) ? 1 : (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;g&#x27;) ? 2 : 0;
         docsBlob.push((char)source);
         put32(docsBlob, (uint32_t)strtoul(f[1], nullptr, 10));
@@ -104,7 +101,6 @@ frequency) — длина списка. Списки отсортированы,
         put16(docsBlob, tl); docsBlob.append(f[2], tl);
         put16(docsBlob, ul); docsBlob.append(f[3], ul);
 
-        // индексируем заголовок и текст
         for (int part = 2; part &lt;= 4; part += 2) {
             const char *p = f[part]; size_t pn = fl[part], pos = 0;
             textBytes += pn;
@@ -114,17 +110,17 @@ frequency) — длина списка. Списки отсортированы,
                 bool isNew;
                 uint32_t id = tt.get_or_add(tok, tlen, isNew);
                 if (useStem) {
-                    if (isNew) {                       // новая словоформа: находим её основу
+                    if (isNew) {
                         bool newStem;
                         int sl = stem::stem(tok, tlen, sb);
                         toStem.push(stemTab.get_or_add(sb, sl, newStem));
                         if (newStem) lastDoc.push(UINT32_MAX);
                     }
-                    id = toStem[id];                   // в индекс идёт основа
+                    id = toStem[id];
                 } else if (isNew) {
                     lastDoc.push(UINT32_MAX);
                 }
-                if (lastDoc[id] != docNo) {            // каждая пара (терм, документ) — один раз
+                if (lastDoc[id] != docNo) {
                     lastDoc[id] = docNo;
                     pairs.push(((uint64_t)id &lt;&lt; 32) | docNo);
                 }
@@ -135,11 +131,10 @@ frequency) — длина списка. Списки отсортированы,
     }
     fclose(in);
     double tParse = now_sec();
-    TermTable &amp;ix = useStem ? stemTab : tt;   // таблица термов индекса: основы или словоформы
+    TermTable &amp;ix = useStem ? stemTab : tt;
 </code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 118–138</span></div><pre><code class="language-cpp">    // ---- сортировка постингов по термам: сортировка подсчётом (стабильная, O(n))
-    size_t T = ix.size;
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 105–123</span></div><pre><code class="language-cpp">    size_t T = ix.size;
     Vec&lt;uint64_t&gt; start; start.resize(T + 1);
     memset(start.a, 0, (T + 1) * sizeof(uint64_t));
     for (size_t i = 0; i &lt; pairs.n; i++) start[(pairs[i] &gt;&gt; 32) + 1]++;
@@ -149,20 +144,17 @@ frequency) — длина списка. Списки отсортированы,
         Vec&lt;uint64_t&gt; fill; fill.resize(T);
         memcpy(fill.a, start.a, T * sizeof(uint64_t));
         for (size_t i = 0; i &lt; pairs.n; i++)
-            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];   // документы уже по возрастанию
+            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];
         fill.release();
     }
     pairs.release();
 
-    // ---- сортировка словаря: сортировка слиянием по строкам термов
     Vec&lt;uint32_t&gt; order; order.resize(T);
     for (size_t t = 0; t &lt; T; t++) order[t] = (uint32_t)t;
     merge_sort_terms(order.a, T, ix);
     double tSort = now_sec();</code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp — merge_sort_terms <span class="ln">строки 10–34</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- сортировка слиянием
-// Сортирует массив id термов по строкам термов (восходящая, итеративная, стабильная).
-static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp — merge_sort_terms <span class="ln">строки 4–26</span></div><pre><code class="language-cpp">static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
     for (size_t width = 1; width &lt; n; width *= 2) {
@@ -186,8 +178,7 @@ static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     free(tmp);
 }</code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/src/common.h — cmp_bytes <span class="ln">строки 129–135</span></div><pre><code class="language-cpp">// Сравнение байтовых строк (лексикографически по беззнаковым байтам).
-static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
+<div class="code"><div class="code-title">lab_boolean/src/common.h — cmp_bytes <span class="ln">строки 112–117</span></div><pre><code class="language-cpp">static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
     size_t m = la &lt; lb ? la : lb;
     int r = memcmp(a, b, m);
     if (r) return r;
@@ -270,8 +261,7 @@ static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) 
 12..15  00 00 00 00   флаги 0                 POSTINGS  смещение 32 673 880   размер 67 760 752
 </code></pre>
 <p>Запись файла:</p>
-<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 140–182</span></div><pre><code class="language-cpp">    // ---- запись файла
-    FILE *out = fopen(argv[2], &quot;wb&quot;);
+<div class="code"><div class="code-title">lab_boolean/src/indexer.cpp <span class="ln">строки 125–166</span></div><pre><code class="language-cpp">    FILE *out = fopen(argv[2], &quot;wb&quot;);
     if (!out) { fprintf(stderr, &quot;cannot create %s\n&quot;, argv[2]); return 1; }
     const uint32_t NSEC = 4;
     uint64_t szDocs = 4 + 8ull * docNo + docsBlob.n;
@@ -289,39 +279,38 @@ static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) 
     for (uint32_t i = 0; i &lt; NSEC; i++) { w32(out, types[i]); w32(out, 0); w64(out, offs[i]); w64(out, sizes[i]); }
     uint64_t pos = HEADER_SIZE + SECTION_ENTRY_SIZE * NSEC;
 
-    pad8(out, pos);                                            // DOCS
+    pad8(out, pos);
     w32(out, docNo);
     uint64_t base = 4 + 8ull * docNo;
     for (uint32_t d = 0; d &lt; docNo; d++) w64(out, base + docOff[d]);
     fwrite(docsBlob.a, 1, docsBlob.n, out);
     pos += szDocs; pad8(out, pos);
 
-    w32(out, (uint32_t)T);                                     // DICT (в порядке сортировки)
+    w32(out, (uint32_t)T);
     for (size_t i = 0; i &lt; T; i++) {
         uint32_t t = order[i];
         w32(out, ix.off[t]); w16(out, ix.len[t]); w16(out, 0);
-        w32(out, (uint32_t)(start[t + 1] - start[t]));        // df
-        w32(out, 0);                                           // зарезервировано
-        w64(out, start[t] * 4);                                // смещение списка в POSTINGS
+        w32(out, (uint32_t)(start[t + 1] - start[t]));
+        w32(out, 0);
+        w64(out, start[t] * 4);
     }
     pos += szDict; pad8(out, pos);
 
-    fwrite(ix.pool.a, 1, ix.pool.n, out);                      // TERMSTR
+    fwrite(ix.pool.a, 1, ix.pool.n, out);
     pos += szStr; pad8(out, pos);
 
-    fwrite(postings.a, 4, postings.n, out);                    // POSTINGS
+    fwrite(postings.a, 4, postings.n, out);
     pos += szPost;
     fclose(out);
     double t1 = now_sec();</code></pre></div>
 
 <p>Чтение (в поиске) — файл целиком в память, разбор таблицы секций, двоичный поиск по словарю:</p>
-<div class="code"><div class="code-title">lab_boolean/src/search.cpp — Index <span class="ln">строки 11–78</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- загруженный индекс
-struct Index {
+<div class="code"><div class="code-title">lab_boolean/src/search.cpp — Index <span class="ln">строки 4–67</span></div><pre><code class="language-cpp">struct Index {
     char *data = nullptr;
     uint64_t size = 0;
     const char *docs = nullptr, *dict = nullptr, *termstr = nullptr, *postings = nullptr;
     uint32_t nDocs = 0, nTerms = 0;
-    bool stemmed = false;          // в индексе основы слов -&gt; слова запроса тоже стеммируются
+    bool stemmed = false;
 
     bool load(const char *path) {
         FILE *f = fopen(path, &quot;rb&quot;);
@@ -345,16 +334,14 @@ struct Index {
             else if (type == SEC_DICT) dict = p;
             else if (type == SEC_TERMSTR) termstr = p;
             else if (type == SEC_POSTINGS) postings = p;
-            // неизвестные секции пропускаются — так формат расширяется без поломки старых программ
         }
         if (!docs || !dict || !termstr || !postings) { fprintf(stderr, &quot;missing section\n&quot;); return false; }
         nDocs = rd32(docs);
         nTerms = rd32(dict);
-        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;   // флаги заголовка
+        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;
         return true;
     }
 
-    // Двоичный поиск терма в отсортированном словаре. Возвращает номер записи или -1.
     long find_term(const char *s, int n) const {
         long lo = 0, hi = (long)nTerms - 1;
         while (lo &lt;= hi) {
@@ -376,7 +363,6 @@ struct Index {
         memcpy(out.a, postings + rd64(e + 16), (size_t)df * 4);
     }
 
-    // Заголовок и URL документа из прямого индекса.
     void doc_info(uint32_t d, const char *&amp;title, int &amp;tl, const char *&amp;url, int &amp;ul) const {
         const char *r = docs + rd64(docs + 4 + 8ull * d);
         tl = rd16(r + 5); title = r + 7;
@@ -452,12 +438,12 @@ struct Index {
 <p>Индекс мини-корпуса (6 документов с известным содержимым) строится вызовом <code>indexer_main</code> прямо из
 теста; проверяются заголовок, сортировка словаря, двоичный поиск, списки (строго возрастают, длина =
 df), прямой индекс, нормализация. Плюс <code>FullCorpus.*</code> — сверка с независимым эталоном на всём корпусе.</p>
-<div class="code"><div class="code-title">lab_boolean/tests/test_lab7_index.cpp — index_postings_sorted_with_df <span class="ln">строки 85–95</span></div><pre><code class="language-cpp">TEST(Lab7_Index, index_postings_sorted_with_df) {
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab7_index.cpp — index_postings_sorted_with_df <span class="ln">строки 79–89</span></div><pre><code class="language-cpp">TEST(Lab7_Index, index_postings_sorted_with_df) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
     Vec&lt;uint32_t&gt; p;
     idx.postings_of(idx.find_term(&quot;руки&quot;, (int)strlen(&quot;руки&quot;)), p);
     CHECK_EQ(p.n, 3); CHECK_EQ(p[0], 2); CHECK_EQ(p[1], 3); CHECK_EQ(p[2], 5);
-    for (uint32_t t = 0; t &lt; idx.nTerms; t++) {      // все списки строго возрастают
+    for (uint32_t t = 0; t &lt; idx.nTerms; t++) {
         idx.postings_of(t, p);
         CHECK(p.n &gt;= 1);
         for (size_t i = 1; i &lt; p.n; i++) CHECK(p[i - 1] &lt; p[i]);
@@ -483,17 +469,9 @@ bin\lab7.exe dict электровоз   — соседи в отсортиро�
 <li><strong>Как масштабировать?</strong> SPIMI/BSBI + слияние, сжатие списков, распределённая индексация.</li>
 </ul>
 <h2 id="10">10. Полные исходники<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
-<details class="file"><summary>lab_boolean/src/indexer.cpp <span class="ln">(208 строк)</span></summary><pre><code class="language-cpp">// Индексатор: строит булев индекс (прямой + обратный) в собственном бинарном формате.
-//
-// Вход:  corpus.tsv — по документу на строку: источник \t pageid \t заголовок \t URL \t текст
-// Выход: index.bin
-// Запуск: indexer corpus.tsv index.bin [--stem]
-//   --stem — в индекс попадают основы слов (стемминг, src/stem.h), а не словоформы
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/indexer.cpp <span class="ln">(191 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
-// ---------------------------------------------------------------- сортировка слиянием
-// Сортирует массив id термов по строкам термов (восходящая, итеративная, стабильная).
 static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
@@ -518,7 +496,6 @@ static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     free(tmp);
 }
 
-// ---------------------------------------------------------------- запись
 static void w16(FILE *f, uint16_t v) { fwrite(&amp;v, 2, 1, f); }
 static void w32(FILE *f, uint32_t v) { fwrite(&amp;v, 4, 1, f); }
 static void w64(FILE *f, uint64_t v) { fwrite(&amp;v, 8, 1, f); }
@@ -536,13 +513,13 @@ int main(int argc, char **argv) {
 
     double t0 = now_sec();
     LineReader lr(in);
-    TermTable tt;              // все различные словоформы (токены после нормализации)
-    TermTable stemTab;         // основы слов (только при --stem)
-    Vec&lt;uint32_t&gt; toStem;      // toStem[id словоформы] = id основы: стемминг делается один раз на словоформу
-    Vec&lt;uint32_t&gt; lastDoc;     // lastDoc[termId] — последний документ, где встречался терм
-    Vec&lt;uint64_t&gt; pairs;       // пары (termId &lt;&lt; 32 | docNo), по одной на (терм, документ)
-    Vec&lt;char&gt; docsBlob;        // записи прямого индекса
-    Vec&lt;uint64_t&gt; docOff;      // смещение записи каждого документа в docsBlob
+    TermTable tt;
+    TermTable stemTab;
+    Vec&lt;uint32_t&gt; toStem;
+    Vec&lt;uint32_t&gt; lastDoc;
+    Vec&lt;uint64_t&gt; pairs;
+    Vec&lt;char&gt; docsBlob;
+    Vec&lt;uint64_t&gt; docOff;
     uint64_t textBytes = 0, tokens = 0, tokenChars = 0;
     uint32_t docNo = 0;
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
@@ -550,16 +527,13 @@ int main(int argc, char **argv) {
     while (lr.next()) {
         char *s = lr.line.a; size_t n = lr.line.n;
         if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
-        // разбор полей: источник, pageid, заголовок, URL, текст
         char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
         for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++) {
             if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
         }
         if (k &lt; 5) continue;
 
-        // запись прямого индекса: u8 источник, u32 pageid, u16+байты заголовок, u16+байты URL
         docOff.push(docsBlob.n);
-        // источник: 0 = ruwiki, 1 = enwiki, 2 = gudok (газета «Гудок»)
         uint8_t source = (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;e&#x27;) ? 1 : (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;g&#x27;) ? 2 : 0;
         docsBlob.push((char)source);
         put32(docsBlob, (uint32_t)strtoul(f[1], nullptr, 10));
@@ -567,7 +541,6 @@ int main(int argc, char **argv) {
         put16(docsBlob, tl); docsBlob.append(f[2], tl);
         put16(docsBlob, ul); docsBlob.append(f[3], ul);
 
-        // индексируем заголовок и текст
         for (int part = 2; part &lt;= 4; part += 2) {
             const char *p = f[part]; size_t pn = fl[part], pos = 0;
             textBytes += pn;
@@ -577,17 +550,17 @@ int main(int argc, char **argv) {
                 bool isNew;
                 uint32_t id = tt.get_or_add(tok, tlen, isNew);
                 if (useStem) {
-                    if (isNew) {                       // новая словоформа: находим её основу
+                    if (isNew) {
                         bool newStem;
                         int sl = stem::stem(tok, tlen, sb);
                         toStem.push(stemTab.get_or_add(sb, sl, newStem));
                         if (newStem) lastDoc.push(UINT32_MAX);
                     }
-                    id = toStem[id];                   // в индекс идёт основа
+                    id = toStem[id];
                 } else if (isNew) {
                     lastDoc.push(UINT32_MAX);
                 }
-                if (lastDoc[id] != docNo) {            // каждая пара (терм, документ) — один раз
+                if (lastDoc[id] != docNo) {
                     lastDoc[id] = docNo;
                     pairs.push(((uint64_t)id &lt;&lt; 32) | docNo);
                 }
@@ -598,9 +571,8 @@ int main(int argc, char **argv) {
     }
     fclose(in);
     double tParse = now_sec();
-    TermTable &amp;ix = useStem ? stemTab : tt;   // таблица термов индекса: основы или словоформы
+    TermTable &amp;ix = useStem ? stemTab : tt;
 
-    // ---- сортировка постингов по термам: сортировка подсчётом (стабильная, O(n))
     size_t T = ix.size;
     Vec&lt;uint64_t&gt; start; start.resize(T + 1);
     memset(start.a, 0, (T + 1) * sizeof(uint64_t));
@@ -611,18 +583,16 @@ int main(int argc, char **argv) {
         Vec&lt;uint64_t&gt; fill; fill.resize(T);
         memcpy(fill.a, start.a, T * sizeof(uint64_t));
         for (size_t i = 0; i &lt; pairs.n; i++)
-            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];   // документы уже по возрастанию
+            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];
         fill.release();
     }
     pairs.release();
 
-    // ---- сортировка словаря: сортировка слиянием по строкам термов
     Vec&lt;uint32_t&gt; order; order.resize(T);
     for (size_t t = 0; t &lt; T; t++) order[t] = (uint32_t)t;
     merge_sort_terms(order.a, T, ix);
     double tSort = now_sec();
 
-    // ---- запись файла
     FILE *out = fopen(argv[2], &quot;wb&quot;);
     if (!out) { fprintf(stderr, &quot;cannot create %s\n&quot;, argv[2]); return 1; }
     const uint32_t NSEC = 4;
@@ -641,32 +611,31 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i &lt; NSEC; i++) { w32(out, types[i]); w32(out, 0); w64(out, offs[i]); w64(out, sizes[i]); }
     uint64_t pos = HEADER_SIZE + SECTION_ENTRY_SIZE * NSEC;
 
-    pad8(out, pos);                                            // DOCS
+    pad8(out, pos);
     w32(out, docNo);
     uint64_t base = 4 + 8ull * docNo;
     for (uint32_t d = 0; d &lt; docNo; d++) w64(out, base + docOff[d]);
     fwrite(docsBlob.a, 1, docsBlob.n, out);
     pos += szDocs; pad8(out, pos);
 
-    w32(out, (uint32_t)T);                                     // DICT (в порядке сортировки)
+    w32(out, (uint32_t)T);
     for (size_t i = 0; i &lt; T; i++) {
         uint32_t t = order[i];
         w32(out, ix.off[t]); w16(out, ix.len[t]); w16(out, 0);
-        w32(out, (uint32_t)(start[t + 1] - start[t]));        // df
-        w32(out, 0);                                           // зарезервировано
-        w64(out, start[t] * 4);                                // смещение списка в POSTINGS
+        w32(out, (uint32_t)(start[t + 1] - start[t]));
+        w32(out, 0);
+        w64(out, start[t] * 4);
     }
     pos += szDict; pad8(out, pos);
 
-    fwrite(ix.pool.a, 1, ix.pool.n, out);                      // TERMSTR
+    fwrite(ix.pool.a, 1, ix.pool.n, out);
     pos += szStr; pad8(out, pos);
 
-    fwrite(postings.a, 4, postings.n, out);                    // POSTINGS
+    fwrite(postings.a, 4, postings.n, out);
     pos += szPost;
     fclose(out);
     double t1 = now_sec();
 
-    // ---- статистика
     uint64_t termChars = 0;
     for (size_t t = 0; t &lt; T; t++) {
         const unsigned char *p = (const unsigned char *)ix.pool.a + ix.off[t];
@@ -691,15 +660,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 </code></pre></details>
-<details class="file"><summary>lab_boolean/src/prepare.py <span class="ln">(32 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Подготовка входа для индексатора из корпуса ЛР1.
-
-Читает &lt;корпус ЛР1&gt;/{ruwiki,enwiki,gudok}_text.jsonl и пишет data/corpus.tsv:
-по документу на строку — источник \t id \t заголовок \t URL \t текст
-(табуляции и переводы строк внутри полей заменяются пробелами).
-Папка корпуса ЛР1 по умолчанию ищется рядом: ../lab1/data или ../../lab1/data (относительно lab_boolean).
-Запуск: python src/prepare.py [папка_корпуса_ЛР1] [выходной_файл]
-&quot;&quot;&quot;
-import json, os, re, sys
+<details class="file"><summary>lab_boolean/src/prepare.py <span class="ln">(24 строк)</span></summary><pre><code class="language-python">import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANDIDATES = [os.path.join(HERE, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;lab1&#x27;, &#x27;data&#x27;), os.path.join(HERE, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;lab1&#x27;, &#x27;data&#x27;)]
@@ -723,16 +684,7 @@ with open(OUT, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;
             counts[name] += 1
 print(f&#x27;{sum(counts.values())} documents {counts} -&gt; {OUT}&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(111 строк)</span></summary><pre><code class="language-cpp">// ЛР7 «Булев индекс» — утилита для проверок и демонстрации.
-//
-//   lab7              — меню
-//   lab7 info         — статистика индексации (документы, термы, размер, время, скорость)
-//   lab7 format       — разбор бинарного файла index.bin: заголовок и таблица секций побайтово
-//   lab7 term вагон   — запись словаря: df и первые номера документов из списка
-//   lab7 doc 5        — прямой индекс: заголовок и URL документа по номеру
-//   lab7 dict вагон   — соседи терма в отсортированном словаре
-//   lab7 build        — пересобрать оба индекса (indexer.exe) и показать статистику
-#include &quot;engine.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(102 строк)</span></summary><pre><code class="language-cpp">#include &quot;engine.h&quot;
 
 static Index g_idx;
 static bool g_loaded = false;
@@ -790,7 +742,7 @@ static void cmd_doc(const std::string &amp;arg) {
 static void cmd_dict(const std::string &amp;arg) {
     if (!idx()) return;
     std::string w = eng::normalize(arg.empty() ? &quot;вагон&quot; : arg, false);
-    long lo = 0, hi = (long)g_idx.nTerms;                     // первая запись &gt;= w (двоичный поиск)
+    long lo = 0, hi = (long)g_idx.nTerms;
     while (lo &lt; hi) {
         long m = (lo + hi) / 2;
         std::string t = eng::term_at(g_idx, m);
@@ -807,7 +759,7 @@ static void cmd_build(const std::string &amp;) {
         printf(&quot;Строю %s...\n&quot;, s ? &quot;индекс основ&quot; : &quot;индекс словоформ&quot;);
         std::string out = tool::run(&quot;\&quot;&quot; + ix + &quot; &quot; + c + &quot; &quot; + tool::quote(tool::path(s ? &quot;data/index_stem.bin&quot; : &quot;data/index.bin&quot;)) +
                                     (s ? &quot; --stem&quot; : &quot;&quot;) + &quot;\&quot;&quot;);
-        std::string stats;                                     // строки статистики без прогресса «indexed N docs»
+        std::string stats;
         size_t p = 0;
         while (p &lt; out.size()) {
             size_t q = out.find(&#x27;\n&#x27;, p); if (q == std::string::npos) q = out.size();

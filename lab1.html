@@ -897,18 +897,7 @@ if __name__ == &#x27;__main__&#x27;:
     sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
     main(sys.argv[1:])
 </code></pre></details>
-<details class="file"><summary>lab1/tools/lab1.cpp <span class="ln">(256 строк)</span></summary><pre><code class="language-cpp">// ЛР1 «Добыча корпуса документов» — утилита для проверок и демонстрации (C++).
-//
-//   lab1                         — меню
-//   lab1 stats                   — статистика корпуса по источникам (data/corpus_stats.json)
-//   lab1 meta                    — доля документов с каждым видом метаданных
-//   lab1 lengths                 — распределение длины документов (гистограмма в консоли)
-//   lab1 find электровоз         — найти документы по заголовку
-//   lab1 compare 63729           — документ «до и после»: вики-разметка и очищенный текст
-//   lab1 clean &#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; [[ВЛ80|ВЛ-80]]{{ref}}   — очистить свой кусок вики-разметки
-//   lab1 robots                  — robots.txt и карта сайта «Гудка» (живой запрос, curl)
-//   lab1 random                  — случайный документ
-#include &quot;../../lab_boolean/src/common.h&quot;
+<details class="file"><summary>lab1/tools/lab1.cpp <span class="ln">(234 строк)</span></summary><pre><code class="language-cpp">#include &quot;../../lab_boolean/src/common.h&quot;
 #include &quot;../../lab_boolean/tools/tool.h&quot;
 #include &lt;regex&gt;
 #include &lt;algorithm&gt;
@@ -916,14 +905,12 @@ if __name__ == &#x27;__main__&#x27;:
 
 static const char *SOURCES[] = {&quot;ruwiki&quot;, &quot;enwiki&quot;, &quot;gudok&quot;};
 
-// ---------------------------------------------------------------- JSON (только то, что нужно: строки и числа)
-// Значение строкового поля &quot;key&quot; из строки JSON (с разбором экранирования \n \&quot; \\ \uXXXX).
 static std::string json_str(const std::string &amp;j, const std::string &amp;key) {
     std::string pat = &quot;\&quot;&quot; + key + &quot;\&quot;: &quot;;
     size_t p = j.find(pat);
     if (p == std::string::npos) return &quot;&quot;;
     p += pat.size();
-    if (j[p] != &#x27;&quot;&#x27;) {                                       // число
+    if (j[p] != &#x27;&quot;&#x27;) {
         size_t e = j.find_first_of(&quot;,}&quot;, p);
         return j.substr(p, e - p);
     }
@@ -934,19 +921,18 @@ static std::string json_str(const std::string &amp;j, const std::string &amp;key
         if (c != &#x27;\\&#x27;) { r += c; continue; }
         c = j[++i];
         if (c == &#x27;n&#x27;) r += &#x27;\n&#x27;; else if (c == &#x27;t&#x27;) r += &#x27;\t&#x27;; else if (c == &#x27;r&#x27;) r += &#x27;\r&#x27;;
-        else if (c == &#x27;u&#x27;) {                                 // \uXXXX -&gt; UTF-8 (суррогатные пары)
+        else if (c == &#x27;u&#x27;) {
             uint32_t cp = (uint32_t)strtoul(j.substr(i + 1, 4).c_str(), nullptr, 16); i += 4;
             if (cp &gt;= 0xD800 &amp;&amp; cp &lt; 0xDC00 &amp;&amp; j.compare(i + 1, 2, &quot;\\u&quot;) == 0) {
                 uint32_t lo = (uint32_t)strtoul(j.substr(i + 3, 4).c_str(), nullptr, 16); i += 6;
                 cp = 0x10000 + ((cp - 0xD800) &lt;&lt; 10) + (lo - 0xDC00);
             }
             char b[4]; int n = utf8_encode(cp, b); r.append(b, n);
-        } else r += c;                                       // \&quot; \\ \/
+        } else r += c;
     }
     return r;
 }
 
-// Декодирование %XX в URL (для показа адреса кириллицей).
 static std::string url_decode(const std::string &amp;s) {
     std::string r;
     for (size_t i = 0; i &lt; s.size(); i++)
@@ -956,16 +942,12 @@ static std::string url_decode(const std::string &amp;s) {
     return r;
 }
 
-// Число слов (как \w+ в Python: буквы и цифры подряд) — через токенизатор ЛР3.
 static size_t words(const std::string &amp;t) {
     char tok[MAX_TERM_BYTES + 4]; size_t pos = 0, n = 0; int ch;
     while (next_token(t.data(), t.size(), pos, tok, ch) &gt; 0) n++;
     return n;
 }
 
-// ---------------------------------------------------------------- очистка вики-разметки (как extract.py)
-// Те же шаги: служебный хвост, комментарии, сноски, шаблоны (изнутри наружу), таблицы, файлы и категории,
-// ссылки -&gt; их текст, теги, заголовки, жирный/курсив, маркеры списков, лишние пустые строки.
 static std::string clean_wikitext(std::string t) {
     using std::regex; using std::regex_replace;
     const auto ic = std::regex::icase;
@@ -1000,10 +982,8 @@ static std::string clean_wikitext(std::string t) {
     return a == std::string::npos ? &quot;&quot; : t.substr(a, b - a + 1);
 }
 
-// ---------------------------------------------------------------- документы корпуса
 struct Doc { std::string source, id, title, url, text; };
 
-// Перебор очищенных документов всех источников (data/&lt;источник&gt;_text.jsonl).
 static void each_doc(const std::function&lt;bool(const Doc &amp;)&gt; &amp;fn) {
     for (const char *s : SOURCES) {
         bool stop = false;
@@ -1021,8 +1001,6 @@ static void print_doc(const Doc &amp;d, const std::string &amp;body) {
            std::string(60, &#x27;-&#x27;).c_str(), body.c_str());
 }
 
-// ---------------------------------------------------------------- команды
-// corpus_stats.json записан с отступами: «&quot;ключ&quot;: значение» на строке — выводим как таблицу.
 static void print_stats_json(bool meta) {
     std::string s = tool::read_file(&quot;data/corpus_stats.json&quot;);
     if (s.empty()) { printf(&quot;нет data/corpus_stats.json (создаётся при очистке корпуса)\n&quot;); return; }

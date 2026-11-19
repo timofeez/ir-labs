@@ -448,18 +448,7 @@ if __name__ == &#x27;__main__&#x27;:
     main(sys.argv[1:])
 </code></pre></details>
 <p><strong>Утилита ЛР1 для защиты (C++).</strong> Меню: статистика корпуса, метаданные, распределение длин, поиск по заголовку, документ до и после очистки, очистка своей вики-разметки, robots.txt «Гудка», случайный документ.</p>
-<details class="file"><summary>lab1/tools/lab1.cpp <span class="ln">(256 строк)</span></summary><pre><code class="language-cpp">// ЛР1 «Добыча корпуса документов» — утилита для проверок и демонстрации (C++).
-//
-//   lab1                         — меню
-//   lab1 stats                   — статистика корпуса по источникам (data/corpus_stats.json)
-//   lab1 meta                    — доля документов с каждым видом метаданных
-//   lab1 lengths                 — распределение длины документов (гистограмма в консоли)
-//   lab1 find электровоз         — найти документы по заголовку
-//   lab1 compare 63729           — документ «до и после»: вики-разметка и очищенный текст
-//   lab1 clean &#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; [[ВЛ80|ВЛ-80]]{{ref}}   — очистить свой кусок вики-разметки
-//   lab1 robots                  — robots.txt и карта сайта «Гудка» (живой запрос, curl)
-//   lab1 random                  — случайный документ
-#include &quot;../../lab_boolean/src/common.h&quot;
+<details class="file"><summary>lab1/tools/lab1.cpp <span class="ln">(234 строк)</span></summary><pre><code class="language-cpp">#include &quot;../../lab_boolean/src/common.h&quot;
 #include &quot;../../lab_boolean/tools/tool.h&quot;
 #include &lt;regex&gt;
 #include &lt;algorithm&gt;
@@ -467,14 +456,12 @@ if __name__ == &#x27;__main__&#x27;:
 
 static const char *SOURCES[] = {&quot;ruwiki&quot;, &quot;enwiki&quot;, &quot;gudok&quot;};
 
-// ---------------------------------------------------------------- JSON (только то, что нужно: строки и числа)
-// Значение строкового поля &quot;key&quot; из строки JSON (с разбором экранирования \n \&quot; \\ \uXXXX).
 static std::string json_str(const std::string &amp;j, const std::string &amp;key) {
     std::string pat = &quot;\&quot;&quot; + key + &quot;\&quot;: &quot;;
     size_t p = j.find(pat);
     if (p == std::string::npos) return &quot;&quot;;
     p += pat.size();
-    if (j[p] != &#x27;&quot;&#x27;) {                                       // число
+    if (j[p] != &#x27;&quot;&#x27;) {
         size_t e = j.find_first_of(&quot;,}&quot;, p);
         return j.substr(p, e - p);
     }
@@ -485,19 +472,18 @@ static std::string json_str(const std::string &amp;j, const std::string &amp;key
         if (c != &#x27;\\&#x27;) { r += c; continue; }
         c = j[++i];
         if (c == &#x27;n&#x27;) r += &#x27;\n&#x27;; else if (c == &#x27;t&#x27;) r += &#x27;\t&#x27;; else if (c == &#x27;r&#x27;) r += &#x27;\r&#x27;;
-        else if (c == &#x27;u&#x27;) {                                 // \uXXXX -&gt; UTF-8 (суррогатные пары)
+        else if (c == &#x27;u&#x27;) {
             uint32_t cp = (uint32_t)strtoul(j.substr(i + 1, 4).c_str(), nullptr, 16); i += 4;
             if (cp &gt;= 0xD800 &amp;&amp; cp &lt; 0xDC00 &amp;&amp; j.compare(i + 1, 2, &quot;\\u&quot;) == 0) {
                 uint32_t lo = (uint32_t)strtoul(j.substr(i + 3, 4).c_str(), nullptr, 16); i += 6;
                 cp = 0x10000 + ((cp - 0xD800) &lt;&lt; 10) + (lo - 0xDC00);
             }
             char b[4]; int n = utf8_encode(cp, b); r.append(b, n);
-        } else r += c;                                       // \&quot; \\ \/
+        } else r += c;
     }
     return r;
 }
 
-// Декодирование %XX в URL (для показа адреса кириллицей).
 static std::string url_decode(const std::string &amp;s) {
     std::string r;
     for (size_t i = 0; i &lt; s.size(); i++)
@@ -507,16 +493,12 @@ static std::string url_decode(const std::string &amp;s) {
     return r;
 }
 
-// Число слов (как \w+ в Python: буквы и цифры подряд) — через токенизатор ЛР3.
 static size_t words(const std::string &amp;t) {
     char tok[MAX_TERM_BYTES + 4]; size_t pos = 0, n = 0; int ch;
     while (next_token(t.data(), t.size(), pos, tok, ch) &gt; 0) n++;
     return n;
 }
 
-// ---------------------------------------------------------------- очистка вики-разметки (как extract.py)
-// Те же шаги: служебный хвост, комментарии, сноски, шаблоны (изнутри наружу), таблицы, файлы и категории,
-// ссылки -&gt; их текст, теги, заголовки, жирный/курсив, маркеры списков, лишние пустые строки.
 static std::string clean_wikitext(std::string t) {
     using std::regex; using std::regex_replace;
     const auto ic = std::regex::icase;
@@ -551,10 +533,8 @@ static std::string clean_wikitext(std::string t) {
     return a == std::string::npos ? &quot;&quot; : t.substr(a, b - a + 1);
 }
 
-// ---------------------------------------------------------------- документы корпуса
 struct Doc { std::string source, id, title, url, text; };
 
-// Перебор очищенных документов всех источников (data/&lt;источник&gt;_text.jsonl).
 static void each_doc(const std::function&lt;bool(const Doc &amp;)&gt; &amp;fn) {
     for (const char *s : SOURCES) {
         bool stop = false;
@@ -572,8 +552,6 @@ static void print_doc(const Doc &amp;d, const std::string &amp;body) {
            std::string(60, &#x27;-&#x27;).c_str(), body.c_str());
 }
 
-// ---------------------------------------------------------------- команды
-// corpus_stats.json записан с отступами: «&quot;ключ&quot;: значение» на строке — выводим как таблицу.
 static void print_stats_json(bool meta) {
     std::string s = tool::read_file(&quot;data/corpus_stats.json&quot;);
     if (s.empty()) { printf(&quot;нет data/corpus_stats.json (создаётся при очистке корпуса)\n&quot;); return; }
@@ -705,15 +683,11 @@ int main(int argc, char **argv) {
 #endif
 </code></pre></details>
 <p><strong>Тесты ЛР1 на C++ (GoogleTest, 14)</strong>: очистка вики-разметки, разбор JSON, проверка всего корпуса.</p>
-<details class="file"><summary>lab1/tests/test_lab1.cpp <span class="ln">(75 строк)</span></summary><pre><code class="language-cpp">// Тесты ЛР1 на C++ (GoogleTest): очистка вики-разметки, разбор JSON-строк корпуса, декодирование URL,
-// подсчёт слов и проверка самого корпуса (все документы читаются, id уникальны, текст непустой).
-// Код утилиты подключается напрямую, её main() отключён макросом LAB1_NO_MAIN.
-#define LAB1_NO_MAIN
+<details class="file"><summary>lab1/tests/test_lab1.cpp <span class="ln">(69 строк)</span></summary><pre><code class="language-cpp">#define LAB1_NO_MAIN
 #include &quot;../tools/lab1.cpp&quot;
 #include &lt;gtest/gtest.h&gt;
 #include &lt;set&gt;
 
-// ---------------------------------------------------------------- очистка вики-разметки
 TEST(Lab1_Clean, bold_italic_removed) {
     EXPECT_EQ(clean_wikitext(&quot;&#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; и &#x27;&#x27;тепловоз&#x27;&#x27;&quot;), &quot;Электровоз и тепловоз&quot;);
 }
@@ -745,7 +719,6 @@ TEST(Lab1_Clean, service_tail_cut) {
     EXPECT_EQ(clean_wikitext(&quot;Основной текст.\n== Примечания ==\nсноски\n== Ссылки ==\nx&quot;), &quot;Основной текст.&quot;);
 }
 
-// ---------------------------------------------------------------- вспомогательные функции
 TEST(Lab1_Util, json_string_with_escapes) {
     std::string j = &quot;{\&quot;id\&quot;: 42, \&quot;title\&quot;: \&quot;А \\\&quot;Б\\\&quot;\&quot;, \&quot;text\&quot;: \&quot;строка1\\nстрока2 \\u0416\&quot;}&quot;;
     EXPECT_EQ(json_str(j, &quot;id&quot;), &quot;42&quot;);
@@ -761,16 +734,15 @@ TEST(Lab1_Util, words_count) {
     EXPECT_EQ(words(&quot;&quot;), 0u);
 }
 
-// ---------------------------------------------------------------- проверка корпуса (нужны data/*_text.jsonl)
 TEST(Lab1_Corpus, all_documents_valid_and_unique) {
-    tool::init_console();                                     // рабочая папка = lab1
+    tool::init_console();
     if (!tool::exists(&quot;data/ruwiki_text.jsonl&quot;)) GTEST_SKIP() &lt;&lt; &quot;нет корпуса в lab1/data&quot;;
     std::set&lt;std::string&gt; ids;
     size_t n = 0, empty = 0, noText = 0, dup = 0;
     each_doc([&amp;](const Doc &amp;d) {
         n++;
         if (d.title.empty() || d.url.rfind(&quot;https://&quot;, 0) != 0) empty++;
-        if (d.text.empty()) noText++;     // статьи только из шаблонов (таблицы станций): после очистки пусто
+        if (d.text.empty()) noText++;
         if (!ids.insert(d.source + &quot;:&quot; + d.id).second) dup++;
         return true;
     });
@@ -781,10 +753,7 @@ TEST(Lab1_Corpus, all_documents_valid_and_unique) {
 }
 </code></pre></details>
 <p><strong>Сборка ЛР1</strong> (утилита и тесты): CMake + CTest.</p>
-<details class="file"><summary>lab1/CMakeLists.txt <span class="ln">(33 строк)</span></summary><pre><code class="language-plaintext"># ЛР1 на C++: утилита bin/lab1.exe и тесты GoogleTest (bin/test_lab1.exe).
-#   cmake --preset default  -&gt;  cmake --build --preset default  -&gt;  ctest --preset default
-# Общий код (UTF-8, токенизатор, меню) и GoogleTest берутся из ../lab_boolean.
-cmake_minimum_required(VERSION 3.16)
+<details class="file"><summary>lab1/CMakeLists.txt <span class="ln">(30 строк)</span></summary><pre><code class="language-plaintext">cmake_minimum_required(VERSION 3.16)
 project(ir_lab1 CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -798,7 +767,7 @@ if(WIN32)
   target_link_libraries(lab1 shell32)
 endif()
 target_compile_definitions(lab1 PRIVATE LAB_SUBDIR=&quot;lab1&quot;)
-set_target_properties(lab1 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)   # общая папка ir_labs/bin
+set_target_properties(lab1 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 
 set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
@@ -882,28 +851,7 @@ python src\corpus.py random
 
 <h2 id="2-lab2-python-cockroachdb-c">ЛР2 — <code>lab2</code> (робот — Python + CockroachDB; утилита и тесты — C++)<a class="headerlink" href="#2-lab2-python-cockroachdb-c" title="Permanent link">#</a></h2>
 <p><strong>Поисковый робот (ЛР2), главный файл.</strong> Цикл: взять URL из очереди <code>frontier</code> → проверить robots.txt и задержку → скачать → нормализовать URL → сохранить документ в <code>documents</code> (<code>INSERT … ON CONFLICT DO NOTHING</code> — без дублей) → найти ссылки и добавить в очередь. Всё состояние в БД, поэтому робот можно остановить и продолжить с того же места; повторный обход проверяет изменения по хешу содержимого.</p>
-<details class="file"><summary>lab2/robot.py <span class="ln">(419 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Поисковый робот: обкачка документов из нескольких источников в распределённую БД CockroachDB
-(кластер из нескольких узлов, SQL как в PostgreSQL; доступ — db.py).
-
-Запуск:  python robot.py config.yaml
-
-Источники (секция sources конфига) бывают двух типов:
-  categories — Википедия: обход дерева категорий в ширину от стартовых страниц категорий;
-  sitemap    — сайт с картой сайта (газета «Гудок»): адреса статей берутся из sitemap.xml.
-
-Что делает:
-  1. Кладёт стартовые адреса в очередь (таблица frontier): страницы категорий / статьи из sitemap.
-  2. По очереди скачивает страницы:
-       категория — разбирает HTML, добавляет в очередь подкатегории и статьи;
-       статья    — сохраняет «сырой» HTML в таблицу documents (если такой документ ещё не встречался:
-                   проверка по каноническому URL и по хешу содержимого).
-  3. Когда очередь пуста — переобкачка: документы, проверенные давно, проверяются на изменения
-     (условный GET If-Modified-Since или дата lastmod из sitemap) и сохраняются заново,
-     только если их содержимое изменилось.
-Состояние очереди хранится в базе, поэтому робота можно остановить (Ctrl+C) в любой момент:
-при следующем запуске он продолжит с того же места.
-&quot;&quot;&quot;
-import hashlib, re, signal, sys, time, zlib
+<details class="file"><summary>lab2/robot.py <span class="ln">(359 строк)</span></summary><pre><code class="language-python">import hashlib, re, signal, sys, time, zlib
 import urllib.robotparser
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -913,29 +861,21 @@ from bs4 import BeautifulSoup
 
 from db import Db
 
-# ------------------------------------------------------------------ нормализация URL
 SKIP_PREFIXES = (&#x27;Категория:&#x27;, &#x27;Шаблон:&#x27;, &#x27;Портал:&#x27;, &#x27;Википедия:&#x27;, &#x27;Файл:&#x27;, &#x27;Модуль:&#x27;, &#x27;Проект:&#x27;,
                  &#x27;Участник:&#x27;, &#x27;Обсуждение&#x27;, &#x27;Служебная:&#x27;, &#x27;Справка:&#x27;, &#x27;Category:&#x27;, &#x27;Template:&#x27;,
                  &#x27;Portal:&#x27;, &#x27;Wikipedia:&#x27;, &#x27;File:&#x27;, &#x27;Module:&#x27;, &#x27;Help:&#x27;, &#x27;Draft:&#x27;, &#x27;User:&#x27;, &#x27;Talk:&#x27;, &#x27;Special:&#x27;)
-# Значимые параметры URL (влияют на содержимое страницы): постраничный вывод категорий Википедии
-# и номер статьи «Гудка» (?ID=...). Остальные параметры (utm_* и т.п.) отбрасываются.
 KEEP_QUERY = (&#x27;title&#x27;, &#x27;pagefrom&#x27;, &#x27;subcatfrom&#x27;, &#x27;pageuntil&#x27;, &#x27;subcatuntil&#x27;, &#x27;from&#x27;, &#x27;ID&#x27;)
 SAFE = &quot;/:@!$&#x27;()*+,;=-._~&quot;
 
 
 def normalize_url(url, base=None):
-    &quot;&quot;&quot;Приводит URL к единому виду, чтобы одна страница не скачивалась дважды:
-    схема и хост в нижнем регистре, http -&gt; https для Википедии, мобильная версия -&gt; обычная, без порта по умолчанию,
-    без #фрагмента, единое %-кодирование пути, пробелы -&gt; «_»,
-    /w/index.php?title=X&amp;pagefrom=Y -&gt; /wiki/X?pagefrom=Y (путь /w/ запрещён в robots.txt Википедии),
-    из параметров остаются только значимые (KEEP_QUERY), отсортированные.&quot;&quot;&quot;
     if base:
         url = urljoin(base, url)
     p = urlsplit(url.strip())
     scheme = (p.scheme or &#x27;https&#x27;).lower()
     host = (p.hostname or &#x27;&#x27;).lower()
     if scheme == &#x27;http&#x27; and host.endswith(&#x27;wikipedia.org&#x27;):
-        scheme = &#x27;https&#x27;                      # Википедия доступна только по https
+        scheme = &#x27;https&#x27;
     host = re.sub(r&#x27;^([a-z\-]+)\.m\.(wikipedia\.org)$&#x27;, r&#x27;\1.\2&#x27;, host)
     if p.port and p.port not in (80, 443):
         host = f&#x27;{host}:{p.port}&#x27;
@@ -951,19 +891,14 @@ def normalize_url(url, base=None):
 
 
 def title_of(url):
-    &quot;&quot;&quot;Заголовок страницы из URL /wiki/Заголовок.&quot;&quot;&quot;
     path = urlsplit(url).path
     return unquote(path[len(&#x27;/wiki/&#x27;):]).replace(&#x27;_&#x27;, &#x27; &#x27;) if path.startswith(&#x27;/wiki/&#x27;) else &#x27;&#x27;
 
 
-# ------------------------------------------------------------------ база данных
-# Схема таблиц documents и frontier — в db.py (SQL CockroachDB / PostgreSQL)
 HASH_V = 2
 
 
 def content_hash(html, selector):
-    &quot;&quot;&quot;SHA-1 содержимого статьи. Хешируется не вся страница, а только блок статьи (selector):
-    меню, реклама и блоки «популярное» меняются от запроса к запросу, а статья — нет.&quot;&quot;&quot;
     if selector:
         el = BeautifulSoup(html, &#x27;lxml&#x27;).select_one(selector)
         if el is not None:
@@ -972,7 +907,6 @@ def content_hash(html, selector):
 
 
 def parse_sitemap(xml):
-    &quot;&quot;&quot;Разбор sitemap.xml: ([адреса вложенных sitemap], [(url, lastmod)]).&quot;&quot;&quot;
     children = re.findall(r&#x27;&lt;sitemap&gt;\s*&lt;loc&gt;\s*([^&lt;\s]+)\s*&lt;/loc&gt;&#x27;, xml)
     urls = [(u, m or &#x27;&#x27;) for u, m in
             re.findall(r&#x27;&lt;url&gt;\s*&lt;loc&gt;\s*([^&lt;\s]+)\s*&lt;/loc&gt;(?:\s*&lt;lastmod&gt;\s*([^&lt;\s]+)\s*&lt;/lastmod&gt;)?&#x27;, xml)]
@@ -990,11 +924,11 @@ class Robot:
         self.recrawl_interval = int(logic.get(&#x27;recrawl_interval&#x27;, 7 * 24 * 3600))
         self.idle_sleep = int(logic.get(&#x27;idle_sleep&#x27;, 600))
         self.exit_when_idle = bool(logic.get(&#x27;exit_when_idle&#x27;, False))
-        self.max_requests = int(logic.get(&#x27;max_requests&#x27;, 0))   # 0 = без ограничения
+        self.max_requests = int(logic.get(&#x27;max_requests&#x27;, 0))
         self.respect_robots = bool(logic.get(&#x27;respect_robots&#x27;, True))
-        self.robots = {}                                        # хост -&gt; разобранный robots.txt
+        self.robots = {}
         self.sources = {s[&#x27;name&#x27;]: s for s in cfg[&#x27;sources&#x27;]}
-        self.db = Db(cfg[&#x27;db&#x27;])                                 # распределённая БД: кластер CockroachDB
+        self.db = Db(cfg[&#x27;db&#x27;])
         print(f&#x27;БД: CockroachDB, база {self.db.database}, подключение к узлу {self.db.node}&#x27;, flush=True)
         self.http = requests.Session()
         self.http.headers[&#x27;User-Agent&#x27;] = logic.get(&#x27;user_agent&#x27;, &#x27;MAI-IR-robot/1.0&#x27;)
@@ -1003,12 +937,9 @@ class Robot:
         self.last_request = 0.0
 
     def selector(self, source):
-        &quot;&quot;&quot;CSS-селектор блока статьи для источника (по нему считается хеш содержимого).&quot;&quot;&quot;
         return self.sources.get(source, {}).get(&#x27;content_selector&#x27;)
 
-    # ---------------------------------------------------------- HTTP
     def get(self, url, headers=None):
-        &quot;&quot;&quot;GET с паузой между запросами (logic.delay) и повторами при ошибках.&quot;&quot;&quot;
         for attempt in range(self.retries):
             wait = self.delay - (time.perf_counter() - self.last_request)
             if wait &gt; 0:
@@ -1028,8 +959,6 @@ class Robot:
         return None
 
     def allowed(self, url):
-        &quot;&quot;&quot;Разрешает ли robots.txt сайта скачивать этот URL. robots.txt скачивается один раз на хост;
-        если в нём указан Crawl-delay для нашего робота, задержка увеличивается до него.&quot;&quot;&quot;
         if not self.respect_robots:
             return True
         p = urlsplit(url)
@@ -1040,17 +969,14 @@ class Robot:
             if r is not None and r.status_code == 200:
                 rp.parse(r.text.splitlines())
             else:
-                rp.allow_all = True                    # нет robots.txt — ограничений нет
+                rp.allow_all = True
             cd = rp.crawl_delay(self.http.headers[&#x27;User-Agent&#x27;])
             if cd:
                 self.delay = max(self.delay, float(cd))
             self.robots[key] = rp
         return self.robots[key].can_fetch(self.http.headers[&#x27;User-Agent&#x27;], url)
 
-    # ---------------------------------------------------------- sitemap
     def read_sitemap(self, src):
-        &quot;&quot;&quot;Все (url, lastmod) из карты сайта источника, подходящие под url_pattern.
-        Карта может быть индексом (список вложенных sitemap) — обходим рекурсивно.&quot;&quot;&quot;
         pattern = re.compile(src[&#x27;url_pattern&#x27;])
         todo, seen, found = [src[&#x27;sitemap&#x27;]], set(), {}
         while todo and not self.stop:
@@ -1068,7 +994,6 @@ class Robot:
                     found[normalize_url(u)] = lastmod
         return found
 
-    # ---------------------------------------------------------- очередь
     def enqueue(self, url, source, kind, depth, is_cont=0, lastmod=None):
         self.db.execute(&#x27;INSERT INTO frontier(url, source, kind, depth, is_cont, lastmod) &#x27;
                         &#x27;VALUES (?,?,?,?,?,?) ON CONFLICT (url) DO NOTHING&#x27;,
@@ -1081,11 +1006,9 @@ class Robot:
     def seed(self):
         for s in self.sources.values():
             if s.get(&#x27;type&#x27;, &#x27;categories&#x27;) == &#x27;sitemap&#x27;:
-                # Карту сайта читаем один раз: если статьи источника уже в очереди — это продолжение работы
                 if self.db.execute(&#x27;SELECT 1 FROM frontier WHERE source=? LIMIT 1&#x27;, (s[&#x27;name&#x27;],)).fetchone():
                     continue
                 found = self.read_sitemap(s)
-                # Самые свежие сначала: по lastmod, при равенстве — по URL; берём не больше max_documents
                 items = sorted(found.items(), key=lambda t: (t[1], t[0]), reverse=True)
                 for url, lastmod in items[:int(s.get(&#x27;max_documents&#x27;, len(items)))]:
                     self.enqueue(url, s[&#x27;name&#x27;], &#x27;article&#x27;, 0, lastmod=lastmod)
@@ -1096,7 +1019,6 @@ class Robot:
                     self.enqueue(normalize_url(u), s[&#x27;name&#x27;], &#x27;category&#x27;, 0)
         self.db.commit()
 
-    # ---------------------------------------------------------- обработка страниц
     def process_category(self, row, html):
         url, source, depth = row[1], row[2], row[4]
         src = self.sources[source]
@@ -1112,12 +1034,12 @@ class Robot:
                     continue
                 text = a.get_text(strip=True).lower()
                 if text in (&#x27;следующая страница&#x27;, &#x27;next page&#x27;):
-                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)   # продолжение списка
+                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)
                     continue
                 if text in (&#x27;предыдущая страница&#x27;, &#x27;previous page&#x27;) or not urlsplit(link).path.startswith(&#x27;/wiki/&#x27;):
                     continue
                 if a.find_parent(class_=&#x27;redirect-in-category&#x27;):
-                    continue                    # перенаправление на другую статью — дубликат, не качаем
+                    continue
                 if kind == &#x27;category&#x27;:
                     if depth + 1 &lt;= src[&#x27;max_depth&#x27;] and self.categories_count(source) &lt; src[&#x27;max_categories&#x27;]:
                         self.enqueue(link, source, &#x27;category&#x27;, depth + 1)
@@ -1126,12 +1048,10 @@ class Robot:
 
     @staticmethod
     def canonical(url, r):
-        &quot;&quot;&quot;Канонический URL из &lt;link rel=&quot;canonical&quot;&gt; (у перенаправлений он указывает на основную статью).&quot;&quot;&quot;
         m = re.search(rb&#x27;&lt;link rel=&quot;canonical&quot; href=&quot;([^&quot;]+)&quot;&#x27;, r.content[:20000])
         return normalize_url(m.group(1).decode(&#x27;utf-8&#x27;, &#x27;replace&#x27;), url) if m else url
 
     def duplicate_of(self, url, source, r):
-        &quot;&quot;&quot;URL уже сохранённого документа, который совпадает с этим (по каноническому URL или по содержимому).&quot;&quot;&quot;
         canon = self.canonical(url, r)
         if canon != url and self.db.execute(&#x27;SELECT 1 FROM documents WHERE url=?&#x27;, (canon,)).fetchone():
             return canon
@@ -1141,7 +1061,6 @@ class Robot:
 
     @staticmethod
     def page_title(html, url):
-        &quot;&quot;&quot;Заголовок: &lt;h1 id=&quot;firstHeading&quot;&gt; (Википедия), иначе &lt;meta property=&quot;og:title&quot;&gt;, иначе из URL.&quot;&quot;&quot;
         soup = BeautifulSoup(html, &#x27;lxml&#x27;)
         h = soup.find(id=&#x27;firstHeading&#x27;)
         if h:
@@ -1166,13 +1085,12 @@ class Robot:
              r.headers.get(&#x27;Last-Modified&#x27;), now, now, sitemap_lastmod, HASH_V))
 
     def crawl_frontier(self):
-        &quot;&quot;&quot;Обход очереди. Возвращает True, если что-то было сделано.&quot;&quot;&quot;
         did = False
         while not self.stop:
             row = self.db.execute(&quot;SELECT id, url, source, kind, depth, is_cont, lastmod FROM frontier &quot;
                                   &quot;WHERE state=&#x27;new&#x27; ORDER BY id LIMIT 1&quot;).fetchone()
             if not row:
-                self.db.commit()          # закрыть читающую транзакцию: следующий шаг увидит свежие данные
+                self.db.commit()
                 return did
             did = True
             fid, url, source, kind, depth, _, lastmod = row
@@ -1193,19 +1111,17 @@ class Robot:
                 self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
             else:
                 dup = self.duplicate_of(url, source, r)
-                if dup:                         # «Content seen?» — этот документ уже есть в базе
+                if dup:
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;duplicate&#x27;, error=? WHERE id=?&quot;, (dup, fid))
                 else:
                     self.save_document(self.canonical(url, r), source, r, int(time.time()), lastmod)
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
-            self.db.commit()   # после каждой страницы: остановка в любой момент ничего не теряет
+            self.db.commit()
             self.progress(kind, url)
             if self.max_requests and self.requests_done &gt;= self.max_requests:
                 self.stop = True
 
     def stored_hash(self, url, source, old_hash, hash_v):
-        &quot;&quot;&quot;Хеш сохранённой версии в текущем формате. Документы, скачанные до перехода на хеш
-        содержимого статьи (hash_v=1), пересчитываются по сохранённому HTML — без запроса к сайту.&quot;&quot;&quot;
         if hash_v == HASH_V:
             return old_hash
         blob, compressed = self.db.execute(&#x27;SELECT html, compressed FROM documents WHERE url=?&#x27;, (url,)).fetchone()
@@ -1214,14 +1130,10 @@ class Robot:
         return h
 
     def recrawl(self):
-        &quot;&quot;&quot;Переобкачка: проверяем документы, у которых истёк recrawl_interval.
-        Источник с sitemap: карта сайта перечитывается, и страница запрашивается, только если её
-        lastmod изменился. Остальные: условный GET If-Modified-Since. В обоих случаях новая версия
-        сохраняется, только если изменилось содержимое статьи (хеш).&quot;&quot;&quot;
         did = False
         pass_start = int(time.time())
         due = pass_start - self.recrawl_interval
-        fresh = {}                                    # источник -&gt; {url: lastmod} из перечитанной карты сайта
+        fresh = {}
         for s in self.sources.values():
             if s.get(&#x27;type&#x27;) == &#x27;sitemap&#x27; and self.db.execute(
                     &#x27;SELECT 1 FROM documents WHERE source=? AND checked_at &lt;= ? AND checked_at &lt; ? LIMIT 1&#x27;,
@@ -1229,7 +1141,6 @@ class Robot:
                 fresh[s[&#x27;name&#x27;]] = self.read_sitemap(s)
         while not self.stop:
             now = int(time.time())
-            # только документы, проверенные до начала этого прохода, — каждый проверяется один раз
             row = self.db.execute(&#x27;SELECT url, source, last_modified, content_hash, hash_v, sitemap_lastmod &#x27;
                                   &#x27;FROM documents WHERE checked_at &lt;= ? AND checked_at &lt; ? ORDER BY checked_at LIMIT 1&#x27;,
                                   (due, pass_start)).fetchone()
@@ -1239,16 +1150,14 @@ class Robot:
             did = True
             url, source, last_modified, old_hash, hash_v, sm_old = row
             if source in fresh and fresh[source].get(url) == sm_old and sm_old:
-                # дата в карте сайта та же — страница не менялась, запрос не нужен
                 self.db.execute(&#x27;UPDATE documents SET checked_at=? WHERE url=?&#x27;, (now, url))
                 status = &#x27;sitemap: not modified&#x27;
             else:
-                # условный запрос: сервер вернёт 304 Not Modified и пустое тело, если страница не менялась
                 r = self.get(url, {&#x27;If-Modified-Since&#x27;: last_modified} if last_modified else None)
                 old = self.stored_hash(url, source, old_hash, hash_v)
                 new_lastmod = fresh.get(source, {}).get(url, sm_old)
                 if r is not None and r.status_code == 200 and content_hash(r.content, self.selector(source)) != old:
-                    self.save_document(url, source, r, now, new_lastmod)   # изменилась — сохраняем новую версию
+                    self.save_document(url, source, r, now, new_lastmod)
                     status = &#x27;updated&#x27;
                 else:
                     self.db.execute(&#x27;UPDATE documents SET checked_at=?, sitemap_lastmod=? WHERE url=?&#x27;,
@@ -1277,7 +1186,7 @@ class Robot:
                 if self.exit_when_idle:
                     print(&#x27;Нечего обкачивать — выход.&#x27;)
                     break
-                time.sleep(self.idle_sleep)   # ждём, пока документы «созреют» для переобкачки
+                time.sleep(self.idle_sleep)
         self.db.commit()
         self.db.close()
         self.http.close()
@@ -1302,21 +1211,7 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <p><strong>Слой доступа к распределённой БД CockroachDB.</strong> Список узлов кластера; подключение к первому живому (если узел упал — к следующему: отказоустойчивость); создание базы и таблиц; переподключение при обрыве. SQL совместим с PostgreSQL (драйвер psycopg).</p>
-<details class="file"><summary>lab2/db.py <span class="ln">(114 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Доступ к распределённой БД CockroachDB (протокол и SQL PostgreSQL, драйвер psycopg).
-
-Секция db конфига:
-    db:
-      hosts: [localhost:26257, localhost:26258, localhost:26259]   # узлы кластера
-      database: robot
-      user: root
-
-Подключение идёт к первому доступному узлу из списка: если узел упал, робот подключится
-к следующему — данные реплицированы на все узлы (3 копии каждого диапазона).
-
-Класс Db даёт робочему коду привычный интерфейс execute(sql, params) / commit():
-плейсхолдеры «?» заменяются на «%s» (стиль psycopg).
-&quot;&quot;&quot;
-import re
+<details class="file"><summary>lab2/db.py <span class="ln">(96 строк)</span></summary><pre><code class="language-python">import re
 import psycopg
 
 SCHEMA = [
@@ -1357,7 +1252,6 @@ DEFAULT_HOSTS = [&#x27;localhost:26257&#x27;, &#x27;localhost:26258&#x27;, &#x27
 
 
 def connect_any(hosts, database, user, autocommit=False):
-    &quot;&quot;&quot;Подключение к первому доступному узлу кластера.&quot;&quot;&quot;
     last = None
     for h in hosts:
         host, _, port = h.partition(&#x27;:&#x27;)
@@ -1376,7 +1270,6 @@ class Db:
         self.hosts = cfg.get(&#x27;hosts&#x27;) or DEFAULT_HOSTS
         self.database = cfg.get(&#x27;database&#x27;, &#x27;robot&#x27;)
         self.user = cfg.get(&#x27;user&#x27;, &#x27;root&#x27;)
-        # база создаётся на кластере при первом запуске
         admin, _ = connect_any(self.hosts, &#x27;defaultdb&#x27;, self.user, autocommit=True)
         admin.execute(f&#x27;CREATE DATABASE IF NOT EXISTS {self.database}&#x27;)
         admin.close()
@@ -1399,7 +1292,6 @@ class Db:
         self.conn.rollback()
 
     def reconnect(self):
-        &quot;&quot;&quot;Переподключение (к любому живому узлу), если соединение оборвалось.&quot;&quot;&quot;
         try:
             self.conn.close()
         except Exception:
@@ -1410,65 +1302,52 @@ class Db:
         self.conn.close()
 
     def drop_database(self):
-        &quot;&quot;&quot;Удалить базу целиком (для тестов).&quot;&quot;&quot;
         self.conn.close()
         admin, _ = connect_any(self.hosts, &#x27;defaultdb&#x27;, self.user, autocommit=True)
         admin.execute(f&#x27;DROP DATABASE IF EXISTS {self.database} CASCADE&#x27;)
         admin.close()
 </code></pre></details>
 <p><strong>Конфигурация робота</strong>: адреса трёх узлов БД, источники, задержка, лимиты.</p>
-<details class="file"><summary>lab2/config.yaml <span class="ln">(44 строк)</span></summary><pre><code class="language-yaml"># Конфигурация поискового робота (ЛР2). Запуск: python robot.py config.yaml
-
-db:                              # распределённая БД CockroachDB (start_cluster.bat)
-  hosts: [localhost:26257, localhost:26258, localhost:26259]   # узлы кластера: подключение к первому доступному
-  database: robot                 # база создаётся автоматически
+<details class="file"><summary>lab2/config.yaml <span class="ln">(38 строк)</span></summary><pre><code class="language-yaml">db:
+  hosts: [localhost:26257, localhost:26258, localhost:26259]
+  database: robot
   user: root
 
 logic:
-  delay: 0.2                    # задержка между запросами, секунд
-  timeout: 30                   # таймаут одного запроса, секунд
-  retries: 5                    # повторы при ошибках сети / HTTP 429 / 5xx
+  delay: 0.2
+  timeout: 30
+  retries: 5
   user_agent: &quot;MAI-IR-lab/1.0 (https://github.com/toshunster/MAI-IR; educational)&quot;
-  compress: true                # хранить HTML сжатым zlib (сам HTML не меняется)
-  recrawl_interval: 604800      # через сколько секунд документ проверяется на изменения (неделя)
-  idle_sleep: 600               # пауза, когда обкачивать нечего, секунд
-  exit_when_idle: false         # true — завершиться, когда очередь пуста и переобкачивать нечего
-  max_requests: 0               # ограничение запросов за запуск (0 — без ограничения)
-  verbose: false                # печатать каждую страницу (иначе — каждые 100 запросов)
-  respect_robots: true          # соблюдать robots.txt (Disallow и Crawl-delay)
+  compress: true
+  recrawl_interval: 604800
+  idle_sleep: 600
+  exit_when_idle: false
+  max_requests: 0
+  verbose: false
+  respect_robots: true
 
 sources:
-  # type: categories — обход дерева категорий Википедии от стартовых страниц (seeds)
-  # content_selector — CSS-селектор блока статьи: по нему считается хеш содержимого
-  #   (меню и реклама на странице меняются, статья — нет)
   - name: ruwiki
     type: categories
     content_selector: &quot;#mw-content-text&quot;
     seeds: [&quot;https://ru.wikipedia.org/wiki/Категория:Железнодорожный_транспорт&quot;]
-    max_depth: 4                # глубина обхода дерева категорий
-    max_categories: 4000        # не больше стольких категорий (чтобы не уйти в смежные темы)
+    max_depth: 4
+    max_categories: 4000
   - name: enwiki
     type: categories
     content_selector: &quot;#mw-content-text&quot;
     seeds: [&quot;https://en.wikipedia.org/wiki/Category:Rail_transport&quot;]
     max_depth: 3
     max_categories: 4000
-  # type: sitemap — адреса статей берутся из карты сайта (sitemap.xml)
-  - name: gudok                 # газета «Гудок», gudok.ru
+  - name: gudok
     type: sitemap
     sitemap: &quot;https://gudok.ru/sitemap_index.xml&quot;
-    url_pattern: &#x27;^https://gudok\.ru/newspaper/\?ID=\d+$&#x27;   # только статьи печатной газеты
-    max_documents: 20000        # самые свежие по дате lastmod
+    url_pattern: &#x27;^https://gudok\.ru/newspaper/\?ID=\d+$&#x27;
+    max_documents: 20000
     content_selector: &quot;article.article-block__main-body&quot;
 </code></pre></details>
 <p><strong>Запуск кластера</strong>: три узла CockroachDB (SQL-порты 26257–26259, веб-консоль 8091–8093), <code>cockroach init</code>, статус узлов.</p>
-<details class="file"><summary>lab2/start_cluster.bat <span class="ln">(31 строк)</span></summary><pre><code class="language-dos">@echo off
-rem Distributed database for the crawler: CockroachDB cluster of 3 nodes on this computer.
-rem   node 1: SQL localhost:26257, RPC 26357, web console http://localhost:8091
-rem   node 2: SQL localhost:26258, RPC 26358, http 8092
-rem   node 3: SQL localhost:26259, RPC 26359, http 8093
-rem Node data: %CRDB_DATA%\node1..node3 (default C:\ir_labs_crdb).
-rem Stop: stop_cluster.bat. Starting again brings up the same cluster with the same data.
+<details class="file"><summary>lab2/start_cluster.bat <span class="ln">(24 строк)</span></summary><pre><code class="language-dos">@echo off
 setlocal
 cd /d &quot;%~dp0&quot;
 chcp 65001 &gt;nul
@@ -1486,7 +1365,6 @@ start &quot;crdb-node2&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&q
 start &quot;crdb-node3&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&quot;%CRDB_DATA%\node3&quot; --listen-addr=localhost:26359 --sql-addr=localhost:26259 --http-addr=localhost:8093
 echo Waiting for the nodes to start...
 timeout /t 10 /nobreak &gt;nul
-rem init is needed only on the very first start; on an existing cluster it just reports that
 &quot;%CRDB_BIN%&quot; init --insecure --host=localhost:26357 2&gt;nul
 timeout /t 3 /nobreak &gt;nul
 &quot;%CRDB_BIN%&quot; node status --insecure --host=localhost:26257
@@ -1494,22 +1372,14 @@ echo.
 echo Cluster web console: http://localhost:8091
 </code></pre></details>
 <p><strong>Корректная остановка</strong> узлов (<code>node drain --shutdown</code>).</p>
-<details class="file"><summary>lab2/stop_cluster.bat <span class="ln">(7 строк)</span></summary><pre><code class="language-dos">@echo off
-rem Graceful stop of all 3 CockroachDB nodes (data is kept; start_cluster.bat brings the cluster back).
+<details class="file"><summary>lab2/stop_cluster.bat <span class="ln">(6 строк)</span></summary><pre><code class="language-dos">@echo off
 setlocal
 if &quot;%CRDB_BIN%&quot;==&quot;&quot; set &quot;CRDB_BIN=D:\ir_labs_data\cockroach\cockroach.exe&quot;
 for %%P in (26257 26258 26259) do &quot;%CRDB_BIN%&quot; node drain --shutdown --insecure --host=localhost:%%P 2&gt;nul
 echo Cluster stopped.
 </code></pre></details>
 <p><strong>Перенос данных</strong> из старой SQLite в кластер пакетными INSERT с повторами и сверкой числа строк.</p>
-<details class="file"><summary>lab2/migrate_sqlite.py <span class="ln">(69 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Однократный перенос базы робота из старого файла SQLite (data/robot.db) в кластер CockroachDB.
-
-Запуск:  python migrate_sqlite.py config.yaml data/robot.db
-Переносятся обе таблицы целиком: documents (сырой HTML, хеши, даты) и frontier (очередь, её порядок —
-номера id сохраняются, поэтому обход продолжается с того же места). Повторный запуск безопасен:
-уже перенесённые строки пропускаются (ON CONFLICT DO NOTHING).
-&quot;&quot;&quot;
-import sqlite3, sys, time
+<details class="file"><summary>lab2/migrate_sqlite.py <span class="ln">(61 строк)</span></summary><pre><code class="language-python">import sqlite3, sys, time
 
 import psycopg
 import yaml
@@ -1530,9 +1400,8 @@ def copy(src, db, table, cols, key, batch):
         rows = cur.fetchmany(batch)
         if not rows:
             break
-        for attempt in range(20):           # кластер на одном HDD может ненадолго «задуматься» —
-            try:                            # повторяем порцию с паузой (вставка идемпотентна)
-                # один многострочный INSERT на порцию: одна запись в журнал Raft вместо записи на каждую строку
+        for attempt in range(20):
+            try:
                 sql = (f&#x27;INSERT INTO {table} ({&quot;, &quot;.join(cols)}) VALUES {&quot;, &quot;.join([row_ph] * len(rows))} &#x27;
                        f&#x27;ON CONFLICT ({key}) DO NOTHING&#x27;)
                 db.conn.execute(sql, [v for r in rows for v in r])
@@ -1572,7 +1441,7 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <p><strong>Просмотр базы</strong>: документы по источникам, очередь, документ по URL.</p>
-<details class="file"><summary>lab2/stats.py <span class="ln">(79 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Просмотр базы робота.
+<details class="file"><summary>lab2/stats.py <span class="ln">(79 строк)</span></summary><pre><code class="language-python">USAGE = &quot;&quot;&quot;Просмотр базы робота.
 
   python stats.py config.yaml                 — статистика: документы, очередь, размеры, скорость
   python stats.py config.yaml show &lt;часть URL или заголовка&gt;   — найти документ и вывести поля + начало HTML
@@ -1627,7 +1496,7 @@ def find(db, q):
 
 def main():
     if len(sys.argv) &lt; 2:
-        print(__doc__); return
+        print(USAGE); return
     cfg = yaml.safe_load(open(sys.argv[1], encoding=&#x27;utf-8&#x27;))
     db = Db(cfg[&#x27;db&#x27;])
     if len(sys.argv) == 2:
@@ -1652,7 +1521,7 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <p><strong>Прогресс обхода</strong> во время работы робота.</p>
-<details class="file"><summary>lab2/progress.py <span class="ln">(75 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Прогресс обкачки: сколько страниц из очереди уже обработано, по источникам, скорость и оставшееся время.
+<details class="file"><summary>lab2/progress.py <span class="ln">(72 строк)</span></summary><pre><code class="language-python">USAGE = &quot;&quot;&quot;Прогресс обкачки: сколько страниц из очереди уже обработано, по источникам, скорость и оставшееся время.
 Только читает базу робота — можно запускать, пока робот работает.
 
 Запуск:  python progress.py config.yaml            — один раз
@@ -1690,13 +1559,10 @@ def show(db, prev):
     print(f&#x27;\n  ВСЕГО    {bar(done, total)}&#x27;)
     print(f&#x27;  Документов в базе: {docs:,}&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;))
     if db.execute(&quot;SELECT 1 FROM frontier WHERE kind=&#x27;category&#x27; AND state=&#x27;new&#x27; LIMIT 1&quot;).fetchone():
-        # у источника с обходом по категориям статьи узнаются по ходу: каждая страница категории
-        # добавляет в очередь новые статьи, поэтому знаменатель растёт, а процент — оценка
         print(&#x27;  (ещё есть необработанные страницы категорий — очередь будет пополняться)&#x27;)
-    # скорость — по документам, сохранённым за последние 10 минут
     now = int(time.time())
     recent = db.execute(&#x27;SELECT COUNT(*) FROM documents WHERE crawled_at &gt;= ?&#x27;, (now - 600,)).fetchone()[0]
-    speed = recent / 10                                        # страниц в минуту
+    speed = recent / 10
     left = total - done
     if speed &gt; 0:
         eta = left / speed
@@ -1708,14 +1574,14 @@ def show(db, prev):
 
 def main():
     if len(sys.argv) &lt; 2:
-        print(__doc__); return
+        print(USAGE); return
     cfg = yaml.safe_load(open(sys.argv[1], encoding=&#x27;utf-8&#x27;))
     db = Db(cfg[&#x27;db&#x27;])
     watch = &#x27;--watch&#x27; in sys.argv
     prev = None
     while True:
         prev = show(db, prev)
-        db.commit()                                # следующий снимок — свежие данные
+        db.commit()
         if not watch:
             break
         try:
@@ -1728,10 +1594,7 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <p><strong>Таблица результатов</strong> для отчёта, считается прямо из БД.</p>
-<details class="file"><summary>lab2/report_results.py <span class="ln">(78 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генерирует report/src/results.tex — таблицу результатов обкачки из базы робота.
-Запуск: python report_results.py config.yaml
-&quot;&quot;&quot;
-import sys, time
+<details class="file"><summary>lab2/report_results.py <span class="ln">(73 строк)</span></summary><pre><code class="language-python">import sys, time
 
 import yaml
 
@@ -1762,8 +1625,6 @@ for src in SOURCES:
     st = dict(db.execute(&quot;SELECT kind || &#x27;/&#x27; || state, COUNT(*) FROM frontier WHERE source=? GROUP BY 1&quot;, (src,)))
     rows.append((src, n, raw, stored, st))
 
-# Время работы: обкачка шла с перерывами (компьютер выключался), поэтому считаем только активное время —
-# сумму промежутков между соседними сохранёнными документами, если промежуток меньше 10 минут.
 times = [t for (t,) in db.execute(&#x27;SELECT crawled_at FROM documents ORDER BY crawled_at&#x27;)]
 active = sum(b - a for a, b in zip(times, times[1:]) if b - a &lt; 600) / 3600
 first, last = times[0], times[-1]
@@ -1807,40 +1668,24 @@ open(&#x27;report/src/results.tex&#x27;, &#x27;w&#x27;, encoding=&#x27;utf-8&#x2
 print(out)
 </code></pre></details>
 <p><strong>Утилита ЛР2 для защиты (C++)</strong>: кластер (узлы, шарды, реплики), статистика, очередь, документ, отказ узла, один запрос через каждый узел, нормализация URL, robots.txt, свой SQL. Запросы к базе — через клиент <code>cockroach sql</code>.</p>
-<details class="file"><summary>lab2/tools/lab2.cpp <span class="ln">(305 строк)</span></summary><pre><code class="language-cpp">// ЛР2 «Поисковый робот» — утилита для проверок и демонстрации (C++). База — распределённая CockroachDB
-// (3 узла); запросы выполняются через клиент cockroach.exe (cockroach sql), путь — переменная CRDB_BIN.
-//
-//   lab2                     — меню
-//   lab2 cluster             — узлы кластера, живые ли, сколько диапазонов (шардов) и реплик у таблиц
-//   lab2 stats               — документы по источникам, размеры, очередь
-//   lab2 frontier            — состояние очереди обхода: new / done / duplicate / error / skipped
-//   lab2 show ВЛ80           — найти документ по заголовку: поля в базе
-//   lab2 failover            — подключение при недоступном узле (первый узел в списке «мёртвый»)
-//   lab2 nodes               — один и тот же запрос через каждый из трёх узлов
-//   lab2 normalize HTTP://RU.Wikipedia.org/wiki/ВЛ80#История   — нормализация URL
-//   lab2 robots https://ru.wikipedia.org/w/index.php?title=X    — разрешён ли адрес robots.txt
-//   lab2 sql SELECT source, count(*) FROM documents GROUP BY 1  — свой запрос к базе
-#include &quot;../../lab_boolean/src/common.h&quot;
+<details class="file"><summary>lab2/tools/lab2.cpp <span class="ln">(281 строк)</span></summary><pre><code class="language-cpp">#include &quot;../../lab_boolean/src/common.h&quot;
 #include &quot;../../lab_boolean/tools/tool.h&quot;
 #include &lt;algorithm&gt;
 #include &lt;map&gt;
 
 static const std::vector&lt;std::string&gt; HOSTS = {&quot;localhost:26257&quot;, &quot;localhost:26258&quot;, &quot;localhost:26259&quot;};
 
-// ---------------------------------------------------------------- доступ к кластеру
 static std::string crdb() {
     const char *e = getenv(&quot;CRDB_BIN&quot;);
     return e &amp;&amp; *e ? e : &quot;D:\\ir_labs_data\\cockroach\\cockroach.exe&quot;;
 }
 
-// Выполнить SQL на узле host; вывод в формате TSV (первая строка — заголовки). ok = узел ответил.
 static std::string sql_on(const std::string &amp;host, const std::string &amp;q, bool *ok = nullptr, const char *db = &quot;robot&quot;) {
-    // запрос передаётся файлом (--file): в командной строке cmd.exe исказил бы символы % и кавычки
     std::string tmp = std::string(getenv(&quot;TEMP&quot;) ? getenv(&quot;TEMP&quot;) : &quot;.&quot;) + &quot;\\lab2_query.sql&quot;;
     FILE *f = tool::open_file(tmp, &quot;wb&quot;);
     std::string body = q;
     while (!body.empty() &amp;&amp; isspace((unsigned char)body.back())) body.pop_back();
-    if (body.empty() || body.back() != &#x27;;&#x27;) body += &#x27;;&#x27;;                  // клиент требует ; в конце
+    if (body.empty() || body.back() != &#x27;;&#x27;) body += &#x27;;&#x27;;
     if (f) { fwrite(body.data(), 1, body.size(), f); fclose(f); }
     int rc = 0;
     std::string out = tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; sql --insecure --host=&quot; + host + &quot; --database=&quot; + db +
@@ -1849,20 +1694,18 @@ static std::string sql_on(const std::string &amp;host, const std::string &amp;q,
     return out;
 }
 
-// Подключение к первому живому узлу — как connect_any в db.py.
 static std::string sql(const std::string &amp;q, std::string *node = nullptr) {
     for (auto &amp;h : HOSTS) {
         bool ok; std::string out = sql_on(h, q, &amp;ok);
         if (ok) { if (node) *node = h; return out; }
         if (out.find(&quot;cannot dial&quot;) == std::string::npos &amp;&amp; out.find(&quot;refused&quot;) == std::string::npos) {
-            if (node) *node = h;                                               // узел ответил, но запрос с ошибкой
+            if (node) *node = h;
             return &quot;ошибка\n&quot; + out;
         }
     }
     return &quot;ни один узел кластера не отвечает — запустите start_cluster.bat\n&quot;;
 }
 
-// Таблица TSV -&gt; строки и столбцы.
 static std::vector&lt;std::vector&lt;std::string&gt;&gt; rows(const std::string &amp;tsv) {
     std::vector&lt;std::vector&lt;std::string&gt;&gt; r;
     size_t p = 0;
@@ -1879,7 +1722,6 @@ static std::vector&lt;std::vector&lt;std::string&gt;&gt; rows(const std::string 
     return r;
 }
 
-// Печать таблицы с выравниванием по ширине столбцов (с учётом кириллицы).
 static void print_table(const std::string &amp;tsv) {
     auto r = rows(tsv);
     if (r.empty()) { printf(&quot;  (пусто)\n&quot;); return; }
@@ -1896,7 +1738,6 @@ static void print_table(const std::string &amp;tsv) {
     }
 }
 
-// ---------------------------------------------------------------- нормализация URL (как normalize_url в robot.py)
 static std::string lower_ascii(std::string s) { for (auto &amp;c : s) c = (char)tolower((unsigned char)c); return s; }
 
 static std::string pct_decode(const std::string &amp;s) {
@@ -1907,7 +1748,6 @@ static std::string pct_decode(const std::string &amp;s) {
         } else r += s[i];
     return r;
 }
-// %-кодирование: буквы, цифры и символы из safe остаются, остальные байты -&gt; %XX (заглавные).
 static std::string pct_encode(const std::string &amp;s, const char *safe) {
     std::string r; char b[4];
     for (unsigned char c : s) {
@@ -1923,14 +1763,14 @@ static const char *KEEP[] = {&quot;title&quot;, &quot;pagefrom&quot;, &quot;subc
 static std::string normalize_url(std::string url, const std::string &amp;base = &quot;&quot;) {
     while (!url.empty() &amp;&amp; isspace((unsigned char)url.back())) url.pop_back();
     while (!url.empty() &amp;&amp; isspace((unsigned char)url[0])) url.erase(0, 1);
-    if (!base.empty() &amp;&amp; url.find(&quot;://&quot;) == std::string::npos) {            // относительная ссылка
+    if (!base.empty() &amp;&amp; url.find(&quot;://&quot;) == std::string::npos) {
         size_t s = base.find(&quot;://&quot;), h = base.find(&#x27;/&#x27;, s + 3);
         std::string origin = base.substr(0, h);
         if (url.rfind(&quot;//&quot;, 0) == 0) url = base.substr(0, s + 1) + url;
         else if (url[0] == &#x27;/&#x27;) url = origin + url;
         else url = base.substr(0, base.rfind(&#x27;/&#x27;) + 1) + url;
     }
-    size_t hash = url.find(&#x27;#&#x27;); if (hash != std::string::npos) url.resize(hash);           // без #фрагмента
+    size_t hash = url.find(&#x27;#&#x27;); if (hash != std::string::npos) url.resize(hash);
     size_t s = url.find(&quot;://&quot;);
     std::string scheme = s == std::string::npos ? &quot;https&quot; : lower_ascii(url.substr(0, s));
     std::string rest = s == std::string::npos ? url : url.substr(s + 3);
@@ -1942,13 +1782,13 @@ static std::string normalize_url(std::string url, const std::string &amp;base = 
     size_t colon = hostport.rfind(&#x27;:&#x27;);
     if (colon != std::string::npos) { host = hostport.substr(0, colon); port = hostport.substr(colon + 1); }
     auto ends = [](const std::string &amp;a, const std::string &amp;b) { return a.size() &gt;= b.size() &amp;&amp; a.compare(a.size() - b.size(), b.size(), b) == 0; };
-    if (scheme == &quot;http&quot; &amp;&amp; ends(host, &quot;wikipedia.org&quot;)) scheme = &quot;https&quot;;                   // Википедия только по https
-    size_t m = host.find(&quot;.m.wikipedia.org&quot;);                                               // мобильная версия -&gt; обычная
+    if (scheme == &quot;http&quot; &amp;&amp; ends(host, &quot;wikipedia.org&quot;)) scheme = &quot;https&quot;;
+    size_t m = host.find(&quot;.m.wikipedia.org&quot;);
     if (m != std::string::npos &amp;&amp; m + 16 == host.size()) host = host.substr(0, m) + &quot;.wikipedia.org&quot;;
     if (!port.empty() &amp;&amp; port != &quot;80&quot; &amp;&amp; port != &quot;443&quot;) host += &quot;:&quot; + port;
     path = pct_decode(path);
     std::replace(path.begin(), path.end(), &#x27; &#x27;, &#x27;_&#x27;);
-    std::vector&lt;std::pair&lt;std::string, std::string&gt;&gt; kv;                                     // значимые параметры
+    std::vector&lt;std::pair&lt;std::string, std::string&gt;&gt; kv;
     std::string title;
     size_t a = 0;
     while (a &lt;= query.size() &amp;&amp; !query.empty()) {
@@ -1969,8 +1809,6 @@ static std::string normalize_url(std::string url, const std::string &amp;base = 
     return scheme + &quot;://&quot; + host + (path.empty() ? &quot;/&quot; : pct_encode(path, SAFE)) + (q.empty() ? &quot;&quot; : &quot;?&quot; + q);
 }
 
-// ---------------------------------------------------------------- robots.txt
-// Правила группы «User-agent: *» (или нашего робота); побеждает самое длинное совпавшее правило, Allow при равенстве.
 static bool robots_allowed(const std::string &amp;robots, const std::string &amp;path, const std::string &amp;agent = &quot;MAI-IR-robot&quot;) {
     struct Rule { bool allow; std::string prefix; };
     std::vector&lt;Rule&gt; mine, star, *cur = nullptr;
@@ -2012,7 +1850,6 @@ static bool robots_allowed(const std::string &amp;robots, const std::string &amp
     return allow;
 }
 
-// ---------------------------------------------------------------- команды
 static void cmd_cluster(const std::string &amp;) {
     printf(&quot;Узлы кластера (cockroach node status):\n&quot;);
     print_table(tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; node status --insecure --host=localhost:26257 --format=tsv\&quot;&quot;));
@@ -2046,7 +1883,7 @@ static void cmd_show(const std::string &amp;arg) {
 }
 
 static void cmd_failover(const std::string &amp;) {
-    std::vector&lt;std::string&gt; hosts = {&quot;127.0.0.1:1&quot;};                       // «мёртвый» узел первым в списке
+    std::vector&lt;std::string&gt; hosts = {&quot;127.0.0.1:1&quot;};
     hosts.insert(hosts.end(), HOSTS.begin(), HOSTS.end());
     double t0 = now_sec();
     for (auto &amp;h : hosts) {
@@ -2113,14 +1950,10 @@ int main(int argc, char **argv) {
 #endif
 </code></pre></details>
 <p><strong>Тесты ЛР2 на C++ (GoogleTest, 20)</strong>: нормализация URL, robots.txt, распределённая БД на живом кластере — 3 узла, 3 реплики, переключение на живой узел, одинаковые данные, нет дублей.</p>
-<details class="file"><summary>lab2/tests/test_lab2.cpp <span class="ln">(125 строк)</span></summary><pre><code class="language-cpp">// Тесты ЛР2 на C++ (GoogleTest): нормализация URL, правила robots.txt и распределённая БД CockroachDB
-// (3 живых узла, каждый диапазон в 3 репликах, переключение на живой узел, нет дублей документов,
-// ON CONFLICT не создаёт повторов). Код утилиты подключается напрямую (main отключён LAB2_NO_MAIN).
-#define LAB2_NO_MAIN
+<details class="file"><summary>lab2/tests/test_lab2.cpp <span class="ln">(119 строк)</span></summary><pre><code class="language-cpp">#define LAB2_NO_MAIN
 #include &quot;../tools/lab2.cpp&quot;
 #include &lt;gtest/gtest.h&gt;
 
-// ---------------------------------------------------------------- нормализация URL
 TEST(Lab2_Normalize, scheme_and_host_lowercase) {
     EXPECT_EQ(normalize_url(&quot;HTTPS://RU.Wikipedia.ORG/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
 }
@@ -2156,7 +1989,6 @@ TEST(Lab2_Normalize, tracking_params_dropped_significant_kept) {
     EXPECT_EQ(normalize_url(&quot;https://gudok.ru/newspaper/?utm_source=vk&amp;ID=1234567&quot;), &quot;https://gudok.ru/newspaper/?ID=1234567&quot;);
 }
 
-// ---------------------------------------------------------------- robots.txt
 TEST(Lab2_Robots, disallow_prefix) {
     std::string r = &quot;User-agent: *\nDisallow: /w/\nDisallow: /api/\n&quot;;
     EXPECT_FALSE(robots_allowed(r, &quot;/w/index.php?title=X&quot;));
@@ -2176,7 +2008,6 @@ TEST(Lab2_Robots, empty_robots_allows_all) {
     EXPECT_TRUE(robots_allowed(&quot;&quot;, &quot;/anything&quot;));
 }
 
-// ---------------------------------------------------------------- распределённая БД (нужен запущенный кластер)
 static bool cluster_up() {
     bool ok; sql_on(HOSTS[0], &quot;SELECT 1&quot;, &amp;ok, &quot;defaultdb&quot;);
     return ok;
@@ -2231,7 +2062,7 @@ TEST(Lab2_Cluster, on_conflict_does_not_duplicate) {
     ASSERT_TRUE(ok);
     std::string ins = &quot;INSERT INTO frontier(url, source) VALUES (&#x27;https://x/1&#x27;,&#x27;t&#x27;) ON CONFLICT (url) DO NOTHING;&quot;;
     sql_on(HOSTS[0], &quot;CREATE TABLE frontier (id INT8 PRIMARY KEY DEFAULT unique_rowid(), url STRING UNIQUE NOT NULL, source STRING);&quot; + ins + ins, &amp;ok, db.c_str());
-    sql_on(HOSTS[2], ins, &amp;ok, db.c_str());                                  // та же вставка через другой узел
+    sql_on(HOSTS[2], ins, &amp;ok, db.c_str());
     auto r = rows(sql_on(HOSTS[1], &quot;SELECT count(*) FROM frontier&quot;, &amp;ok, db.c_str()));
     sql_on(HOSTS[0], &quot;DROP DATABASE IF EXISTS &quot; + db + &quot; CASCADE&quot;, &amp;ok, &quot;defaultdb&quot;);
     ASSERT_EQ(r.size(), 2u);
@@ -2239,10 +2070,7 @@ TEST(Lab2_Cluster, on_conflict_does_not_duplicate) {
 }
 </code></pre></details>
 
-<details class="file"><summary>lab2/CMakeLists.txt <span class="ln">(33 строк)</span></summary><pre><code class="language-plaintext"># ЛР2 на C++: утилита bin/lab2.exe и тесты GoogleTest (bin/test_lab2.exe).
-#   cmake --preset default  -&gt;  cmake --build --preset default  -&gt;  ctest --preset default
-# Общий код (UTF-8, меню) и GoogleTest берутся из ../lab_boolean.
-cmake_minimum_required(VERSION 3.16)
+<details class="file"><summary>lab2/CMakeLists.txt <span class="ln">(30 строк)</span></summary><pre><code class="language-plaintext">cmake_minimum_required(VERSION 3.16)
 project(ir_lab2 CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -2256,7 +2084,7 @@ if(WIN32)
   target_link_libraries(lab2 shell32)
 endif()
 target_compile_definitions(lab2 PRIVATE LAB_SUBDIR=&quot;lab2&quot;)
-set_target_properties(lab2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)   # общая папка ir_labs/bin
+set_target_properties(lab2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 
 set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
@@ -2338,17 +2166,13 @@ pdflatex report.tex
 <h2 id="38-lab_boolean-c-stl-python">ЛР3–8 — <code>lab_boolean</code> (C++ без STL + Python)<a class="headerlink" href="#38-lab_boolean-c-stl-python" title="Permanent link">#</a></h2>
 <h3 id="c">C++<a class="headerlink" href="#c" title="Permanent link">#</a></h3>
 <p><strong>Общее ядро без STL.</strong> Свой динамический массив (аналог <code>vector</code>, рост ×2 через <code>realloc</code>), строковый буфер, хеш-таблица термов с открытой адресацией, разбор UTF-8 и нижний регистр (кириллица и латиница), <code>next_token()</code> — правила токенизации ЛР3, общие для всех программ.</p>
-<details class="file"><summary>lab_boolean/src/common.h <span class="ln">(210 строк)</span></summary><pre><code class="language-cpp">// Общие структуры данных и функции для индексатора и поиска.
-// STL не используется: только стандартная библиотека C (cstdio, cstdlib, cstring).
-#pragma once
+<details class="file"><summary>lab_boolean/src/common.h <span class="ln">(188 строк)</span></summary><pre><code class="language-cpp">#pragma once
 #include &lt;cstdio&gt;
 #include &lt;cstdlib&gt;
 #include &lt;cstring&gt;
 #include &lt;cstdint&gt;
 #include &lt;ctime&gt;
 
-// ---------------------------------------------------------------- динамический массив
-// Аналог vector для простых (POD) типов: рост в 2 раза, память через realloc.
 template &lt;class T&gt;
 struct Vec {
     T *a = nullptr;
@@ -2372,15 +2196,12 @@ struct Vec {
     const T &amp;operator[](size_t i) const { return a[i]; }
 };
 
-// ---------------------------------------------------------------- время
 static inline double now_sec() {
     timespec ts;
     timespec_get(&amp;ts, TIME_UTC);
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
-// ---------------------------------------------------------------- UTF-8 и токенизация
-// Декодирует один символ UTF-8 начиная с s[i], сдвигает i.
 static inline uint32_t utf8_decode(const unsigned char *s, size_t n, size_t &amp;i) {
     unsigned c = s[i];
     if (c &lt; 0x80) { i++; return c; }
@@ -2403,32 +2224,27 @@ static inline int utf8_encode(uint32_t c, char *o) {
     o[2] = (char)(0x80 | ((c &gt;&gt; 6) &amp; 0x3F)); o[3] = (char)(0x80 | (c &amp; 0x3F)); return 4;
 }
 
-// Класс символа: 1 — часть слова, 2 — игнорируемый (знак ударения), 0 — разделитель.
 static inline int char_class(uint32_t c) {
     if ((c &gt;= &#x27;a&#x27; &amp;&amp; c &lt;= &#x27;z&#x27;) || (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) || (c &gt;= &#x27;0&#x27; &amp;&amp; c &lt;= &#x27;9&#x27;)) return 1;
-    if (c &gt;= 0x300 &amp;&amp; c &lt;= 0x36F) return 2;                 // комбинируемые диакритики (ударения)
-    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0x24F &amp;&amp; c != 0xD7 &amp;&amp; c != 0xF7) return 1;  // латиница с диакритикой
-    if (c &gt;= 0x370 &amp;&amp; c &lt;= 0x3FF) return 1;                 // греческий
-    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x4FF) return 1;                 // кириллица
+    if (c &gt;= 0x300 &amp;&amp; c &lt;= 0x36F) return 2;
+    if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0x24F &amp;&amp; c != 0xD7 &amp;&amp; c != 0xF7) return 1;
+    if (c &gt;= 0x370 &amp;&amp; c &lt;= 0x3FF) return 1;
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x4FF) return 1;
     return 0;
 }
 
-// Понижение регистра + нормализация «ё» -&gt; «е».
 static inline uint32_t to_lower(uint32_t c) {
     if (c &gt;= &#x27;A&#x27; &amp;&amp; c &lt;= &#x27;Z&#x27;) return c + 32;
-    if (c == 0x401 || c == 0x451) return 0x435;             // Ё, ё -&gt; е
-    if (c &gt;= 0x410 &amp;&amp; c &lt;= 0x42F) return c + 0x20;          // А-Я
-    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x40F) return c + 0x50;          // Ѐ-Џ
+    if (c == 0x401 || c == 0x451) return 0x435;
+    if (c &gt;= 0x410 &amp;&amp; c &lt;= 0x42F) return c + 0x20;
+    if (c &gt;= 0x400 &amp;&amp; c &lt;= 0x40F) return c + 0x50;
     if (c &gt;= 0xC0 &amp;&amp; c &lt;= 0xDE &amp;&amp; c != 0xD7) return c + 0x20;
-    if (c &gt;= 0x391 &amp;&amp; c &lt;= 0x3AB) return c + 0x20;          // греческие заглавные
+    if (c &gt;= 0x391 &amp;&amp; c &lt;= 0x3AB) return c + 0x20;
     return c;
 }
 
 const int MAX_TERM_BYTES = 64;
 
-// Читает следующий токен из s[0..n) начиная с pos.
-// В out пишется нормализованный терм (UTF-8, нижний регистр), возвращается его длина в байтах
-// (0 — токенов больше нет). В chars — длина в символах.
 static inline int next_token(const char *s, size_t n, size_t &amp;pos, char *out, int &amp;chars) {
     const unsigned char *u = (const unsigned char *)s;
     int len = 0; chars = 0;
@@ -2441,24 +2257,19 @@ static inline int next_token(const char *s, size_t n, size_t &amp;pos, char *out
         } else if (cls == 0) {
             if (len &gt; 0) { pos = start; break; }
         }
-        // cls == 2: знак ударения внутри слова просто пропускается
     }
-    // разделитель, на котором остановились, пропустим при следующем вызове
     if (len &gt; 0 &amp;&amp; pos &lt; n) { size_t p = pos; utf8_decode(u, n, p); pos = p; }
     return len;
 }
 
-// ---------------------------------------------------------------- бинарный формат индекса
-// Все числа little-endian. Подробное описание — в README.md / отчёте.
 static const char INDEX_MAGIC[4] = {&#x27;B&#x27;, &#x27;I&#x27;, &#x27;D&#x27;, &#x27;X&#x27;};
 static const uint32_t INDEX_VERSION = 1;
-// Флаги в заголовке (байты 12..15, раньше «зарезервировано»): бит 0 — в индексе основы слов (стемминг)
 static const uint32_t FLAG_STEMMED = 1;
 enum SectionType : uint32_t {
-    SEC_DOCS = 1,       // прямой индекс: документы (источник, id, заголовок, URL)
-    SEC_DICT = 2,       // словарь: отсортированные термы
-    SEC_TERMSTR = 3,    // строки термов
-    SEC_POSTINGS = 4,   // списки документов (posting lists)
+    SEC_DOCS = 1,
+    SEC_DICT = 2,
+    SEC_TERMSTR = 3,
+    SEC_POSTINGS = 4,
 };
 const size_t HEADER_SIZE = 16, SECTION_ENTRY_SIZE = 24, DICT_ENTRY_SIZE = 24;
 
@@ -2466,7 +2277,6 @@ static inline uint16_t rd16(const char *p) { uint16_t v; memcpy(&amp;v, p, 2); r
 static inline uint32_t rd32(const char *p) { uint32_t v; memcpy(&amp;v, p, 4); return v; }
 static inline uint64_t rd64(const char *p) { uint64_t v; memcpy(&amp;v, p, 8); return v; }
 
-// Сравнение байтовых строк (лексикографически по беззнаковым байтам).
 static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
     size_t m = la &lt; lb ? la : lb;
     int r = memcmp(a, b, m);
@@ -2474,7 +2284,6 @@ static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) 
     return la &lt; lb ? -1 : la &gt; lb ? 1 : 0;
 }
 
-// ---------------------------------------------------------------- построчное чтение файла
 struct LineReader {
     FILE *f;
     char *buf;
@@ -2502,15 +2311,13 @@ struct LineReader {
     }
 };
 
-// ---------------------------------------------------------------- хеш-таблица термов
-// Открытая адресация с линейным пробированием; строки термов хранятся в общем пуле.
 struct TermTable {
     struct Slot { uint32_t hash, id; };
     Slot *slots = nullptr;
     size_t cap = 0, size = 0;
-    Vec&lt;char&gt; pool;            // байты всех термов подряд
-    Vec&lt;uint32_t&gt; off;         // off[id]  — смещение терма в пуле
-    Vec&lt;uint8_t&gt; len;          // len[id]  — длина терма в байтах
+    Vec&lt;char&gt; pool;
+    Vec&lt;uint32_t&gt; off;
+    Vec&lt;uint8_t&gt; len;
 
     static uint32_t fnv1a(const char *s, int n) {
         uint32_t h = 2166136261u;
@@ -2528,7 +2335,6 @@ struct TermTable {
         }
         free(slots); slots = ns; cap = newcap;
     }
-    // Возвращает id терма; если терма ещё нет — добавляет. isNew = true для нового.
     uint32_t get_or_add(const char *s, int n, bool &amp;isNew) {
         if (size * 2 &gt;= cap) rehash(cap ? cap * 2 : 1 &lt;&lt; 16);
         uint32_t h = fnv1a(s, n);
@@ -2549,21 +2355,14 @@ struct TermTable {
 };
 </code></pre></details>
 <p><strong>Стеммер (ЛР4)</strong>: русский Snowball-Портер (области RV/R2, группы окончаний: деепричастия, возвратные, прилагательные, глаголы, существительные, «ость», «ейш», «нн») и английский Портер (шаги 1a–5). Язык определяется по буквам терма.</p>
-<details class="file"><summary>lab_boolean/src/stem.h <span class="ln">(265 строк)</span></summary><pre><code class="language-cpp">// Стемминг (ЛР «Стемминг»): отбрасывание окончаний и суффиксов, чтобы разные словоформы
-// одного слова давали одну основу («электровозы», «электровозов» -&gt; «электровоз»).
-//   русский    — алгоритм Портера в версии Snowball (snowballstem.org/algorithms/russian);
-//   английский — классический алгоритм Портера (snowballstem.org/algorithms/porter).
-// Язык определяется по буквам терма: только кириллица -&gt; русский, только a-z -&gt; английский,
-// иначе (цифры, смешанные, другие алфавиты) терм не меняется. Без STL.
-#pragma once
+<details class="file"><summary>lab_boolean/src/stem.h <span class="ln">(235 строк)</span></summary><pre><code class="language-cpp">#pragma once
 #include &quot;common.h&quot;
 
 namespace stem {
 
-const int MAXW = 64;                      // как MAX_TERM_BYTES: длиннее термов не бывает
+const int MAXW = 64;
 
-// ---------------------------------------------------------------- русский (Snowball)
-struct Suf { uint32_t c[8]; int n; int grp; };       // grp = 1: перед окончанием должна стоять «а» или «я»
+struct Suf { uint32_t c[8]; int n; int grp; };
 struct Table { Suf s[48]; int n; };
 
 static void add(Table &amp;t, const char *u, int grp) {
@@ -2572,7 +2371,7 @@ static void add(Table &amp;t, const char *u, int grp) {
     x.n = 0; x.grp = grp;
     while (i &lt; n) x.c[x.n++] = utf8_decode((const unsigned char *)u, n, i);
 }
-static void add_all(Table &amp;t, const char *list, int grp) {     // слова через пробел
+static void add_all(Table &amp;t, const char *list, int grp) {
     char buf[32]; int k = 0;
     for (const char *p = list;; p++) {
         if (*p == &#x27; &#x27; || *p == 0) { if (k) { buf[k] = 0; add(t, buf, grp); k = 0; } if (!*p) break; }
@@ -2601,12 +2400,11 @@ static void ru_init() {
 
 const uint32_t RU_A = 0x430, RU_YA = 0x44F, RU_I = 0x438, RU_N = 0x43D, RU_SOFT = 0x44C;
 
-static bool ru_vowel(uint32_t c) {         // а е и о у ы э ю я
+static bool ru_vowel(uint32_t c) {
     return c == 0x430 || c == 0x435 || c == 0x438 || c == 0x43E || c == 0x443 ||
            c == 0x44B || c == 0x44D || c == 0x44E || c == 0x44F;
 }
 
-// Самое длинное окончание из таблицы на конце w[0..n), начинающееся не раньше lim. Возвращает его номер или -1.
 static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
     int best = -1;
     for (int k = 0; k &lt; t.n; k++) {
@@ -2617,8 +2415,6 @@ static int longest(const Table &amp;t, const uint32_t *w, int n, int lim) {
     }
     return best;
 }
-// Как «among ... delete» в Snowball: берётся самое длинное окончание; если для него не выполнено
-// условие группы 1 (перед ним «а»/«я»), шаг не выполняется (более короткие не пробуются).
 static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
     int k = longest(t, w, n, lim);
     if (k &lt; 0) return false;
@@ -2633,14 +2429,13 @@ static bool cut(const Table &amp;t, const uint32_t *w, int &amp;n, int lim) {
 
 static int stem_ru(uint32_t *w, int n) {
     ru_init();
-    // Области: RV — после первой гласной; R2 — область R1 внутри R1 (R1 — после первой согласной, идущей за гласной)
     int pV = n, p2 = n, i = 0;
     while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
     if (i &lt; n) {
         pV = i + 1; i = pV;
-        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;          // до первой согласной
+        while (i &lt; n &amp;&amp; ru_vowel(w[i])) i++;
         if (i &lt; n) {
-            i++;                                       // i = p1
+            i++;
             while (i &lt; n &amp;&amp; !ru_vowel(w[i])) i++;
             if (i &lt; n) {
                 i++;
@@ -2649,23 +2444,19 @@ static int stem_ru(uint32_t *w, int n) {
             }
         }
     }
-    // Шаг 1: деепричастие, либо (возвратное «ся» + прилагательное/причастие, глагол или существительное)
     if (!cut(PERF, w, n, pV)) {
         cut(REFL, w, n, pV);
         int k = longest(ADJ, w, n, pV);
         if (k &gt;= 0) {
             n -= ADJ.s[k].n;
-            cut(PART, w, n, pV);                       // причастие перед окончанием прилагательного
+            cut(PART, w, n, pV);
         } else if (!cut(VERB, w, n, pV)) {
             cut(NOUN, w, n, pV);
         }
     }
-    // Шаг 2: «и» на конце
     if (n - 1 &gt;= pV &amp;&amp; w[n - 1] == RU_I) n--;
-    // Шаг 3: словообразовательный суффикс «ост(ь)» в R2
     int k = longest(DERIV, w, n, p2 &gt; pV ? p2 : pV);
     if (k &gt;= 0) n -= DERIV.s[k].n;
-    // Шаг 4: превосходная степень «ейш(е)», двойное «нн» -&gt; «н», мягкий знак
     k = longest(SUPER, w, n, pV);
     if (k &gt;= 0) {
         n -= SUPER.s[k].n;
@@ -2678,14 +2469,12 @@ static int stem_ru(uint32_t *w, int n) {
     return n;
 }
 
-// ---------------------------------------------------------------- английский (Портер)
 static bool en_v(char c) { return c == &#x27;a&#x27; || c == &#x27;e&#x27; || c == &#x27;i&#x27; || c == &#x27;o&#x27; || c == &#x27;u&#x27; || c == &#x27;y&#x27;; }
 
 static bool ends(const char *w, int n, const char *s) {
     int L = (int)strlen(s);
     return L &lt;= n &amp;&amp; memcmp(w + n - L, s, L) == 0;
 }
-// «Короткий слог» на конце w[0..n): согласная (не w, x, Y), перед ней гласная, перед ней согласная
 static bool shortv(const char *w, int n) {
     if (n &lt; 3) return false;
     char c = w[n - 1];
@@ -2698,7 +2487,6 @@ static bool has_vowel(const char *w, int n) {
 
 struct Rule { const char *suf; const char *rep; };
 
-// Самое длинное правило из списка, подходящее к концу слова; -1, если ни одно не подходит
 static int en_longest(const Rule *r, int cnt, const char *w, int n) {
     int best = -1, bl = -1;
     for (int k = 0; k &lt; cnt; k++) {
@@ -2716,10 +2504,8 @@ static void replace_end(char *w, int &amp;n, int cut_len, const char *rep) {
 
 static int stem_en(char *w, int n) {
     if (n &lt;= 0) return n;
-    // «y» — согласная в начале слова и после гласной (помечается как &#x27;Y&#x27;)
     if (w[0] == &#x27;y&#x27;) w[0] = &#x27;Y&#x27;;
     for (int i = 1; i &lt; n; i++) if (w[i] == &#x27;y&#x27; &amp;&amp; en_v(w[i - 1])) w[i] = &#x27;Y&#x27;;
-    // Области R1, R2
     int p1 = n, p2 = n, i = 0;
     while (i &lt; n &amp;&amp; !en_v(w[i])) i++;
     if (i &lt; n) {
@@ -2730,12 +2516,10 @@ static int stem_en(char *w, int n) {
             if (i &lt; n) { i++; while (i &lt; n &amp;&amp; en_v(w[i])) i++; if (i &lt; n) p2 = i + 1; }
         }
     }
-    // Шаг 1a
     if (ends(w, n, &quot;sses&quot;)) n -= 2;
     else if (ends(w, n, &quot;ies&quot;)) n -= 2;
     else if (ends(w, n, &quot;ss&quot;)) {}
     else if (ends(w, n, &quot;s&quot;)) n -= 1;
-    // Шаг 1b
     if (ends(w, n, &quot;eed&quot;)) {
         if (n - 3 &gt;= p1) n -= 1;
     } else {
@@ -2747,9 +2531,7 @@ static int stem_en(char *w, int n) {
             else if (n == p1 &amp;&amp; shortv(w, n)) w[n++] = &#x27;e&#x27;;
         }
     }
-    // Шаг 1c
     if (n &gt;= 1 &amp;&amp; (w[n - 1] == &#x27;y&#x27; || w[n - 1] == &#x27;Y&#x27;) &amp;&amp; has_vowel(w, n - 1)) w[n - 1] = &#x27;i&#x27;;
-    // Шаг 2 (в R1)
     static const Rule S2[] = {
         {&quot;tional&quot;, &quot;tion&quot;}, {&quot;enci&quot;, &quot;ence&quot;}, {&quot;anci&quot;, &quot;ance&quot;}, {&quot;abli&quot;, &quot;able&quot;}, {&quot;entli&quot;, &quot;ent&quot;},
         {&quot;eli&quot;, &quot;e&quot;}, {&quot;izer&quot;, &quot;ize&quot;}, {&quot;ization&quot;, &quot;ize&quot;}, {&quot;ational&quot;, &quot;ate&quot;}, {&quot;ation&quot;, &quot;ate&quot;},
@@ -2757,12 +2539,10 @@ static int stem_en(char *w, int n) {
         {&quot;ousli&quot;, &quot;ous&quot;}, {&quot;ousness&quot;, &quot;ous&quot;}, {&quot;iveness&quot;, &quot;ive&quot;}, {&quot;iviti&quot;, &quot;ive&quot;}, {&quot;biliti&quot;, &quot;ble&quot;}};
     int k = en_longest(S2, sizeof(S2) / sizeof(S2[0]), w, n);
     if (k &gt;= 0) { int L = (int)strlen(S2[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S2[k].rep); }
-    // Шаг 3 (в R1)
     static const Rule S3[] = {
         {&quot;alize&quot;, &quot;al&quot;}, {&quot;icate&quot;, &quot;ic&quot;}, {&quot;iciti&quot;, &quot;ic&quot;}, {&quot;ical&quot;, &quot;ic&quot;}, {&quot;ative&quot;, &quot;&quot;}, {&quot;ful&quot;, &quot;&quot;}, {&quot;ness&quot;, &quot;&quot;}};
     k = en_longest(S3, sizeof(S3) / sizeof(S3[0]), w, n);
     if (k &gt;= 0) { int L = (int)strlen(S3[k].suf); if (n - L &gt;= p1) replace_end(w, n, L, S3[k].rep); }
-    // Шаг 4 (в R2)
     static const Rule S4[] = {
         {&quot;al&quot;, &quot;&quot;}, {&quot;ance&quot;, &quot;&quot;}, {&quot;ence&quot;, &quot;&quot;}, {&quot;er&quot;, &quot;&quot;}, {&quot;ic&quot;, &quot;&quot;}, {&quot;able&quot;, &quot;&quot;}, {&quot;ible&quot;, &quot;&quot;},
         {&quot;ant&quot;, &quot;&quot;}, {&quot;ement&quot;, &quot;&quot;}, {&quot;ment&quot;, &quot;&quot;}, {&quot;ent&quot;, &quot;&quot;}, {&quot;ou&quot;, &quot;&quot;}, {&quot;ism&quot;, &quot;&quot;}, {&quot;ate&quot;, &quot;&quot;},
@@ -2775,19 +2555,15 @@ static int stem_en(char *w, int n) {
             else if (n - L - 1 &gt;= 0 &amp;&amp; (w[n - L - 1] == &#x27;s&#x27; || w[n - L - 1] == &#x27;t&#x27;)) n -= L;
         }
     }
-    // Шаг 5a: конечное «e»
     if (n &gt;= 1 &amp;&amp; w[n - 1] == &#x27;e&#x27;) {
         int c = n - 1;
         if (c &gt;= p2 || (c &gt;= p1 &amp;&amp; !shortv(w, c))) n--;
     }
-    // Шаг 5b: «ll» -&gt; «l» в R2
     if (n &gt;= 2 &amp;&amp; w[n - 1] == &#x27;l&#x27; &amp;&amp; n - 1 &gt;= p2 &amp;&amp; w[n - 2] == &#x27;l&#x27;) n--;
     for (int j = 0; j &lt; n; j++) if (w[j] == &#x27;Y&#x27;) w[j] = &#x27;y&#x27;;
     return n;
 }
 
-// ---------------------------------------------------------------- общий вход
-// Основа терма s[0..n) (UTF-8, нижний регистр) -&gt; out; возвращает длину основы в байтах.
 static int stem(const char *s, int n, char *out) {
     bool en = n &gt; 0, ru = n &gt; 0;
     uint32_t cp[MAXW]; int m = 0;
@@ -2812,17 +2588,10 @@ static int stem(const char *s, int n, char *out) {
     return n;
 }
 
-}  // namespace stem
+}
 </code></pre></details>
 <p><strong>Токенизатор (ЛР3)</strong>: токены текста или статистика корпуса (число токенов, средняя длина, время, скорость).</p>
-<details class="file"><summary>lab_boolean/src/tokenize.cpp <span class="ln">(78 строк)</span></summary><pre><code class="language-cpp">// Токенизатор (ЛР «Токенизация») — утилита командной строки. Правила токенизации — next_token() в common.h,
-// те же самые использует индексатор.
-//
-//   tokenize                              — читает текст из stdin, печатает токены, по одному на строку
-//   tokenize --stats corpus.tsv [--limit-mb N]
-//                                         — токенизирует заголовки и тексты корпуса (не больше N МБ текста),
-//                                           печатает число токенов, среднюю длину, время и скорость
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/tokenize.cpp <span class="ln">(70 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 
 static void tokens_of_stdin() {
     Vec&lt;char&gt; text;
@@ -2848,7 +2617,6 @@ static int stats(const char *path, double limitMb) {
     while (textBytes &lt; limit &amp;&amp; lr.next()) {
         char *s = lr.line.a; size_t n = lr.line.n;
         if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
-        // поля: источник \t id \t заголовок \t URL \t текст
         char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
         for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++)
             if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
@@ -2870,10 +2638,10 @@ static int stats(const char *path, double limitMb) {
     printf(&quot;documents          %llu\n&quot;, (unsigned long long)docs);
     printf(&quot;text_bytes         %llu\n&quot;, (unsigned long long)textBytes);
     printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
-    printf(&quot;avg_token_len      %.3f\n&quot;, tokens ? (double)tokenChars / tokens : 0.0);   // в символах
-    printf(&quot;avg_token_bytes    %.3f\n&quot;, tokens ? (double)tokenBytes / tokens : 0.0);   // в байтах UTF-8
-    printf(&quot;time_total_sec     %.3f\n&quot;, total);          // чтение файла + токенизация
-    printf(&quot;time_tokenize_sec  %.3f\n&quot;, tokenizeSec);    // только токенизация
+    printf(&quot;avg_token_len      %.3f\n&quot;, tokens ? (double)tokenChars / tokens : 0.0);
+    printf(&quot;avg_token_bytes    %.3f\n&quot;, tokens ? (double)tokenBytes / tokens : 0.0);
+    printf(&quot;time_total_sec     %.3f\n&quot;, total);
+    printf(&quot;time_tokenize_sec  %.3f\n&quot;, tokenizeSec);
     printf(&quot;ms_per_kb          %.5f\n&quot;, kb ? tokenizeSec * 1000 / kb : 0.0);
     printf(&quot;mb_per_sec         %.2f\n&quot;, tokenizeSec ? textBytes / 1048576.0 / tokenizeSec : 0.0);
     return 0;
@@ -2894,18 +2662,11 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p><strong>Частоты термов (ЛР5)</strong>: подсчёт частот через хеш-таблицу, сортировка слиянием по убыванию → «ранг, частота, терм» для закона Ципфа.</p>
-<details class="file"><summary>lab_boolean/src/termfreq.cpp <span class="ln">(95 строк)</span></summary><pre><code class="language-cpp">// Частоты термов (ЛР «Закон Ципфа»): сколько раз каждый терм встречается в корпусе.
-// Токенизация — та же, что в индексаторе (next_token из common.h); с --stem считаются основы.
-//
-// Запуск: termfreq corpus.tsv freq.tsv [--stem]
-// Выход:  freq.tsv — строки «ранг \t частота \t терм» по убыванию частоты
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/termfreq.cpp <span class="ln">(88 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
-static const uint64_t *g_freq;            // частоты — для сравнения при сортировке
+static const uint64_t *g_freq;
 
-// Сортировка слиянием номеров термов по убыванию частоты (стабильная: при равной частоте —
-// в порядке первого появления терма в корпусе).
 static void sort_by_freq(uint32_t *a, size_t n) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
@@ -2930,10 +2691,10 @@ int main(int argc, char **argv) {
     if (!in) { fprintf(stderr, &quot;cannot open %s\n&quot;, argv[1]); return 1; }
     double t0 = now_sec();
     LineReader lr(in);
-    TermTable tt;                         // словоформы
-    TermTable stemTab;                    // основы (при --stem)
-    Vec&lt;uint32_t&gt; toStem;                 // словоформа -&gt; основа
-    Vec&lt;uint64_t&gt; freq;                   // частота терма (словоформы или основы)
+    TermTable tt;
+    TermTable stemTab;
+    Vec&lt;uint32_t&gt; toStem;
+    Vec&lt;uint64_t&gt; freq;
     uint64_t tokens = 0;
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
     while (lr.next()) {
@@ -2984,15 +2745,13 @@ int main(int argc, char **argv) {
     fclose(out);
     printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
     printf(&quot;terms              %zu\n&quot;, T);
-    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);         // термы, встретившиеся один раз
+    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);
     printf(&quot;time_total_sec     %.3f\n&quot;, now_sec() - t0);
     return 0;
 }
 </code></pre></details>
 <p><strong>Проверка стеммера</strong>: слово на входе → основа на выходе.</p>
-<details class="file"><summary>lab_boolean/src/stemtest.cpp <span class="ln">(22 строк)</span></summary><pre><code class="language-cpp">// Утилита проверки стеммера: каждая строка stdin — терм, в stdout — его основа.
-// Запуск: stemtest &lt; words.txt &gt; stems.txt
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/stemtest.cpp <span class="ln">(20 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
 int main() {
@@ -3013,17 +2772,9 @@ int main() {
 }
 </code></pre></details>
 <p><strong>Индексатор (ЛР7)</strong>: читает корпус, токенизирует (опционально стеммирует), строит словарь термов (сортировка слиянием) и posting-листы — отсортированные списки id документов без повторов; пишет прямой индекс (заголовок, URL) и обратный (терм → postings) в свой бинарный формат <code>index.bin</code>.</p>
-<details class="file"><summary>lab_boolean/src/indexer.cpp <span class="ln">(208 строк)</span></summary><pre><code class="language-cpp">// Индексатор: строит булев индекс (прямой + обратный) в собственном бинарном формате.
-//
-// Вход:  corpus.tsv — по документу на строку: источник \t pageid \t заголовок \t URL \t текст
-// Выход: index.bin
-// Запуск: indexer corpus.tsv index.bin [--stem]
-//   --stem — в индекс попадают основы слов (стемминг, src/stem.h), а не словоформы
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/indexer.cpp <span class="ln">(191 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
-// ---------------------------------------------------------------- сортировка слиянием
-// Сортирует массив id термов по строкам термов (восходящая, итеративная, стабильная).
 static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
@@ -3048,7 +2799,6 @@ static void merge_sort_terms(uint32_t *a, size_t n, const TermTable &amp;tt) {
     free(tmp);
 }
 
-// ---------------------------------------------------------------- запись
 static void w16(FILE *f, uint16_t v) { fwrite(&amp;v, 2, 1, f); }
 static void w32(FILE *f, uint32_t v) { fwrite(&amp;v, 4, 1, f); }
 static void w64(FILE *f, uint64_t v) { fwrite(&amp;v, 8, 1, f); }
@@ -3066,13 +2816,13 @@ int main(int argc, char **argv) {
 
     double t0 = now_sec();
     LineReader lr(in);
-    TermTable tt;              // все различные словоформы (токены после нормализации)
-    TermTable stemTab;         // основы слов (только при --stem)
-    Vec&lt;uint32_t&gt; toStem;      // toStem[id словоформы] = id основы: стемминг делается один раз на словоформу
-    Vec&lt;uint32_t&gt; lastDoc;     // lastDoc[termId] — последний документ, где встречался терм
-    Vec&lt;uint64_t&gt; pairs;       // пары (termId &lt;&lt; 32 | docNo), по одной на (терм, документ)
-    Vec&lt;char&gt; docsBlob;        // записи прямого индекса
-    Vec&lt;uint64_t&gt; docOff;      // смещение записи каждого документа в docsBlob
+    TermTable tt;
+    TermTable stemTab;
+    Vec&lt;uint32_t&gt; toStem;
+    Vec&lt;uint32_t&gt; lastDoc;
+    Vec&lt;uint64_t&gt; pairs;
+    Vec&lt;char&gt; docsBlob;
+    Vec&lt;uint64_t&gt; docOff;
     uint64_t textBytes = 0, tokens = 0, tokenChars = 0;
     uint32_t docNo = 0;
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
@@ -3080,16 +2830,13 @@ int main(int argc, char **argv) {
     while (lr.next()) {
         char *s = lr.line.a; size_t n = lr.line.n;
         if (n &amp;&amp; s[n - 1] == &#x27;\r&#x27;) n--;
-        // разбор полей: источник, pageid, заголовок, URL, текст
         char *f[5]; size_t fl[5]; int k = 0; size_t st = 0;
         for (size_t i = 0; i &lt;= n &amp;&amp; k &lt; 5; i++) {
             if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
         }
         if (k &lt; 5) continue;
 
-        // запись прямого индекса: u8 источник, u32 pageid, u16+байты заголовок, u16+байты URL
         docOff.push(docsBlob.n);
-        // источник: 0 = ruwiki, 1 = enwiki, 2 = gudok (газета «Гудок»)
         uint8_t source = (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;e&#x27;) ? 1 : (fl[0] &gt;= 1 &amp;&amp; f[0][0] == &#x27;g&#x27;) ? 2 : 0;
         docsBlob.push((char)source);
         put32(docsBlob, (uint32_t)strtoul(f[1], nullptr, 10));
@@ -3097,7 +2844,6 @@ int main(int argc, char **argv) {
         put16(docsBlob, tl); docsBlob.append(f[2], tl);
         put16(docsBlob, ul); docsBlob.append(f[3], ul);
 
-        // индексируем заголовок и текст
         for (int part = 2; part &lt;= 4; part += 2) {
             const char *p = f[part]; size_t pn = fl[part], pos = 0;
             textBytes += pn;
@@ -3107,17 +2853,17 @@ int main(int argc, char **argv) {
                 bool isNew;
                 uint32_t id = tt.get_or_add(tok, tlen, isNew);
                 if (useStem) {
-                    if (isNew) {                       // новая словоформа: находим её основу
+                    if (isNew) {
                         bool newStem;
                         int sl = stem::stem(tok, tlen, sb);
                         toStem.push(stemTab.get_or_add(sb, sl, newStem));
                         if (newStem) lastDoc.push(UINT32_MAX);
                     }
-                    id = toStem[id];                   // в индекс идёт основа
+                    id = toStem[id];
                 } else if (isNew) {
                     lastDoc.push(UINT32_MAX);
                 }
-                if (lastDoc[id] != docNo) {            // каждая пара (терм, документ) — один раз
+                if (lastDoc[id] != docNo) {
                     lastDoc[id] = docNo;
                     pairs.push(((uint64_t)id &lt;&lt; 32) | docNo);
                 }
@@ -3128,9 +2874,8 @@ int main(int argc, char **argv) {
     }
     fclose(in);
     double tParse = now_sec();
-    TermTable &amp;ix = useStem ? stemTab : tt;   // таблица термов индекса: основы или словоформы
+    TermTable &amp;ix = useStem ? stemTab : tt;
 
-    // ---- сортировка постингов по термам: сортировка подсчётом (стабильная, O(n))
     size_t T = ix.size;
     Vec&lt;uint64_t&gt; start; start.resize(T + 1);
     memset(start.a, 0, (T + 1) * sizeof(uint64_t));
@@ -3141,18 +2886,16 @@ int main(int argc, char **argv) {
         Vec&lt;uint64_t&gt; fill; fill.resize(T);
         memcpy(fill.a, start.a, T * sizeof(uint64_t));
         for (size_t i = 0; i &lt; pairs.n; i++)
-            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];   // документы уже по возрастанию
+            postings[fill[pairs[i] &gt;&gt; 32]++] = (uint32_t)pairs[i];
         fill.release();
     }
     pairs.release();
 
-    // ---- сортировка словаря: сортировка слиянием по строкам термов
     Vec&lt;uint32_t&gt; order; order.resize(T);
     for (size_t t = 0; t &lt; T; t++) order[t] = (uint32_t)t;
     merge_sort_terms(order.a, T, ix);
     double tSort = now_sec();
 
-    // ---- запись файла
     FILE *out = fopen(argv[2], &quot;wb&quot;);
     if (!out) { fprintf(stderr, &quot;cannot create %s\n&quot;, argv[2]); return 1; }
     const uint32_t NSEC = 4;
@@ -3171,32 +2914,31 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i &lt; NSEC; i++) { w32(out, types[i]); w32(out, 0); w64(out, offs[i]); w64(out, sizes[i]); }
     uint64_t pos = HEADER_SIZE + SECTION_ENTRY_SIZE * NSEC;
 
-    pad8(out, pos);                                            // DOCS
+    pad8(out, pos);
     w32(out, docNo);
     uint64_t base = 4 + 8ull * docNo;
     for (uint32_t d = 0; d &lt; docNo; d++) w64(out, base + docOff[d]);
     fwrite(docsBlob.a, 1, docsBlob.n, out);
     pos += szDocs; pad8(out, pos);
 
-    w32(out, (uint32_t)T);                                     // DICT (в порядке сортировки)
+    w32(out, (uint32_t)T);
     for (size_t i = 0; i &lt; T; i++) {
         uint32_t t = order[i];
         w32(out, ix.off[t]); w16(out, ix.len[t]); w16(out, 0);
-        w32(out, (uint32_t)(start[t + 1] - start[t]));        // df
-        w32(out, 0);                                           // зарезервировано
-        w64(out, start[t] * 4);                                // смещение списка в POSTINGS
+        w32(out, (uint32_t)(start[t + 1] - start[t]));
+        w32(out, 0);
+        w64(out, start[t] * 4);
     }
     pos += szDict; pad8(out, pos);
 
-    fwrite(ix.pool.a, 1, ix.pool.n, out);                      // TERMSTR
+    fwrite(ix.pool.a, 1, ix.pool.n, out);
     pos += szStr; pad8(out, pos);
 
-    fwrite(postings.a, 4, postings.n, out);                    // POSTINGS
+    fwrite(postings.a, 4, postings.n, out);
     pos += szPost;
     fclose(out);
     double t1 = now_sec();
 
-    // ---- статистика
     uint64_t termChars = 0;
     for (size_t t = 0; t &lt; T; t++) {
         const unsigned char *p = (const unsigned char *)ix.pool.a + ix.off[t];
@@ -3222,23 +2964,15 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p><strong>Булев поиск (ЛР8)</strong>: загружает <code>index.bin</code>; разбор запроса рекурсивным спуском (приоритет <code>!</code> &gt; И &gt; <code>||</code>, скобки) в дерево; вычисление слиянием отсортированных списков: И — пересечение, ИЛИ — объединение, НЕ — дополнение, всё за линейное время. Режим <code>--paged</code> для веб-сервиса.</p>
-<details class="file"><summary>lab_boolean/src/search.cpp <span class="ln">(277 строк)</span></summary><pre><code class="language-cpp">// Булев поиск по индексу index.bin.
-//
-// Синтаксис запросов: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
-// Запуск:
-//   search index.bin [-n 50]            — каждая строка stdin = запрос, результат в stdout
-//   search index.bin --paged [-n 50]    — каждая строка stdin = &quot;смещение&lt;TAB&gt;запрос&quot; (для веб-сервиса)
-//   search index.bin --ids [-n N]       — вместо заголовков печатать внутренние номера документов (для тестов)
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/search.cpp <span class="ln">(256 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
-// ---------------------------------------------------------------- загруженный индекс
 struct Index {
     char *data = nullptr;
     uint64_t size = 0;
     const char *docs = nullptr, *dict = nullptr, *termstr = nullptr, *postings = nullptr;
     uint32_t nDocs = 0, nTerms = 0;
-    bool stemmed = false;          // в индексе основы слов -&gt; слова запроса тоже стеммируются
+    bool stemmed = false;
 
     bool load(const char *path) {
         FILE *f = fopen(path, &quot;rb&quot;);
@@ -3262,16 +2996,14 @@ struct Index {
             else if (type == SEC_DICT) dict = p;
             else if (type == SEC_TERMSTR) termstr = p;
             else if (type == SEC_POSTINGS) postings = p;
-            // неизвестные секции пропускаются — так формат расширяется без поломки старых программ
         }
         if (!docs || !dict || !termstr || !postings) { fprintf(stderr, &quot;missing section\n&quot;); return false; }
         nDocs = rd32(docs);
         nTerms = rd32(dict);
-        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;   // флаги заголовка
+        stemmed = (rd32(data + 12) &amp; FLAG_STEMMED) != 0;
         return true;
     }
 
-    // Двоичный поиск терма в отсортированном словаре. Возвращает номер записи или -1.
     long find_term(const char *s, int n) const {
         long lo = 0, hi = (long)nTerms - 1;
         while (lo &lt;= hi) {
@@ -3293,7 +3025,6 @@ struct Index {
         memcpy(out.a, postings + rd64(e + 16), (size_t)df * 4);
     }
 
-    // Заголовок и URL документа из прямого индекса.
     void doc_info(uint32_t d, const char *&amp;title, int &amp;tl, const char *&amp;url, int &amp;ul) const {
         const char *r = docs + rd64(docs + 4 + 8ull * d);
         tl = rd16(r + 5); title = r + 7;
@@ -3301,7 +3032,6 @@ struct Index {
     }
 };
 
-// ---------------------------------------------------------------- операции над списками
 static void op_and(const Vec&lt;uint32_t&gt; &amp;a, const Vec&lt;uint32_t&gt; &amp;b, Vec&lt;uint32_t&gt; &amp;r) {
     r.clear(); size_t i = 0, j = 0;
     while (i &lt; a.n &amp;&amp; j &lt; b.n) {
@@ -3336,9 +3066,8 @@ static void op_not(const Vec&lt;uint32_t&gt; &amp;a, uint32_t nDocs, Vec&lt;uint
     }
 }
 
-// ---------------------------------------------------------------- лексер запроса
 enum TokType { T_TERM, T_AND, T_OR, T_NOT, T_LP, T_RP };
-struct QTok { TokType type; long entry; };   // entry — номер терма в словаре (-1, если терма нет)
+struct QTok { TokType type; long entry; };
 
 static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &amp;out) {
     out.clear();
@@ -3352,15 +3081,13 @@ static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &
         if (c == &#x27;!&#x27;) { out.push({T_NOT, 0}); i++; continue; }
         if (c == &#x27;&amp;&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;&amp;&#x27;) i++; out.push({T_AND, 0}); continue; }
         if (c == &#x27;|&#x27;) { while (i &lt; n &amp;&amp; q[i] == &#x27;|&#x27;) i++; out.push({T_OR, 0}); continue; }
-        // слово: всё до пробела или спецсимвола; внутри него работает тот же токенизатор, что и в индексаторе
         size_t st = i;
         while (i &lt; n &amp;&amp; !strchr(&quot; \t\r\n()!&amp;|&quot;, q[i])) i++;
         size_t pos = 0; int chars, len;
         bool first = true;
         while ((len = next_token(q + st, i - st, pos, tok, chars)) &gt; 0) {
-            // «ВЛ-80» даёт два терма — между ними неявное И
             if (!first) out.push({T_AND, 0});
-            if (idx.stemmed) {                     // тот же стеммер, что при индексации
+            if (idx.stemmed) {
                 int sl = stem::stem(tok, len, sb);
                 out.push({T_TERM, idx.find_term(sb, sl)});
             } else {
@@ -3371,11 +3098,6 @@ static void lex(const Index &amp;idx, const char *q, size_t n, Vec&lt;QTok&gt; &
     }
 }
 
-// ---------------------------------------------------------------- парсер (рекурсивный спуск)
-// or  := and ( &#x27;||&#x27; and )*
-// and := unary ( [&#x27;&amp;&amp;&#x27;] unary )*        — пробел между операндами = И
-// unary := &#x27;!&#x27; unary | &#x27;(&#x27; or &#x27;)&#x27; | TERM
-// Парсер толерантен: лишние операторы и скобки пропускаются, незакрытые скобки закрываются.
 enum NodeType { N_TERM, N_AND, N_OR, N_NOT };
 struct Node { NodeType type; int l, r; long entry; };
 
@@ -3397,7 +3119,7 @@ struct Parser {
     int conj() {
         int left = unary();
         for (;;) {
-            if (at(T_AND)) { p++; continue; }               // «&amp;&amp;» и повторные «&amp;&amp;» просто разделители
+            if (at(T_AND)) { p++; continue; }
             if (at(T_TERM) || at(T_NOT) || at(T_LP)) {
                 int right = unary();
                 if (right &lt; 0) continue;
@@ -3419,7 +3141,7 @@ struct Parser {
     }
     int parse() {
         int root = expr();
-        while (p &lt; t.n) {                                   // хвост после лишней «)» — склеиваем через И
+        while (p &lt; t.n) {
             p++;
             int more = expr();
             if (more &gt;= 0) root = root &lt; 0 ? more : make(N_AND, root, more);
@@ -3428,13 +3150,12 @@ struct Parser {
     }
 };
 
-// ---------------------------------------------------------------- вычисление
 static void eval(const Index &amp;idx, const Vec&lt;Node&gt; &amp;nodes, int v, Vec&lt;uint32_t&gt; &amp;res) {
     const Node &amp;nd = nodes[v];
     if (nd.type == N_TERM) { idx.postings_of(nd.entry, res); return; }
     Vec&lt;uint32_t&gt; a, b;
     if (nd.type == N_NOT) { eval(idx, nodes, nd.l, a); op_not(a, idx.nDocs, res); a.release(); return; }
-    if (nd.type == N_AND &amp;&amp; nodes[nd.r].type == N_NOT) {    // A &amp;&amp; !B — вычитание без построения дополнения
+    if (nd.type == N_AND &amp;&amp; nodes[nd.r].type == N_NOT) {
         eval(idx, nodes, nd.l, a); eval(idx, nodes, nodes[nd.r].l, b); op_and_not(a, b, res);
     } else if (nd.type == N_AND &amp;&amp; nodes[nd.l].type == N_NOT) {
         eval(idx, nodes, nd.r, a); eval(idx, nodes, nodes[nd.l].l, b); op_and_not(a, b, res);
@@ -3471,7 +3192,7 @@ int main(int argc, char **argv) {
         if (paged) {
             size_t i = 0;
             while (i &lt; qn &amp;&amp; q[i] != &#x27;\t&#x27;) i++;
-            offset = atol(q);               // число до табуляции
+            offset = atol(q);
             if (i &lt; qn) { q += i + 1; qn -= i + 1; }
         }
 
@@ -3502,15 +3223,7 @@ int main(int argc, char **argv) {
 
 <h3 id="_2">Сборка и тесты<a class="headerlink" href="#_2" title="Permanent link">#</a></h3>
 <p><strong>Сборка CMake</strong>: пять программ, GoogleTest из <code>third_party</code>, по программе тестов на каждую лабу (<code>bin/test_lab3_tokenizer.exe</code> …); <code>gtest_discover_tests</code> делает каждый TEST отдельным тестом CTest.</p>
-<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(50 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
-#
-#   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
-#   cmake --build --preset default  (сборка программ и тестов)
-#   ctest --preset default          (запуск всех 29 тестов GoogleTest)
-#   ctest --preset default -R Lab8  (только тесты одной лабораторной)
-#
-# Пресет &quot;gcc&quot; — то же самое с системным компилятором (g++, clang, MSVC).
-cmake_minimum_required(VERSION 3.16)
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(37 строк)</span></summary><pre><code class="language-plaintext">cmake_minimum_required(VERSION 3.16)
 project(ir_boolean_search CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -3519,13 +3232,11 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Программы поисковой системы (без STL)
 foreach(prog indexer search tokenize termfreq stemtest)
   add_executable(${prog} src/${prog}.cpp)
   set_target_properties(${prog} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 endforeach()
 
-# Утилиты для демонстрации (C++): по программе на лабораторную — общая папка ir_labs/bin (lab3.exe ... lab8.exe)
 foreach(t lab3 lab4 lab5 lab7 lab8)
   add_executable(${t} tools/${t}.cpp)
   if(WIN32)
@@ -3535,20 +3246,17 @@ foreach(t lab3 lab4 lab5 lab7 lab8)
   set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 endforeach()
 
-# GoogleTest (исходники лежат в third_party/googletest, версия 1.15.2)
 set(gtest_force_shared_crt ON CACHE BOOL &quot;&quot; FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL &quot;&quot; FORCE)
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 
-# Юнит-тесты: по отдельному файлу и программе на каждую лабораторную (tests/test_*.cpp)
 enable_testing()
 include(GoogleTest)
 foreach(t test_lab3_tokenizer test_lab4_stemming test_lab5_termfreq test_lab7_index test_lab8_search test_full_corpus)
   add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} GTest::gtest_main)
   set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-  # каждый TEST становится отдельным тестом CTest; рабочая папка — lab_boolean
   gtest_discover_tests(${t} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_TIMEOUT 60 PROPERTIES TIMEOUT 600)
 endforeach()
 </code></pre></details>
@@ -3591,14 +3299,7 @@ endforeach()
 <details class="file"><summary>lab_boolean/toolchain/zig-cxx.cmd <span class="ln">(2 строк)</span></summary><pre><code class="language-plaintext">@python -m ziglang c++ %*
 </code></pre></details>
 <p><strong>Тесты на C++ (GoogleTest, 29)</strong>: токенизатор, структуры данных, стеммер, частоты, индекс, разбор и выполнение запросов, сверка индекса и поиска на <strong>полном корпусе</strong> с полным перебором на 300 запросах.</p>
-<details class="file"><summary>lab_boolean/tests/test_common.h <span class="ln">(107 строк)</span></summary><pre><code class="language-cpp">// Общая часть юнит-тестов (GoogleTest): подключение исходников поисковой системы и
-// вспомогательные функции. Каждый файл test_labN_*.cpp включает этот заголовок и собирается
-// в отдельную программу (bin/test_lab3.exe, ...), поэтому повторных определений нет.
-//
-// Исходники программ подключаются напрямую (их main() переименовываются), поэтому тестируются
-// сами функции: next_token, stem::stem, TermTable, merge_sort_terms, op_and/op_or, парсер запросов...
-// STL используется только в тестах (GoogleTest сам на нём построен); код поисковой системы — без STL.
-#pragma once
+<details class="file"><summary>lab_boolean/tests/test_common.h <span class="ln">(92 строк)</span></summary><pre><code class="language-cpp">#pragma once
 #include &lt;gtest/gtest.h&gt;
 #include &lt;string&gt;
 
@@ -3612,13 +3313,10 @@ endforeach()
 #include &quot;../src/termfreq.cpp&quot;
 #undef main
 
-// Макросы старого набора тестов -&gt; проверки GoogleTest
 #define CHECK(cond) EXPECT_TRUE(cond) &lt;&lt; #cond
 #define CHECK_EQ(a, b) EXPECT_EQ((long long)(a), (long long)(b))
 #define CHECK_STR(got, gotLen, expected) EXPECT_EQ(std::string((got), (size_t)(gotLen)), std::string(expected))
 
-// ================================================================ вспомогательные функции
-// Все токены строки, через пробел (для удобного сравнения).
 static int tokens_joined(const char *s, char *out) {
     size_t pos = 0; int chars, len, n = 0;
     char tok[MAX_TERM_BYTES + 4];
@@ -3632,7 +3330,6 @@ static int tokens_joined(const char *s, char *out) {
 
 static int stem_of(const char *w, char *out) { return stem::stem(w, (int)strlen(w), out); }
 
-// Полный цикл поиска как в search.exe: лексер -&gt; парсер -&gt; вычисление. Результат — номера документов.
 static void run_query(const Index &amp;idx, const char *q, Vec&lt;uint32_t&gt; &amp;res) {
     Vec&lt;QTok&gt; toks;
     lex(idx, q, strlen(q), toks);
@@ -3642,13 +3339,11 @@ static void run_query(const Index &amp;idx, const char *q, Vec&lt;uint32_t&gt; &
     if (root &gt;= 0) eval(idx, p.nodes, root, res);
 }
 
-// Сравнивает результат запроса с ожидаемым списком документов (отсортированный, через запятую).
 static bool same_docs(const Vec&lt;uint32_t&gt; &amp;r, const uint32_t *exp, size_t n) {
     if (r.n != n) return false;
     for (size_t i = 0; i &lt; n; i++) if (r[i] != exp[i]) return false;
     return true;
 }
-// Ожидаемый список документов сравнивается с выдачей поиска; при ошибке gtest печатает оба списка.
 static std::string docs_str(const uint32_t *a, size_t n) {
     std::string s = &quot;[&quot;;
     for (size_t i = 0; i &lt; n; i++) { if (i) s += &quot;,&quot;; s += std::to_string(a[i]); }
@@ -3658,7 +3353,6 @@ static std::string docs_str(const uint32_t *a, size_t n) {
     size_t _n = (sizeof(_e) / sizeof(_e[0])) - 1; \
     EXPECT_EQ(docs_str(_r.a, _r.n), docs_str(_e + 1, _n)) &lt;&lt; &quot;query: &quot; &lt;&lt; q; \
     _r.release(); } while (0)
-// Первый элемент в CHECK_QUERY — фиктивный 0 (чтобы можно было записать пустой ожидаемый список).
 
 static const char *MINI = &quot;tests/mini.tsv&quot;;
 static const char *TMP_PLAIN = &quot;tests/_unit_index.bin&quot;;
@@ -3681,7 +3375,7 @@ static const char *TMP_STEM = &quot;tests/_unit_index_stem.bin&quot;;
 static bool build_index(const char *out, bool withStem) {
     char a0[] = &quot;indexer&quot;, a3[] = &quot;--stem&quot;;
     char *argv[] = {a0, (char *)MINI, (char *)out, a3, nullptr};
-    fflush(stdout);                     // статистику индексатора в вывод тестов не печатаем
+    fflush(stdout);
     int saved = DUP(FILENO(stdout));
     FILE *nul = fopen(NULDEV, &quot;w&quot;);
     if (nul) DUP2(FILENO(nul), FILENO(stdout));
@@ -3692,25 +3386,22 @@ static bool build_index(const char *out, bool withStem) {
     return rc == 0;
 }
 
-// Индексы мини-корпуса строятся один раз, при первом обращении (тесты можно запускать по фильтру).
 static bool g_plain_built = false, g_stem_built = false;
 static const char *plain_index() { if (!g_plain_built) g_plain_built = build_index(TMP_PLAIN, false); return TMP_PLAIN; }
 static const char *stem_index() { if (!g_stem_built) g_stem_built = build_index(TMP_STEM, true); return TMP_STEM; }
 
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_lab3_tokenizer.cpp <span class="ln">(77 строк)</span></summary><pre><code class="language-cpp">// ЛР3 — токенизация: UTF-8, классы символов, нижний регистр, правила токенизатора.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_lab3_tokenizer.cpp <span class="ln">(75 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-// ================================================================ ЛР3: UTF-8 и токенизация
 TEST(Lab3_Tokenizer, utf8_decode_ascii_cyrillic_and_broken) {
     const unsigned char s[] = {&#x27;A&#x27;, 0xD0, 0x96, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x9A, 0x82, 0x80};
     size_t i = 0;
     CHECK_EQ(utf8_decode(s, sizeof(s), i), &#x27;A&#x27;);      CHECK_EQ(i, 1);
-    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x416);    CHECK_EQ(i, 3);   // Ж — 2 байта
-    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x20AC);   CHECK_EQ(i, 6);   // € — 3 байта
-    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x1F682);  CHECK_EQ(i, 10);  // эмодзи — 4 байта
-    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0xFFFD);   CHECK_EQ(i, 11);  // одиночный байт продолжения
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x416);    CHECK_EQ(i, 3);
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x20AC);   CHECK_EQ(i, 6);
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0x1F682);  CHECK_EQ(i, 10);
+    CHECK_EQ(utf8_decode(s, sizeof(s), i), 0xFFFD);   CHECK_EQ(i, 11);
 }
 
 TEST(Lab3_Tokenizer, utf8_encode_roundtrip) {
@@ -3725,21 +3416,21 @@ TEST(Lab3_Tokenizer, utf8_encode_roundtrip) {
 
 TEST(Lab3_Tokenizer, char_class_rules) {
     CHECK_EQ(char_class(&#x27;a&#x27;), 1); CHECK_EQ(char_class(&#x27;Z&#x27;), 1); CHECK_EQ(char_class(&#x27;7&#x27;), 1);
-    CHECK_EQ(char_class(0x416), 1);   // Ж
-    CHECK_EQ(char_class(0x3B1), 1);   // α
-    CHECK_EQ(char_class(0xE9), 1);    // é
-    CHECK_EQ(char_class(0x301), 2);   // знак ударения
+    CHECK_EQ(char_class(0x416), 1);
+    CHECK_EQ(char_class(0x3B1), 1);
+    CHECK_EQ(char_class(0xE9), 1);
+    CHECK_EQ(char_class(0x301), 2);
     CHECK_EQ(char_class(&#x27; &#x27;), 0); CHECK_EQ(char_class(&#x27;-&#x27;), 0); CHECK_EQ(char_class(&#x27;.&#x27;), 0);
-    CHECK_EQ(char_class(0xD7), 0);    // ×
-    CHECK_EQ(char_class(0x65B0), 0);  // 新 — иероглифы не входят в слова (известный недостаток)
+    CHECK_EQ(char_class(0xD7), 0);
+    CHECK_EQ(char_class(0x65B0), 0);
 }
 
 TEST(Lab3_Tokenizer, to_lower_and_yo) {
     CHECK_EQ(to_lower(&#x27;Q&#x27;), &#x27;q&#x27;);
-    CHECK_EQ(to_lower(0x416), 0x436);  // Ж -&gt; ж
-    CHECK_EQ(to_lower(0x401), 0x435);  // Ё -&gt; е
-    CHECK_EQ(to_lower(0x451), 0x435);  // ё -&gt; е
-    CHECK_EQ(to_lower(0x391), 0x3B1);  // Α -&gt; α
+    CHECK_EQ(to_lower(0x416), 0x436);
+    CHECK_EQ(to_lower(0x401), 0x435);
+    CHECK_EQ(to_lower(0x451), 0x435);
+    CHECK_EQ(to_lower(0x391), 0x3B1);
     CHECK_EQ(to_lower(&#x27;5&#x27;), &#x27;5&#x27;);
 }
 
@@ -3749,11 +3440,11 @@ TEST(Lab3_Tokenizer, tokenizer_basic_rules) {
     n = tokens_joined(&quot;  ,,, &quot;, out);                          CHECK_EQ(n, 0);
     n = tokens_joined(&quot;&quot;, out);                                CHECK_EQ(n, 0);
     n = tokens_joined(&quot;Ёлка и ЁЖ&quot;, out);                       CHECK_STR(out, n, &quot;елка и еж&quot;);
-    n = tokens_joined(&quot;Железнодоро\xCC\x81жный&quot;, out);         CHECK_STR(out, n, &quot;железнодорожный&quot;);  // ударение
+    n = tokens_joined(&quot;Железнодоро\xCC\x81жный&quot;, out);         CHECK_STR(out, n, &quot;железнодорожный&quot;);
     n = tokens_joined(&quot;Rail transport, 1520 mm&quot;, out);         CHECK_STR(out, n, &quot;rail transport 1520 mm&quot;);
 }
 
-TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {   // поведение, описанное в отчёте ЛР3 как недостатки
+TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {
     char out[512]; int n;
     n = tokens_joined(&quot;ВЛ-80&quot;, out);             CHECK_STR(out, n, &quot;вл 80&quot;);
     n = tokens_joined(&quot;Санкт-Петербург&quot;, out);   CHECK_STR(out, n, &quot;санкт петербург&quot;);
@@ -3769,18 +3460,16 @@ TEST(Lab3_Tokenizer, tokenizer_length_limit_and_char_count) {
     size_t pos = 0; int chars; char tok[MAX_TERM_BYTES + 4];
     int len = next_token(text, 200, pos, tok, chars);
     CHECK(len &lt;= MAX_TERM_BYTES);
-    CHECK_EQ(pos, 200);                           // остаток длинного слова не даёт новых токенов
+    CHECK_EQ(pos, 200);
     pos = 0;
     len = next_token(&quot;поезд&quot;, strlen(&quot;поезд&quot;), pos, tok, chars);
-    CHECK_EQ(len, 10);                            // 5 букв кириллицы = 10 байт
+    CHECK_EQ(len, 10);
     CHECK_EQ(chars, 5);
 }
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_lab4_stemming.cpp <span class="ln">(42 строк)</span></summary><pre><code class="language-cpp">// ЛР4 — стемминг: русский Snowball-Портер, английский Портер, индекс основ.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_lab4_stemming.cpp <span class="ln">(38 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-// ================================================================ ЛР4: стемминг
 TEST(Lab4_Stemming, stem_russian) {
     char out[128]; int n;
     n = stem_of(&quot;электровозы&quot;, out);   CHECK_STR(out, n, &quot;электровоз&quot;);
@@ -3797,7 +3486,7 @@ TEST(Lab4_Stemming, stem_english_porter) {
     n = stem_of(&quot;locomotives&quot;, out);   CHECK_STR(out, n, &quot;locomot&quot;);
     n = stem_of(&quot;running&quot;, out);       CHECK_STR(out, n, &quot;run&quot;);
     n = stem_of(&quot;railways&quot;, out);      CHECK_STR(out, n, &quot;railwai&quot;);
-    n = stem_of(&quot;news&quot;, out);          CHECK_STR(out, n, &quot;new&quot;);      // пересечение, разобрано в отчёте ЛР4
+    n = stem_of(&quot;news&quot;, out);          CHECK_STR(out, n, &quot;new&quot;);
 }
 
 TEST(Lab4_Stemming, stem_mixed_and_numbers_unchanged) {
@@ -3806,24 +3495,21 @@ TEST(Lab4_Stemming, stem_mixed_and_numbers_unchanged) {
     n = stem_of(&quot;2026&quot;, out);          CHECK_STR(out, n, &quot;2026&quot;);
 }
 
-
-// ================================================================ ЛР4: индекс основ + поиск
 TEST(Lab4_Stemming, stem_index_flag_and_search) {
     CHECK(build_index(TMP_STEM, true)); g_stem_built = true;
     Index idx; ASSERT_TRUE(idx.load(stem_index()));
     CHECK(idx.stemmed);
     CHECK_EQ(rd32(idx.data + 12) &amp; FLAG_STEMMED, FLAG_STEMMED);
-    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);   // другая словоформа находит те же документы
+    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);
     CHECK_QUERY(idx, &quot;руками&quot;, 0, 2, 3, 5);
     CHECK_QUERY(idx, &quot;руками &amp;&amp; !ногами&quot;, 0, 2, 5);
     CHECK(idx.find_term(&quot;автомобил&quot;, (int)strlen(&quot;автомобил&quot;)) &gt;= 0);
 }
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_lab5_termfreq.cpp <span class="ln">(12 строк)</span></summary><pre><code class="language-cpp">// ЛР5 — закон Ципфа: сортировка термов по убыванию частоты.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_lab5_termfreq.cpp <span class="ln">(11 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
+TEST(Lab5_TermFreq, sort_by_freq_descending) {
     uint64_t freq[] = {5, 100, 1, 42, 100, 7};
     uint32_t ids[] = {0, 1, 2, 3, 4, 5};
     g_freq = freq;
@@ -3833,10 +3519,8 @@ TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка ча�
 }
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_lab7_index.cpp <span class="ln">(112 строк)</span></summary><pre><code class="language-cpp">// ЛР7 — индекс: свои структуры данных (Vec, хеш-таблица), сортировка словаря, построение индекса.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_lab7_index.cpp <span class="ln">(106 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-// ================================================================ свои структуры данных
 TEST(DataStructures, vec_push_grow_append) {
     Vec&lt;int&gt; v;
     for (int i = 0; i &lt; 1000; i++) v.push(i * 2);
@@ -3857,16 +3541,16 @@ TEST(DataStructures, term_table_hash_and_rehash) {
     uint32_t a2 = tt.get_or_add(&quot;поезд&quot;, 10, isNew);  CHECK(!isNew);
     CHECK_EQ(a, a2); CHECK(a != b);
     char w[16]; long newCount = 0;
-    for (int i = 0; i &lt; 100000; i++) {             // больше начальной ёмкости 65536 -&gt; несколько rehash
+    for (int i = 0; i &lt; 100000; i++) {
         int n = snprintf(w, sizeof(w), &quot;t%d&quot;, i);
         tt.get_or_add(w, n, isNew);
         if (!isNew) newCount = -1;
         else if (newCount &gt;= 0) newCount++;
     }
-    CHECK_EQ(newCount, 100000);                    // каждый из 100000 термов был новым
+    CHECK_EQ(newCount, 100000);
     CHECK_EQ(tt.size, 100002);
     uint32_t again = tt.get_or_add(&quot;поезд&quot;, 10, isNew);
-    CHECK(!isNew); CHECK_EQ(again, a);             // после rehash термы на месте
+    CHECK(!isNew); CHECK_EQ(again, a);
     int n = snprintf(w, sizeof(w), &quot;t%d&quot;, 77777);
     tt.get_or_add(w, n, isNew); CHECK(!isNew);
 }
@@ -3875,7 +3559,7 @@ TEST(DataStructures, cmp_bytes_order) {
     CHECK(cmp_bytes(&quot;abc&quot;, 3, &quot;abd&quot;, 3) &lt; 0);
     CHECK(cmp_bytes(&quot;ab&quot;, 2, &quot;abc&quot;, 3) &lt; 0);
     CHECK(cmp_bytes(&quot;abc&quot;, 3, &quot;abc&quot;, 3) == 0);
-    CHECK(cmp_bytes(&quot;z&quot;, 1, &quot;\xD0\xB0&quot;, 2) &lt; 0);   // латиница раньше кириллицы (по байтам UTF-8)
+    CHECK(cmp_bytes(&quot;z&quot;, 1, &quot;\xD0\xB0&quot;, 2) &lt; 0);
 }
 
 TEST(Lab7_Index, merge_sort_terms_sorted_and_stable) {
@@ -3892,10 +3576,6 @@ TEST(Lab7_Index, merge_sort_terms_sorted_and_stable) {
     CHECK_STR(tt.pool.a + tt.off[ids[N - 1]], tt.len[ids[N - 1]], &quot;яма&quot;);
 }
 
-
-// ================================================================ ЛР7: индекс (на мини-корпусе tests/mini.tsv)
-// Документы мини-корпуса: 0 МАИ, 1 Красный автомобиль, 2 Жёлтый автомобиль (+руки),
-// 3 Руки и ноги, 4 Electric locomotive ВЛ-80 / ВЛ80, 5 Красный трамвай (+руки).
 TEST(Lab7_Index, index_build_and_header) {
     CHECK(build_index(TMP_PLAIN, false)); g_plain_built = true;
     Index idx;
@@ -3922,7 +3602,7 @@ TEST(Lab7_Index, index_postings_sorted_with_df) {
     Vec&lt;uint32_t&gt; p;
     idx.postings_of(idx.find_term(&quot;руки&quot;, (int)strlen(&quot;руки&quot;)), p);
     CHECK_EQ(p.n, 3); CHECK_EQ(p[0], 2); CHECK_EQ(p[1], 3); CHECK_EQ(p[2], 5);
-    for (uint32_t t = 0; t &lt; idx.nTerms; t++) {      // все списки строго возрастают
+    for (uint32_t t = 0; t &lt; idx.nTerms; t++) {
         idx.postings_of(t, p);
         CHECK(p.n &gt;= 1);
         for (size_t i = 1; i &lt; p.n; i++) CHECK(p[i - 1] &lt; p[i]);
@@ -3940,16 +3620,14 @@ TEST(Lab7_Index, index_forward_index_titles) {
 
 TEST(Lab7_Index, index_normalization_lowercase_yo_accent) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
-    CHECK(idx.find_term(&quot;желтый&quot;, (int)strlen(&quot;желтый&quot;)) &gt;= 0);    // ЖЕЛТЫЙ / Жёлтый
-    CHECK(idx.find_term(&quot;габарит&quot;, (int)strlen(&quot;габарит&quot;)) &gt;= 0);  // Габари́т
-    CHECK(idx.find_term(&quot;Красный&quot;, (int)strlen(&quot;Красный&quot;)) &lt; 0);   // в индексе только нижний регистр
+    CHECK(idx.find_term(&quot;желтый&quot;, (int)strlen(&quot;желтый&quot;)) &gt;= 0);
+    CHECK(idx.find_term(&quot;габарит&quot;, (int)strlen(&quot;габарит&quot;)) &gt;= 0);
+    CHECK(idx.find_term(&quot;Красный&quot;, (int)strlen(&quot;Красный&quot;)) &lt; 0);
 }
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_lab8_search.cpp <span class="ln">(67 строк)</span></summary><pre><code class="language-cpp">// ЛР8 — булев поиск: операции над списками, лексер, парсер, выполнение запросов.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_lab8_search.cpp <span class="ln">(64 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-// ================================================================ ЛР8: операции над списками и поиск
 TEST(Lab8_Search, list_operations) {
     Vec&lt;uint32_t&gt; a, b, r;
     uint32_t A[] = {1, 3, 5, 7, 9}, B[] = {3, 4, 5, 10};
@@ -3969,7 +3647,6 @@ TEST(Lab8_Search, lexer_tokens) {
     Vec&lt;QTok&gt; t;
     const char *q = &quot;(красный || !ноги) &amp;&amp; вл-80&quot;;
     lex(idx, q, strlen(q), t);
-    // ( TERM OR NOT TERM ) AND TERM AND(неявное) TERM
     TokType exp[] = {T_LP, T_TERM, T_OR, T_NOT, T_TERM, T_RP, T_AND, T_TERM, T_AND, T_TERM};
     CHECK_EQ(t.n, 10);
     for (size_t i = 0; i &lt; t.n &amp;&amp; i &lt; 10; i++) CHECK_EQ(t[i].type, exp[i]);
@@ -3979,51 +3656,43 @@ TEST(Lab8_Search, search_single_terms) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
     CHECK_QUERY(idx, &quot;автомобиль&quot;, 0, 1, 2);
     CHECK_QUERY(idx, &quot;руки&quot;, 0, 2, 3, 5);
-    CHECK_QUERY(idx, &quot;Красный&quot;, 0, 1, 5);          // регистр запроса не важен
-    CHECK_QUERY(idx, &quot;желтый&quot;, 0, 2);              // ё -&gt; е
+    CHECK_QUERY(idx, &quot;Красный&quot;, 0, 1, 5);
+    CHECK_QUERY(idx, &quot;желтый&quot;, 0, 2);
     CHECK_QUERY(idx, &quot;нетакогослова&quot;, 0);
 }
 
 TEST(Lab8_Search, search_boolean_operators) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
-    CHECK_QUERY(idx, &quot;красный автомобиль&quot;, 0, 1);              // пробел = И
+    CHECK_QUERY(idx, &quot;красный автомобиль&quot;, 0, 1);
     CHECK_QUERY(idx, &quot;красный &amp;&amp; автомобиль&quot;, 0, 1);
     CHECK_QUERY(idx, &quot;красный || ноги&quot;, 0, 1, 3, 5);
-    CHECK_QUERY(idx, &quot;руки &amp;&amp; !ноги&quot;, 0, 2, 5);                 // вычитание
-    CHECK_QUERY(idx, &quot;!руки&quot;, 0, 0, 1, 4);                      // дополнение
-    CHECK_QUERY(idx, &quot;ноги || красный автомобиль&quot;, 0, 1, 3);   // приоритет: И сильнее ИЛИ
+    CHECK_QUERY(idx, &quot;руки &amp;&amp; !ноги&quot;, 0, 2, 5);
+    CHECK_QUERY(idx, &quot;!руки&quot;, 0, 0, 1, 4);
+    CHECK_QUERY(idx, &quot;ноги || красный автомобиль&quot;, 0, 1, 3);
     CHECK_QUERY(idx, &quot;(красный || желтый) автомобиль&quot;, 0, 1, 2);
     CHECK_QUERY(idx, &quot;!(руки || красный)&quot;, 0, 0, 4);
 }
 
 TEST(Lab8_Search, search_tokenizer_in_query) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
-    CHECK_QUERY(idx, &quot;ВЛ-80&quot;, 0, 4);       // два терма с неявным И
+    CHECK_QUERY(idx, &quot;ВЛ-80&quot;, 0, 4);
     CHECK_QUERY(idx, &quot;вл80&quot;, 0, 4);
     CHECK_QUERY(idx, &quot;габари\xCC\x81т&quot;, 0, 4);
 }
 
 TEST(Lab8_Search, search_tolerant_parser) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
-    CHECK_QUERY(idx, &quot;((красный&quot;, 0, 1, 5);                  // незакрытые скобки
-    CHECK_QUERY(idx, &quot;красный ) автомобиль&quot;, 0, 1);          // лишняя скобка
-    CHECK_QUERY(idx, &quot;красный &amp;&amp; &amp;&amp; автомобиль&quot;, 0, 1);      // повтор оператора
-    CHECK_QUERY(idx, &quot;|| руки ||&quot;, 0, 2, 3, 5);              // оператор без операнда
-    CHECK_QUERY(idx, &quot;   &quot;, 0);                              // пустой запрос
+    CHECK_QUERY(idx, &quot;((красный&quot;, 0, 1, 5);
+    CHECK_QUERY(idx, &quot;красный ) автомобиль&quot;, 0, 1);
+    CHECK_QUERY(idx, &quot;красный &amp;&amp; &amp;&amp; автомобиль&quot;, 0, 1);
+    CHECK_QUERY(idx, &quot;|| руки ||&quot;, 0, 2, 3, 5);
+    CHECK_QUERY(idx, &quot;   &quot;, 0);
     CHECK_QUERY(idx, &quot;!&quot;, 0);
 }
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tests/test_full_corpus.cpp <span class="ln">(183 строк)</span></summary><pre><code class="language-cpp">// Проверка индекса и поиска на ПОЛНОМ корпусе (65 509 документов) против перебора.
-#include &quot;test_common.h&quot;
+<details class="file"><summary>lab_boolean/tests/test_full_corpus.cpp <span class="ln">(173 строк)</span></summary><pre><code class="language-cpp">#include &quot;test_common.h&quot;
 
-// ================================================================ проверка на ПОЛНОМ корпусе
-// unit_tests --full data\corpus.tsv data\index.bin [--stem] [N]
-// Эталон строится независимо от индекса: для каждого документа — отсортированный массив его термов
-// (qsort из стандартной библиотеки C). Ожидаемый ответ вычисляется перебором ВСЕХ документов:
-// дерево запроса вычисляется для каждого документа рекурсивно, наличие терма — двоичным поиском.
-// Списков документов и операций И/ИЛИ над ними в эталоне нет, поэтому ошибка индекса или поиска
-// не может «совпасть» с ошибкой эталона.
 struct DocTerms { uint32_t *t; uint32_t n; };
 static int cmp_u32(const void *a, const void *b) {
     uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b; return x &lt; y ? -1 : x &gt; y;
@@ -4053,13 +3722,13 @@ struct Rng {
 };
 
 struct FullCtx {
-    TermTable words;              // словоформы корпуса
-    TermTable keys;               // ключи эталона: словоформы или их основы (--stem)
-    Vec&lt;uint32_t&gt; wordKey;        // словоформа -&gt; ключ
-    Vec&lt;uint32_t&gt; keyWord;        // ключ -&gt; одна из его словоформ (её и пишем в запрос)
-    Vec&lt;uint32_t&gt; df;             // в скольких документах встречается ключ
+    TermTable words;
+    TermTable keys;
+    Vec&lt;uint32_t&gt; wordKey;
+    Vec&lt;uint32_t&gt; keyWord;
+    Vec&lt;uint32_t&gt; df;
     Vec&lt;DocTerms&gt; docs;
-    Vec&lt;uint32_t&gt; frequent;       // 300 самых частых ключей — чтобы пересечения были непустыми
+    Vec&lt;uint32_t&gt; frequent;
     Vec&lt;QNode&gt; nodes;
     Rng rng{2026};
 };
@@ -4119,7 +3788,7 @@ static int full_corpus(const char *corpus, const char *indexPath, bool useStem, 
                 if (i == n || (s[i] == &#x27;\t&#x27; &amp;&amp; k &lt; 4)) { f[k] = s + st; fl[k] = i - st; k++; st = i + 1; }
             if (k &lt; 5) continue;
             cur.clear();
-            for (int part = 2; part &lt;= 4; part += 2) {           // заголовок и текст — как в индексаторе
+            for (int part = 2; part &lt;= 4; part += 2) {
                 size_t pos = 0; int chars, len;
                 while ((len = next_token(f[part], fl[part], pos, tok, chars)) &gt; 0) {
                     uint32_t w = c.words.get_or_add(tok, len, isNew);
@@ -4183,8 +3852,6 @@ static int full_corpus(const char *corpus, const char *indexPath, bool useStem, 
     return bad ? 1 : 0;
 }
 
-
-// ================================================================ полный корпус (65 509 документов)
 static bool exists(const char *p) { FILE *f = fopen(p, &quot;rb&quot;); if (f) fclose(f); return f != nullptr; }
 
 TEST(FullCorpus, PlainIndexMatchesReferenceOn300Queries) {
@@ -4198,13 +3865,7 @@ TEST(FullCorpus, StemIndexMatchesReferenceOn300Queries) {
 }
 </code></pre></details>
 <p><strong>Сверка стеммера</strong> с эталонной библиотекой snowballstemmer по всему словарю.</p>
-<details class="file"><summary>lab_boolean/analysis/check_stemmer.py <span class="ln">(54 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Сверка стеммера (bin/stemtest.exe, C++) с эталонной реализацией Snowball на Python.
-
-Берёт все термы словаря индекса data/index.bin (или из файла), стеммирует их программой на C++
-и библиотекой snowballstemmer (russian / porter) и сравнивает поэлементно.
-Запуск: python tests/check_stemmer.py
-&quot;&quot;&quot;
-import os, struct, subprocess, sys
+<details class="file"><summary>lab_boolean/analysis/check_stemmer.py <span class="ln">(47 строк)</span></summary><pre><code class="language-python">import os, struct, subprocess, sys
 
 import snowballstemmer
 
@@ -4213,7 +3874,6 @@ sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
 
 
 def dictionary(path):
-    &quot;&quot;&quot;Все термы из бинарного индекса (секции DICT и TERMSTR).&quot;&quot;&quot;
     data = open(path, &#x27;rb&#x27;).read()
     nsec = struct.unpack_from(&#x27;&lt;I&#x27;, data, 8)[0]
     sec = {}
@@ -4253,14 +3913,7 @@ if __name__ == &#x27;__main__&#x27;:
     sys.exit(1 if bad else 0)
 </code></pre></details>
 <p><strong>Замер скорости поиска</strong>: загрузка индекса и 1000 случайных запросов.</p>
-<details class="file"><summary>lab_boolean/analysis/bench.py <span class="ln">(64 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Замер скорости поиска (для отчёта).
-
-1) Запросы разных типов: каждый выполняется 50 раз, берётся медиана времени (TIME_US из search.exe —
-   время разбора и вычисления запроса без вывода).
-2) 1000 случайных запросов из 1–3 частых термов: среднее время и пропускная способность.
-Запуск: python tests/bench.py
-&quot;&quot;&quot;
-import os, random, statistics, subprocess, sys, time
+<details class="file"><summary>lab_boolean/analysis/bench.py <span class="ln">(57 строк)</span></summary><pre><code class="language-python">import os, random, statistics, subprocess, sys, time
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
 SEARCH, INDEX = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;search.exe&#x27;), os.path.join(ROOT, &#x27;data&#x27;, &#x27;index.bin&#x27;)
@@ -4318,9 +3971,7 @@ if __name__ == &#x27;__main__&#x27;:
           f&#x27;весь прогон с запуском процесса и загрузкой индекса — {wall:.2f} с&#x27;)
 </code></pre></details>
 <p>Сборка программ без тестов.</p>
-<details class="file"><summary>lab_boolean/build.bat <span class="ln">(18 строк)</span></summary><pre><code class="language-dos">@echo off
-rem Build all C++ programs: indexer, search, tokenize, termfreq, stemtest (tests: ctest --preset default — GoogleTest + CTest).
-rem Uses g++ if present, otherwise the pip package &quot;ziglang&quot; (clang).
+<details class="file"><summary>lab_boolean/build.bat <span class="ln">(16 строк)</span></summary><pre><code class="language-dos">@echo off
 cd /d &quot;%~dp0&quot;
 if not exist bin mkdir bin
 where g++ &gt;nul 2&gt;nul
@@ -4337,13 +3988,7 @@ del /q bin\*.pdb 2&gt;nul
 echo BUILD OK
 </code></pre></details>
 <p>Полный конвейер: корпус → индексы → сборка и тесты CTest → замеры.</p>
-<details class="file"><summary>lab_boolean/run.bat <span class="ln">(51 строк)</span></summary><pre><code class="language-dos">@echo off
-rem Search engine labs (3 tokenization, 4 stemming, 5 Zipf, 7 boolean index, 8 boolean search).
-rem Usage:  run.bat          - build, prepare corpus, both indexes, C++ unit tests + full-corpus check, benchmark
-rem         run.bat reports  - the above + recompute data and figures for all reports
-rem         run.bat web      - web service on http://localhost:8080 (index.bin)
-rem         run.bat webstem  - web service with stemming (index_stem.bin)
-rem Needs the corpus of lab 1 in ..\lab1\data
+<details class="file"><summary>lab_boolean/run.bat <span class="ln">(45 строк)</span></summary><pre><code class="language-dos">@echo off
 cd /d &quot;%~dp0&quot;
 if /i &quot;%~1&quot;==&quot;web&quot; goto :web
 if /i &quot;%~1&quot;==&quot;webstem&quot; goto :web
@@ -4391,15 +4036,7 @@ exit /b 1
 
 <h3 id="c-python">Утилиты (C++) и скрипты подготовки, веб-сервиса и анализа (Python)<a class="headerlink" href="#c-python" title="Permanent link">#</a></h3>
 <p><strong>Подготовка корпуса</strong> из JSONL ЛР1 в <code>corpus.tsv</code> для C++-программ.</p>
-<details class="file"><summary>lab_boolean/src/prepare.py <span class="ln">(32 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Подготовка входа для индексатора из корпуса ЛР1.
-
-Читает &lt;корпус ЛР1&gt;/{ruwiki,enwiki,gudok}_text.jsonl и пишет data/corpus.tsv:
-по документу на строку — источник \t id \t заголовок \t URL \t текст
-(табуляции и переводы строк внутри полей заменяются пробелами).
-Папка корпуса ЛР1 по умолчанию ищется рядом: ../lab1/data или ../../lab1/data (относительно lab_boolean).
-Запуск: python src/prepare.py [папка_корпуса_ЛР1] [выходной_файл]
-&quot;&quot;&quot;
-import json, os, re, sys
+<details class="file"><summary>lab_boolean/src/prepare.py <span class="ln">(24 строк)</span></summary><pre><code class="language-python">import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANDIDATES = [os.path.join(HERE, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;lab1&#x27;, &#x27;data&#x27;), os.path.join(HERE, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;..&#x27;, &#x27;lab1&#x27;, &#x27;data&#x27;)]
@@ -4424,19 +4061,7 @@ with open(OUT, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;
 print(f&#x27;{sum(counts.values())} documents {counts} -&gt; {OUT}&#x27;)
 </code></pre></details>
 <p><strong>Веб-интерфейс поиска (ЛР8)</strong>: держит процесс <code>search.exe --paged</code>, выдаёт страницы результатов с пагинацией.</p>
-<details class="file"><summary>lab_boolean/web/server.py <span class="ln">(117 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Веб-сервис булева поиска.
-
-Сам поиск выполняет bin/search.exe (C++): сервер один раз запускает его в режиме --paged,
-индекс загружается в память один раз, дальше запросы передаются через stdin/stdout.
-
-Страницы:
-  /                        — форма ввода запроса
-  /search?q=...&amp;page=N     — выдача: форма + 50 результатов (заголовок + ссылка) + ссылка на следующие 50
-
-Запуск: python web/server.py [порт] [stem]   (по умолчанию 8080), затем открыть http://localhost:8080
-        stem — искать по индексу со стеммингом (data/index_stem.bin): без учёта словоформ
-&quot;&quot;&quot;
-import html, os, subprocess, sys, threading, urllib.parse
+<details class="file"><summary>lab_boolean/web/server.py <span class="ln">(104 строк)</span></summary><pre><code class="language-python">import html, os, subprocess, sys, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
@@ -4448,7 +4073,6 @@ PAGE = 50
 
 
 class Engine:
-    &quot;&quot;&quot;Обёртка над процессом search.exe --paged.&quot;&quot;&quot;
 
     def __init__(self):
         self.p = subprocess.Popen([SEARCH, INDEX, &#x27;--paged&#x27;, &#x27;-n&#x27;, str(PAGE)], stdin=subprocess.PIPE,
@@ -4459,7 +4083,7 @@ class Engine:
         q = q.replace(&#x27;\t&#x27;, &#x27; &#x27;).replace(&#x27;\n&#x27;, &#x27; &#x27;).replace(&#x27;\r&#x27;, &#x27; &#x27;)
         with self.lock:
             self.p.stdin.write(f&#x27;{offset}\t{q}\n&#x27;); self.p.stdin.flush()
-            self.p.stdout.readline()                                   # QUERY ...
+            self.p.stdout.readline()
             _, total, _, us = self.p.stdout.readline().rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;)
             rows = []
             while (line := self.p.stdout.readline().rstrip(&#x27;\n&#x27;)) != &#x27;END&#x27;:
@@ -4542,17 +4166,7 @@ if __name__ == &#x27;__main__&#x27;:
     ThreadingHTTPServer((&#x27;127.0.0.1&#x27;, port), Handler).serve_forever()
 </code></pre></details>
 <p>Анализ токенизации для отчёта: статистика, скорость, примеры.</p>
-<details class="file"><summary>lab_boolean/analysis/tokenization.py <span class="ln">(151 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Токенизация»: замеры и разбор неудачных токенов. Результаты — в report_tokenization/.
-
-1. Статистика по всему корпусу: bin/tokenize.exe --stats data/corpus.tsv.
-2. Зависимость времени от объёма: токенизация первых 25, 50, … МБ текста (3 повтора, медиана),
-   график time(MB) с линейной аппроксимацией.
-3. Неудачные токены: в тексте корпуса ищутся конструкции, которые правила токенизации разбивают
-   или теряют (дефисные слова, десятичные дроби, сокращения, e-mail/URL, апострофы, C++, иероглифы…);
-   для каждой — сколько раз встречается и примеры.
-Запуск (из папки lab_boolean): python analysis/tokenization.py
-&quot;&quot;&quot;
-import collections, json, os, re, statistics, subprocess, sys
+<details class="file"><summary>lab_boolean/analysis/tokenization.py <span class="ln">(137 строк)</span></summary><pre><code class="language-python">import collections, json, os, re, statistics, subprocess, sys
 
 import matplotlib
 matplotlib.use(&#x27;Agg&#x27;)
@@ -4576,7 +4190,6 @@ def tokens_of(text):
     return out.split()
 
 
-# Конструкции, которые правила токенизации обрабатывают неудачно
 PATTERNS = [
     (&#x27;Слово через дефис&#x27;, r&#x27;\b[А-Яа-яЁёA-Za-z]+-[А-Яа-яЁёA-Za-z]+(?:-[А-Яа-яЁёA-Za-z]+)*\b&#x27;),
     (&#x27;Обозначение серии с дефисом&#x27;, r&#x27;\b[А-ЯA-Z]{1,4}-\d+[А-Яа-яA-Za-z]*\b&#x27;),
@@ -4614,7 +4227,6 @@ def bad_tokens():
 
 
 def tex_escape(s):
-    # pdflatex не печатает иероглифы и арабское письмо — заменяем их описанием
     s = re.sub(r&#x27;[؀-ۿ぀-ヿ一-鿿가-힯]+&#x27;, lambda m: f&#x27;[{len(m.group(0))} симв. не кириллица/латиница]&#x27;, s)
     for a, b in ((&#x27;\\&#x27;, r&#x27;\textbackslash{}&#x27;), (&#x27;&amp;&#x27;, r&#x27;\&amp;&#x27;), (&#x27;%&#x27;, r&#x27;\%&#x27;), (&#x27;#&#x27;, r&#x27;\#&#x27;), (&#x27;_&#x27;, r&#x27;\_&#x27;),
                  (&#x27;{&#x27;, r&#x27;\{&#x27;), (&#x27;}&#x27;, r&#x27;\}&#x27;), (&#x27;$&#x27;, r&#x27;\$&#x27;), (&#x27;^&#x27;, r&#x27;\^{}&#x27;), (&#x27;~&#x27;, r&#x27;\~{}&#x27;)):
@@ -4644,7 +4256,6 @@ if __name__ == &#x27;__main__&#x27;:
                     statistics.median(r[&#x27;time_total_sec&#x27;] for r in runs), st[&#x27;tokens&#x27;]))
         print(f&#x27;{pts[-1][0]:.0f} МБ: токенизация {pts[-1][1]:.2f} с, всего {pts[-1][2]:.2f} с&#x27;)
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-    # линейная аппроксимация t = a*x + b (метод наименьших квадратов)
     mx, my = statistics.mean(xs), statistics.mean(ys)
     a = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
     b = my - a * mx
@@ -4662,7 +4273,6 @@ if __name__ == &#x27;__main__&#x27;:
     json.dump({&#x27;full&#x27;: full, &#x27;points&#x27;: pts, &#x27;fit&#x27;: [a, b, r2], &#x27;bad&#x27;: bad},
               open(os.path.join(OUT, &#x27;tokenization_results.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;), ensure_ascii=False, indent=1)
 
-    # Таблицы для отчёта
     L = [&#x27;% Сгенерировано analysis/tokenization.py — вручную не править&#x27;]
     L.append(r&#x27;\newcommand{\TokTotal}{&#x27; + num(full[&#x27;tokens&#x27;]) + &#x27;}&#x27;)
     L.append(r&#x27;\newcommand{\TokAvgLen}{&#x27; + comma(full[&#x27;avg_token_len&#x27;]) + &#x27;}&#x27;)
@@ -4694,37 +4304,19 @@ if __name__ == &#x27;__main__&#x27;:
     print(f&#x27;аппроксимация: {a*1000:.2f} мс/МБ, b={b*1000:.1f} мс, R^2={r2:.4f}&#x27;)
 </code></pre></details>
 <p>Оценка стемминга: выдача по индексу словоформ и по индексу основ.</p>
-<details class="file"><summary>lab_boolean/analysis/stem_eval.py <span class="ln">(224 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Стемминг»: оценка качества булева поиска без стемминга и со стеммингом.
-
-Как оценивается:
-  * 23 запроса (русские и английские, слова в разных падежах и числах).
-  * Для каждого слова запроса вручную задан список правильных словоформ его леммы
-    (регулярное выражение, только формы этого слова: «электровоз(|а|у|ом|е|ы|ов|ам|ами|ах)»).
-  * Документ релевантен, если в нём есть каждое слово запроса в какой-либо своей форме
-    (поиск «без учёта словоформ» — ровно то, что должен дать стемминг).
-  * Эталонное множество релевантных документов считается по всему корпусу (Python-токенизатор,
-    копия токенизатора из common.h), выдачи систем — bin/search.exe --ids по index.bin и index_stem.bin.
-  * Метрики: точность P = |выдача ∩ эталон| / |выдача|, полнота R = |выдача ∩ эталон| / |эталон|,
-    F1 = 2PR / (P + R); средние по запросам (macro). Булев поиск не ранжирует, поэтому метрики
-    ранжирования (DCG, NDCG) здесь неприменимы.
-  * Для запросов, где качество упало, печатаются «лишние» словоформы, которые стеммер свёл
-    к той же основе (причина ошибки).
-Результаты — в report_stemming/. Запуск (из папки lab_boolean): python analysis/stem_eval.py
-&quot;&quot;&quot;
-import json, os, re, subprocess, sys
+<details class="file"><summary>lab_boolean/analysis/stem_eval.py <span class="ln">(200 строк)</span></summary><pre><code class="language-python">import json, os, re, subprocess, sys
 
 import snowballstemmer
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#x27;..&#x27;)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pytok import py_tokens          # noqa: E402  — тот же токенизатор, что в C++
+from pytok import py_tokens
 
 OUT = os.path.join(ROOT, &#x27;report_stemming&#x27;)
 SEARCH = os.path.join(ROOT, &#x27;bin&#x27;, &#x27;search.exe&#x27;)
 sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
 
-N_M = r&#x27;(|а|у|ом|е|ы|ов|ам|ами|ах)&#x27;                     # окончания существительных муж. рода на согласную
-# Запрос -&gt; список лемм; лемма -&gt; регулярное выражение для всех её словоформ
+N_M = r&#x27;(|а|у|ом|е|ы|ов|ам|ами|ах)&#x27;
 LEMMAS = {
     &#x27;электровоз&#x27;: r&#x27;электровоз&#x27; + N_M,
     &#x27;станция&#x27;: r&#x27;станци(я|и|ю|ей|й|ям|ями|ях)&#x27;,
@@ -4753,8 +4345,6 @@ LEMMAS = {
     &#x27;bridge&#x27;: r&#x27;bridges?&#x27;,
     &#x27;university&#x27;: r&#x27;universit(y|ies)&#x27;,
 }
-# Несклоняемые существительные: у них нет окончаний, стеммер отрезает последнюю букву и путает
-# с другими словами («метро» -&gt; «метр»). В варианте с исправлениями они не стеммируются.
 INDECLINABLE = {&#x27;метро&#x27;, &#x27;депо&#x27;, &#x27;кино&#x27;, &#x27;пальто&#x27;, &#x27;кафе&#x27;, &#x27;такси&#x27;, &#x27;шоссе&#x27;, &#x27;радио&#x27;, &#x27;бюро&#x27;, &#x27;жюри&#x27;, &#x27;меню&#x27;, &#x27;кофе&#x27;}
 QUERIES = [
     (&#x27;электровозы&#x27;, [&#x27;электровоз&#x27;]),
@@ -4828,13 +4418,10 @@ if __name__ == &#x27;__main__&#x27;:
     stem = lambda w: en.stemWord(w) if all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in w) else (
         ru.stemWord(w) if all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in w) else w)
     forms = {lem: [w for w in vocab if re.fullmatch(rx, w)] for lem, rx in LEMMAS.items()}
-    stem_of = {w: stem(w) for w in vocab}               # основы всех словоформ — считаются один раз
+    stem_of = {w: stem(w) for w in vocab}
     by_stem = {}
     for w, s in stem_of.items():
         by_stem.setdefault(s, []).append(w)
-    # Вариант с исправлениями (моделирование на эталонном индексе): английский — Snowball Porter2
-    # (есть список исключений, news не меняется, особое правило для gener-), русский — тот же Snowball,
-    # но несклоняемые слова из списка-исключений не стеммируются.
     en2 = snowballstemmer.stemmer(&#x27;english&#x27;)
     stem2 = lambda w: w if w in INDECLINABLE else (en2.stemWord(w) if all(&#x27;a&#x27; &lt;= c &lt;= &#x27;z&#x27; for c in w) else (
         ru.stemWord(w) if all(&#x27;а&#x27; &lt;= c &lt;= &#x27;я&#x27; for c in w) else w))
@@ -4851,19 +4438,18 @@ if __name__ == &#x27;__main__&#x27;:
             gold = docs if gold is None else gold &amp; docs
         pa, ra, fa = prf(a, gold)
         pb, rb, fb = prf(b, gold)
-        c = None                                         # выдача варианта с исправлениями
+        c = None
         for word in q.split():
             docs = set().union(*(inv[w] for w in by_stem2.get(stem2(word), [])))
             c = docs if c is None else c &amp; docs
         pc, rc, fc = prf(c, gold)
-        # словоформы, которые стеммер объединил с запросом, но которые не являются формами его леммы
         extra, missed = [], []
         for word, lem in zip(q.split(), lemmas):
             st = stem(word)
             same = by_stem.get(st, [])
             extra += sorted((w for w in same if w not in forms[lem]), key=lambda w: -len(inv[w]))[:6]
             missed += sorted((w for w in forms[lem] if stem_of[w] != st), key=lambda w: -len(inv[w]))[:6]
-        extra = sorted(set(extra), key=lambda w: -len(inv[w]))     # самые частые «чужие» формы — главная причина ошибки
+        extra = sorted(set(extra), key=lambda w: -len(inv[w]))
         missed = sorted(set(missed), key=lambda w: -len(inv[w]))
         rows.append({&#x27;query&#x27;: q, &#x27;lemmas&#x27;: lemmas, &#x27;gold&#x27;: len(gold), &#x27;plain&#x27;: len(a), &#x27;stem&#x27;: len(b),
                      &#x27;P0&#x27;: pa, &#x27;R0&#x27;: ra, &#x27;F0&#x27;: fa, &#x27;P1&#x27;: pb, &#x27;R1&#x27;: rb, &#x27;F1&#x27;: fb, &#x27;P2&#x27;: pc, &#x27;R2&#x27;: rc, &#x27;F2&#x27;: fc,
@@ -4919,16 +4505,7 @@ if __name__ == &#x27;__main__&#x27;:
     print(&#x27;ok&#x27;)
 </code></pre></details>
 <p>Закон Ципфа: график частота–ранг в логарифмическом масштабе и кривая C/r.</p>
-<details class="file"><summary>lab_boolean/analysis/zipf.py <span class="ln">(162 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Закон Ципфа»: распределение термов по частотам, закон Ципфа и закон Мандельброта.
-
-1. bin/termfreq.exe считает частоты термов по всему корпусу (и отдельно по каждому источнику).
-2. График «частота — ранг» в логарифмической шкале + закон Ципфа f(r) = C / r, C = f(1).
-3. Подбор констант закона Мандельброта f(r) = P / (r + ρ)^B: для каждого ρ из сетки — линейная
-   регрессия log f = log P − B·log(r + ρ) по точкам, равномерно распределённым по log r;
-   выбирается ρ с наименьшей ошибкой.
-Результаты — в report_zipf/. Запуск (из папки lab_boolean): python analysis/zipf.py
-&quot;&quot;&quot;
-import json, math, os, subprocess, sys, tempfile
+<details class="file"><summary>lab_boolean/analysis/zipf.py <span class="ln">(145 строк)</span></summary><pre><code class="language-python">import json, math, os, subprocess, sys, tempfile
 
 import matplotlib
 matplotlib.use(&#x27;Agg&#x27;)
@@ -4954,7 +4531,6 @@ def termfreq(corpus, out, stem=False):
 
 
 def log_sample(n, k=400):
-    &quot;&quot;&quot;~k рангов, равномерно распределённых по логарифмической шкале (для регрессии и графика).&quot;&quot;&quot;
     out, x = [], 1.0
     step = math.exp(math.log(n) / k)
     while x &lt;= n:
@@ -4976,12 +4552,10 @@ def linreg(xs, ys):
 
 
 def mandelbrot(freqs):
-    &quot;&quot;&quot;Подбор P, ρ, B по точкам, равномерным в log r (иначе регрессию задавил бы хвост из единиц).
-    Хвост с частотами 1–2 (горизонтальные «ступеньки» из-за дискретности частот) в подгонку не входит.&quot;&quot;&quot;
     last = max(i for i, f in enumerate(freqs, 1) if f &gt;= 3)
     ranks = log_sample(last)
     best = None
-    for rho in [x / 2 for x in range(0, 401)]:             # ρ от 0 до 200 с шагом 0,5
+    for rho in [x / 2 for x in range(0, 401)]:
         xs = [math.log(r + rho) for r in ranks]
         ys = [math.log(freqs[r - 1]) for r in ranks]
         a, b, err = linreg(xs, ys)
@@ -4991,7 +4565,6 @@ def mandelbrot(freqs):
 
 
 def split_corpus():
-    &quot;&quot;&quot;Временные файлы корпуса по источникам — чтобы построить кривые отдельно.&quot;&quot;&quot;
     d = tempfile.mkdtemp()
     files = {s: open(os.path.join(d, s + &#x27;.tsv&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) for s in NAMES}
     with open(CORPUS, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) as f:
@@ -5021,7 +4594,6 @@ if __name__ == &#x27;__main__&#x27;:
     P, rho, B, err = mandelbrot(freqs)
     print(f&#x27;токенов {N}, термов {T}, hapax {int(st[&quot;hapax_legomena&quot;])}; Ципф C={C}; Мандельброт P={P:.0f} ρ={rho} B={B:.3f}&#x27;)
 
-    # По источникам
     parts, tmpdir = split_corpus()
     per = {}
     for s, path in parts.items():
@@ -5029,7 +4601,6 @@ if __name__ == &#x27;__main__&#x27;:
         per[s] = (sst, [f for _, f, _ in srows], srows[:10])
         print(s, int(sst[&#x27;tokens&#x27;]), len(srows), [t for _, _, t in srows[:8]])
 
-    # --- график 1: весь корпус, Ципф и Мандельброт
     rs = log_sample(T, 1500)
     plt.figure(figsize=(7, 4.4))
     plt.loglog(rs, [freqs[r - 1] for r in rs], &#x27;.&#x27;, ms=3, label=f&#x27;корпус: {T:,} термов&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;))
@@ -5039,7 +4610,6 @@ if __name__ == &#x27;__main__&#x27;:
     plt.xlabel(&#x27;ранг r (log)&#x27;); plt.ylabel(&#x27;частота f (log)&#x27;); plt.grid(alpha=.3, which=&#x27;both&#x27;, lw=.4)
     plt.legend(fontsize=8); plt.tight_layout(); plt.savefig(os.path.join(OUT, &#x27;fig_zipf.pdf&#x27;))
 
-    # --- график 2: по источникам и для основ (стемминг)
     plt.figure(figsize=(7, 4.4))
     for s, (sst, fr, _) in per.items():
         rr = log_sample(len(fr), 800)
@@ -5051,7 +4621,6 @@ if __name__ == &#x27;__main__&#x27;:
     plt.xlabel(&#x27;ранг r (log)&#x27;); plt.ylabel(&#x27;частота f (log)&#x27;); plt.grid(alpha=.3, which=&#x27;both&#x27;, lw=.4)
     plt.legend(fontsize=8); plt.tight_layout(); plt.savefig(os.path.join(OUT, &#x27;fig_sources.pdf&#x27;))
 
-    # --- данные для отчёта
     hapax = int(st[&#x27;hapax_legomena&#x27;])
     once_twice = sum(1 for f in freqs if f &lt;= 2)
     top_share = sum(freqs[:100]) / N
@@ -5082,10 +4651,7 @@ if __name__ == &#x27;__main__&#x27;:
     print(&#x27;ok&#x27;)
 </code></pre></details>
 <p>Общие части утилит ЛР3–8 (C++): <code>tool.h</code> — аргументы и ввод в UTF-8, меню, файлы; <code>engine.h</code> — подключение кода поиска.</p>
-<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(247 строк)</span></summary><pre><code class="language-cpp">// Общая часть утилит для демонстрации (lab1.exe ... lab8.exe):
-// аргументы командной строки и ввод с консоли в UTF-8 (кириллица в Windows), меню, чтение файлов,
-// запуск внешних программ. Утилиты — это обвязка для показа; сама поисковая система (src/) написана без STL.
-#pragma once
+<details class="file"><summary>lab_boolean/tools/tool.h <span class="ln">(227 строк)</span></summary><pre><code class="language-cpp">#pragma once
 #include &lt;cstdio&gt;
 #include &lt;cstdlib&gt;
 #include &lt;cstring&gt;
@@ -5099,13 +4665,12 @@ if __name__ == &#x27;__main__&#x27;:
 
 namespace tool {
 
-// ---------------------------------------------------------------- UTF-8 &lt;-&gt; UTF-16 (Windows)
 #ifdef _WIN32
 inline std::string to_utf8(const wchar_t *w, int n = -1) {
     int len = WideCharToMultiByte(CP_UTF8, 0, w, n, nullptr, 0, nullptr, nullptr);
     std::string s(len, &#x27;\0&#x27;);
     WideCharToMultiByte(CP_UTF8, 0, w, n, &amp;s[0], len, nullptr, nullptr);
-    if (n &lt; 0 &amp;&amp; !s.empty()) s.pop_back();          // убрать завершающий 0
+    if (n &lt; 0 &amp;&amp; !s.empty()) s.pop_back();
     return s;
 }
 inline std::wstring to_wide(const std::string &amp;s) {
@@ -5116,7 +4681,6 @@ inline std::wstring to_wide(const std::string &amp;s) {
 }
 #endif
 
-// Аргументы командной строки в UTF-8 (в Windows argv приходит в кодировке ANSI и теряет кириллицу).
 inline std::vector&lt;std::string&gt; args(int argc, char **argv) {
     std::vector&lt;std::string&gt; a;
 #ifdef _WIN32
@@ -5131,7 +4695,6 @@ inline std::vector&lt;std::string&gt; args(int argc, char **argv) {
     return a;
 }
 
-// Строка с клавиатуры в UTF-8 (в консоли Windows — через ReadConsoleW, иначе кириллица ломается).
 inline bool read_line(std::string &amp;out) {
     out.clear();
 #ifdef _WIN32
@@ -5147,7 +4710,7 @@ inline bool read_line(std::string &amp;out) {
 #endif
     int c; bool any = false;
     while ((c = getchar()) != EOF &amp;&amp; c != &#x27;\n&#x27;) { any = true; if (c != &#x27;\r&#x27;) out.push_back((char)c); }
-    if (out.compare(0, 3, &quot;\xEF\xBB\xBF&quot;) == 0) out.erase(0, 3);      // метка BOM из перенаправленного ввода
+    if (out.compare(0, 3, &quot;\xEF\xBB\xBF&quot;) == 0) out.erase(0, 3);
     return any || c == &#x27;\n&#x27;;
 }
 
@@ -5160,15 +4723,12 @@ inline std::string ask(const char *prompt, const std::string &amp;def = &quot;&q
     return s;
 }
 
-// Склеить аргументы начиная с i через пробел (запрос из нескольких слов можно писать без кавычек).
 inline std::string join(const std::vector&lt;std::string&gt; &amp;a, size_t i) {
     std::string s;
     for (; i &lt; a.size(); i++) { if (!s.empty()) s += &#x27; &#x27;; s += a[i]; }
     return s;
 }
 
-// ---------------------------------------------------------------- пути
-// Папка проекта = папка над bin/, где лежит exe (утилиту можно запускать из любого каталога).
 inline std::string project_dir() {
 #ifdef _WIN32
     wchar_t p[MAX_PATH];
@@ -5179,22 +4739,19 @@ inline std::string project_dir() {
 #endif
     for (int k = 0; k &lt; 2; k++) { size_t q = s.find_last_of(&quot;/\\&quot;); if (q != std::string::npos) s.resize(q); }
 #if defined(LAB_SUBDIR) &amp;&amp; defined(_WIN32)
-    // утилиты всех лаб лежат в общей папке ir_labs\bin; данные лабы — в ir_labs\&lt;LAB_SUBDIR&gt;
     std::string sub = s + &quot;\\&quot; LAB_SUBDIR;
     DWORD at = GetFileAttributesW(to_wide(sub).c_str());
     if (at != INVALID_FILE_ATTRIBUTES &amp;&amp; (at &amp; FILE_ATTRIBUTE_DIRECTORY)) return sub;
 #endif
     return s;
 }
-// Утилита при старте переходит в папку проекта, поэтому все пути — относительные (data/..., bin/...).
 inline std::string path(const std::string &amp;rel) { return rel; }
 
-// Консоль в UTF-8: вывод кириллицы.
 inline void init_console() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
-    SetCurrentDirectoryW(to_wide(project_dir()).c_str());     // рабочая папка = папка проекта
+    SetCurrentDirectoryW(to_wide(project_dir()).c_str());
 #endif
 }
 
@@ -5216,7 +4773,6 @@ inline std::string read_file(const std::string &amp;p) {
     return s;
 }
 
-// Построчное чтение файла с вызовом функции на каждую строку (false из функции — остановиться).
 inline bool each_line(const std::string &amp;p, const std::function&lt;bool(std::string &amp;)&gt; &amp;fn) {
     FILE *f = open_file(p, &quot;rb&quot;);
     if (!f) return false;
@@ -5234,7 +4790,6 @@ inline bool each_line(const std::string &amp;p, const std::function&lt;bool(std:
     return true;
 }
 
-// Выполнить команду и вернуть её вывод (stdout).
 inline std::string run(const std::string &amp;cmd, int *code = nullptr) {
     std::string out;
 #ifdef _WIN32
@@ -5260,7 +4815,6 @@ inline std::string quote(const std::string &amp;s) {
     return r + &quot;\&quot;&quot;;
 }
 
-// Целое число с разделителями тысяч: 1234567 -&gt; «1 234 567».
 inline std::string num(unsigned long long v) {
     std::string s = std::to_string(v), r;
     int k = 0;
@@ -5268,20 +4822,17 @@ inline std::string num(unsigned long long v) {
     return r;
 }
 
-// Длина строки UTF-8 в символах.
 inline size_t u8len(const std::string &amp;s) {
     size_t n = 0;
     for (unsigned char c : s) if ((c &amp; 0xC0) != 0x80) n++;
     return n;
 }
-// Первые n символов строки UTF-8.
 inline std::string u8prefix(const std::string &amp;s, size_t n) {
     size_t i = 0, k = 0;
     while (i &lt; s.size() &amp;&amp; k &lt; n) { i++; while (i &lt; s.size() &amp;&amp; ((unsigned char)s[i] &amp; 0xC0) == 0x80) i++; k++; }
     return s.substr(0, i);
 }
 
-// Дополнить строку пробелами до w символов (printf %-Ns считает байты, а кириллица — 2 байта на букву).
 inline std::string pad(const std::string &amp;s, size_t w) {
     size_t n = u8len(s);
     return n &gt;= w ? s : s + std::string(w - n, &#x27; &#x27;);
@@ -5291,15 +4842,13 @@ inline std::string lpad(const std::string &amp;s, size_t w) {
     return n &gt;= w ? s : std::string(w - n, &#x27; &#x27;) + s;
 }
 
-// ---------------------------------------------------------------- меню и команды
 struct Command {
-    std::string name;                                        // имя подкоманды
-    std::string help;                                        // описание для меню
-    std::string prompt;                                      // что спросить в меню (&quot;&quot; — без ввода)
-    std::function&lt;void(const std::string &amp;)&gt; fn;             // действие (аргумент — введённая строка)
+    std::string name;
+    std::string help;
+    std::string prompt;
+    std::function&lt;void(const std::string &amp;)&gt; fn;
 };
 
-// Запуск: без аргументов — меню; иначе первая строка — команда, остальное — её аргумент.
 inline int main_loop(const char *title, const std::vector&lt;Command&gt; &amp;cmds, const std::vector&lt;std::string&gt; &amp;a) {
     if (!a.empty()) {
         for (auto &amp;c : cmds)
@@ -5327,12 +4876,10 @@ inline int main_loop(const char *title, const std::vector&lt;Command&gt; &amp;cm
     return 0;
 }
 
-}  // namespace tool
+}
 </code></pre></details>
 
-<details class="file"><summary>lab_boolean/tools/engine.h <span class="ln">(67 строк)</span></summary><pre><code class="language-cpp">// Подключение кода поисковой системы в утилиты: функции поиска (search.cpp) вызываются напрямую,
-// main() программы search переименовывается, чтобы у утилиты был свой main.
-#pragma once
+<details class="file"><summary>lab_boolean/tools/engine.h <span class="ln">(61 строк)</span></summary><pre><code class="language-cpp">#pragma once
 #define main search_main
 #include &quot;../src/search.cpp&quot;
 #undef main
@@ -5340,14 +4887,12 @@ inline int main_loop(const char *title, const std::vector&lt;Command&gt; &amp;cm
 
 namespace eng {
 
-// Загрузить индекс (data/index.bin или data/index_stem.bin); при ошибке — сообщение.
 inline bool load(Index &amp;idx, bool stem) {
     std::string p = tool::path(stem ? &quot;data/index_stem.bin&quot; : &quot;data/index.bin&quot;);
     if (!idx.load(p.c_str())) { printf(&quot;нет индекса %s — постройте его: lab7 build\n&quot;, p.c_str()); return false; }
     return true;
 }
 
-// Полный цикл поиска, как в search.exe: лексер -&gt; парсер -&gt; вычисление. Возвращает номера документов.
 inline std::vector&lt;uint32_t&gt; query(const Index &amp;idx, const std::string &amp;q, double *us = nullptr) {
     double t0 = now_sec();
     Vec&lt;QTok&gt; toks; lex(idx, q.data(), q.size(), toks);
@@ -5377,14 +4922,12 @@ inline void print_results(const Index &amp;idx, const std::vector&lt;uint32_t&gt
         printf(&quot;  %4zu. %s\n        %s\n&quot;, k + 1, title(idx, r[k]).c_str(), url(idx, r[k]).c_str());
 }
 
-// Строка терма из словаря по номеру записи.
 inline std::string term_at(const Index &amp;idx, long e) {
     const char *d = idx.dict + 4 + (size_t)e * DICT_ENTRY_SIZE;
     return std::string(idx.termstr + rd32(d), rd16(d + 4));
 }
 inline uint32_t df_at(const Index &amp;idx, long e) { return rd32(idx.dict + 4 + (size_t)e * DICT_ENTRY_SIZE + 8); }
 
-// Нормализовать слово так же, как при индексации (токенизатор + стеммер для индекса основ).
 inline std::string normalize(const std::string &amp;w, bool stem) {
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
     size_t pos = 0; int chars;
@@ -5395,21 +4938,12 @@ inline std::string normalize(const std::string &amp;w, bool stem) {
     return std::string(sb, sl);
 }
 
-}  // namespace eng
+}
 </code></pre></details>
 <p>Утилита ЛР3 (C++, <code>bin\lab3.exe</code>): токены своего текста, статистика корпуса.</p>
-<details class="file"><summary>lab_boolean/tools/lab3.cpp <span class="ln">(131 строк)</span></summary><pre><code class="language-cpp">// ЛР3 «Токенизация» — утилита для проверок и демонстрации.
-//
-//   lab3                                     — меню
-//   lab3 text Электровоз ВЛ-80 проехал Санкт-Петербург   — токены текста
-//   lab3 stats                               — токены всего корпуса: число, средняя длина, скорость
-//   lab3 speed                               — время токенизации от объёма (5, 20, 80 МБ, весь корпус)
-//   lab3 bad                                 — неудачные случаи токенизации и как их исправить
-//   lab3 utf8 Ж€                             — байты UTF-8 символов и их класс для токенизатора
-#include &quot;../src/common.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab3.cpp <span class="ln">(121 строк)</span></summary><pre><code class="language-cpp">#include &quot;../src/common.h&quot;
 #include &quot;tool.h&quot;
 
-// Все токены строки (правила — next_token из common.h, те же, что в индексаторе).
 static std::vector&lt;std::string&gt; tokens(const std::string &amp;s) {
     std::vector&lt;std::string&gt; r;
     char tok[MAX_TERM_BYTES + 4];
@@ -5432,17 +4966,16 @@ static void cmd_text(const std::string &amp;arg) {
     while (true) { printf(&quot;текст&gt; &quot;); fflush(stdout); if (!tool::read_line(s) || s.empty()) break; show_tokens(s); }
 }
 
-// Статистика: читаем corpus.tsv так же, как tokenize.exe --stats (лимит в байтах текста, 0 — весь корпус).
 struct Stats { uint64_t docs = 0, bytes = 0, tokens = 0, chars = 0, tbytes = 0; double sec = 0; };
 static Stats corpus_stats(double limitMb) {
     Stats st;
     uint64_t limit = limitMb &gt; 0 ? (uint64_t)(limitMb * 1048576) : UINT64_MAX;
     char tok[MAX_TERM_BYTES + 4];
     tool::each_line(tool::path(&quot;data/corpus.tsv&quot;), [&amp;](std::string &amp;line) {
-        size_t f[6], k = 0; f[0] = 0;                        // начала полей
+        size_t f[6], k = 0; f[0] = 0;
         for (size_t i = 0; i &lt; line.size() &amp;&amp; k &lt; 4; i++) if (line[i] == &#x27;\t&#x27;) f[++k] = i + 1;
         if (k &lt; 4) return true;
-        size_t t3 = line.find(&#x27;\t&#x27;, f[2]);                   // конец заголовка
+        size_t t3 = line.find(&#x27;\t&#x27;, f[2]);
         st.docs++;
         double t0 = now_sec();
         const char *parts[2] = {line.data() + f[2], line.data() + f[4]};
@@ -5530,14 +5063,7 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p>Утилита ЛР4 (C++, <code>bin\lab4.exe</code>): основы слов, поиск с/без стемминга.</p>
-<details class="file"><summary>lab_boolean/tools/lab4.cpp <span class="ln">(78 строк)</span></summary><pre><code class="language-cpp">// ЛР4 «Стемминг» — утилита для проверок и демонстрации.
-//
-//   lab4                                   — меню
-//   lab4 stem электровозами станциями running   — основы слов
-//   lab4 compare машинисту поезда          — поиск по индексу словоформ и по индексу основ
-//   lab4 forms электровоз                  — словоформы корпуса с той же основой (по data/freq.tsv)
-//   lab4 errors                            — примеры ошибок стемминга
-#include &quot;engine.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab4.cpp <span class="ln">(71 строк)</span></summary><pre><code class="language-cpp">#include &quot;engine.h&quot;
 
 static void cmd_stem(const std::string &amp;arg) {
     std::string s = arg.empty() ? &quot;электровозами станциями железнодорожных running railways&quot; : arg;
@@ -5574,7 +5100,7 @@ static void cmd_forms(const std::string &amp;arg) {
         size_t a = l.find(&#x27;\t&#x27;), b = l.find(&#x27;\t&#x27;, a + 1);
         if (b == std::string::npos) return true;
         std::string t = l.substr(b + 1);
-        if (t.size() &lt; base.size() || t.compare(0, base.size(), base) != 0) return true;   // быстрый отбор по префиксу
+        if (t.size() &lt; base.size() || t.compare(0, base.size(), base) != 0) return true;
         int sl = stem::stem(t.data(), (int)t.size(), sb);
         if (std::string(sb, sl) != base) return true;
         unsigned long long f = strtoull(l.c_str() + a + 1, nullptr, 10);
@@ -5609,16 +5135,7 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p>Утилита ЛР5 (C++, <code>bin\lab5.exe</code>): топ термов, частота слова, проверка закона Ципфа.</p>
-<details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(152 строк)</span></summary><pre><code class="language-cpp">// ЛР5 «Закон Ципфа» — утилита для проверок и демонстрации.
-//
-//   lab5              — меню
-//   lab5 top 20       — самые частые термы: ранг, частота, f·r, предсказание Ципфа C/r
-//   lab5 word вагон   — ранг и частота слова, сравнение с законом
-//   lab5 summary      — токенов, термов, hapax legomena, доля топ-100, константы
-//   lab5 ranks        — таблица по рангам 1, 10, 100, ... (Ципф и Мандельброт)
-//   lab5 plot         — график частота–ранг в логарифмическом масштабе (в консоли)
-//   lab5 recount      — пересчитать частоты по корпусу (termfreq.exe)
-#include &quot;../src/common.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(139 строк)</span></summary><pre><code class="language-cpp">#include &quot;../src/common.h&quot;
 #include &quot;../src/stem.h&quot;
 #include &quot;tool.h&quot;
 #include &lt;cmath&gt;
@@ -5637,7 +5154,6 @@ static bool load() {
     return !g_rows.empty();
 }
 
-// МНК для прямой y = a + b·x; возвращает среднеквадратичную ошибку.
 static double linreg(const std::vector&lt;double&gt; &amp;x, const std::vector&lt;double&gt; &amp;y, double &amp;a, double &amp;b) {
     double n = (double)x.size(), sx = 0, sy = 0, sxx = 0, sxy = 0;
     for (size_t i = 0; i &lt; x.size(); i++) { sx += x[i]; sy += y[i]; sxx += x[i] * x[i]; sxy += x[i] * y[i]; }
@@ -5648,8 +5164,6 @@ static double linreg(const std::vector&lt;double&gt; &amp;x, const std::vector&l
     return e / n;
 }
 
-// Закон Мандельброта f = P / (r + ρ)^B: перебор ρ, для каждого — МНК в логарифмах.
-// Точки берутся равномерно по log r, хвост с частотами 1–2 не учитывается.
 static void mandelbrot(double &amp;P, double &amp;rho, double &amp;B) {
     size_t last = 0;
     for (size_t i = 0; i &lt; g_rows.size(); i++) if (g_rows[i].f &gt;= 3) last = i + 1;
@@ -5722,7 +5236,6 @@ static void cmd_ranks(const std::string &amp;) {
     printf(&quot;\nНа малых рангах Ципф завышает частоту; Мандельброт с поправкой ρ ближе к данным.\n&quot;);
 }
 
-// График log f от log r символами: * — данные, + — Ципф C/r.
 static void cmd_plot(const std::string &amp;) {
     if (!load()) return;
     const int W = 70, H = 22;
@@ -5762,16 +5275,7 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p>Утилита ЛР7 (C++, <code>bin\lab7.exe</code>): статистика индекса, posting-лист терма.</p>
-<details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(111 строк)</span></summary><pre><code class="language-cpp">// ЛР7 «Булев индекс» — утилита для проверок и демонстрации.
-//
-//   lab7              — меню
-//   lab7 info         — статистика индексации (документы, термы, размер, время, скорость)
-//   lab7 format       — разбор бинарного файла index.bin: заголовок и таблица секций побайтово
-//   lab7 term вагон   — запись словаря: df и первые номера документов из списка
-//   lab7 doc 5        — прямой индекс: заголовок и URL документа по номеру
-//   lab7 dict вагон   — соседи терма в отсортированном словаре
-//   lab7 build        — пересобрать оба индекса (indexer.exe) и показать статистику
-#include &quot;engine.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(102 строк)</span></summary><pre><code class="language-cpp">#include &quot;engine.h&quot;
 
 static Index g_idx;
 static bool g_loaded = false;
@@ -5829,7 +5333,7 @@ static void cmd_doc(const std::string &amp;arg) {
 static void cmd_dict(const std::string &amp;arg) {
     if (!idx()) return;
     std::string w = eng::normalize(arg.empty() ? &quot;вагон&quot; : arg, false);
-    long lo = 0, hi = (long)g_idx.nTerms;                     // первая запись &gt;= w (двоичный поиск)
+    long lo = 0, hi = (long)g_idx.nTerms;
     while (lo &lt; hi) {
         long m = (lo + hi) / 2;
         std::string t = eng::term_at(g_idx, m);
@@ -5846,7 +5350,7 @@ static void cmd_build(const std::string &amp;) {
         printf(&quot;Строю %s...\n&quot;, s ? &quot;индекс основ&quot; : &quot;индекс словоформ&quot;);
         std::string out = tool::run(&quot;\&quot;&quot; + ix + &quot; &quot; + c + &quot; &quot; + tool::quote(tool::path(s ? &quot;data/index_stem.bin&quot; : &quot;data/index.bin&quot;)) +
                                     (s ? &quot; --stem&quot; : &quot;&quot;) + &quot;\&quot;&quot;);
-        std::string stats;                                     // строки статистики без прогресса «indexed N docs»
+        std::string stats;
         size_t p = 0;
         while (p &lt; out.size()) {
             size_t q = out.find(&#x27;\n&#x27;, p); if (q == std::string::npos) q = out.size();
@@ -5874,15 +5378,7 @@ int main(int argc, char **argv) {
 }
 </code></pre></details>
 <p>Утилита ЛР8 (C++, <code>bin\lab8.exe</code>): интерактивный булев поиск, разбор запроса.</p>
-<details class="file"><summary>lab_boolean/tools/lab8.cpp <span class="ln">(116 строк)</span></summary><pre><code class="language-cpp">// ЛР8 «Булев поиск» — утилита для проверок и демонстрации.
-//
-//   lab8                                         — меню
-//   lab8 search (электровоз || тепловоз) колея   — поиск (без запроса — интерактивно, с листанием)
-//   lab8 stem машинисту поезда                   — то же по индексу основ (ЛР4)
-//   lab8 explain ноги || красный автомобиль       — как разбирается запрос: лексемы и дерево
-//   lab8 bench                                   — скорость разных типов запросов
-// Синтаксис: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
-#include &quot;engine.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab8.cpp <span class="ln">(108 строк)</span></summary><pre><code class="language-cpp">#include &quot;engine.h&quot;
 
 static Index g_plain, g_stem;
 static bool g_p = false, g_s = false;
@@ -5909,7 +5405,7 @@ static void one(const Index &amp;idx, const std::string &amp;q) {
 static void search_loop(bool stem, const std::string &amp;arg) {
     Index *idx = get(stem);
     if (!idx) return;
-    if (!arg.empty()) {                                       // запрос из командной строки: первые 10 результатов
+    if (!arg.empty()) {
         double us; auto r = eng::query(*idx, arg, &amp;us);
         printf(&quot;Запрос: %s\nНайдено документов: %s за %.0f мкс\n&quot;, arg.c_str(), tool::num(r.size()).c_str(), us);
         eng::print_results(*idx, r, 0, 10);
@@ -6076,18 +5572,7 @@ bin\test_lab8_search.exe                            тесты ЛР8 напря�
 
 <h2 id="_3">Сайт и отчёт<a class="headerlink" href="#_3" title="Permanent link">#</a></h2>
 <p>Генератор этого сайта: Markdown + вставка кода прямо из исходников.</p>
-<details class="file"><summary>site_src/make_site.py <span class="ln">(193 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генератор сайта с теорией и кодом для GitHub Pages.
-
-Исходники страниц — Markdown в site_src/*.md. Внутри можно вставлять код прямо из проекта:
-  @@code lab1/src/extract.py::clean@@        — функция / класс / метод по имени (Python и C++)
-  @@code lab_boolean/src/common.h::next_token@@
-  @@lines lab2/robot.py:120-160@@            — строки файла
-  @@file lab1/src/crawl.py@@                 — файл целиком (сворачиваемый блок)
-Результат — папка docs/ (index.html, по странице на работу, страница с кодом), её и публикует GitHub Pages.
-
-Запуск (из папки ir_labs):  python site_src/make_site.py
-&quot;&quot;&quot;
-import ast, html, os, re, shutil, sys
+<details class="file"><summary>site_src/make_site.py <span class="ln">(180 строк)</span></summary><pre><code class="language-python">import ast, html, os, re, shutil, sys
 
 import markdown
 
@@ -6095,7 +5580,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, &#x27;site_src&#x27;)
 OUT = os.path.join(ROOT, &#x27;docs&#x27;)
 
-PAGES = [  # (файл .md, html, заголовок в меню)
+PAGES = [
     (&#x27;index.md&#x27;, &#x27;index.html&#x27;, &#x27;Главная&#x27;),
     (&#x27;commands.md&#x27;, &#x27;commands.html&#x27;, &#x27;Как запускать&#x27;),
     (&#x27;lab1.md&#x27;, &#x27;lab1.html&#x27;, &#x27;ЛР1 Корпус&#x27;),
@@ -6141,7 +5626,6 @@ def py_symbol(text, name):
 
 
 def cpp_symbol(text, name):
-    &quot;&quot;&quot;Функция / структура C++ по имени: от строки с именем (с комментариями над ней) до парной }.&quot;&quot;&quot;
     lines = text.splitlines()
     pat = re.compile(r&#x27;^\s*(?:template\s*&lt;[^&gt;]*&gt;\s*)?(?:static\s+|inline\s+|const\s+)*&#x27;
                      r&#x27;(?:struct|class|enum|[\w:&lt;&gt;,\s\*&amp;]+?)\s*\b&#x27; + re.escape(name) + r&#x27;\b\s*(?:\(|\{|:|$)&#x27;
@@ -6191,7 +5675,6 @@ def expand(md):
         return block(read(rel), LANG.get(os.path.splitext(rel)[1], &#x27;plaintext&#x27;), rel, collapse=True)
 
     def annot(m):
-        # код с комментарием к каждой строке: site_src/annot/&lt;путь&gt;.txt, строки «номер: комментарий»
         rel = m.group(1)
         src = read(rel).splitlines()
         notes = {}
@@ -6270,21 +5753,11 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <p>Сборка единого отчёта из отчётов всех лабораторных.</p>
-<details class="file"><summary>report_all/make_report.py <span class="ln">(110 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Собирает ЕДИНЫЙ отчёт по всем лабораторным работам из отчётов отдельных работ.
-
-Исходники каждой работы (src/*.tex, рисунки) копируются в report_all/labN/, уровни заголовков
-сдвигаются на один вниз (работа = раздел, её разделы = подразделы), списки литературы всех работ
-объединяются в один общий (без повторов). Затем дважды запускается pdflatex (оглавление).
-
-Запуск (из папки ir_labs):  python report_all/make_report.py
-Результат: report_all/report.pdf (и редактируемый report_all/report.tex)
-&quot;&quot;&quot;
-import os, re, shutil, subprocess, sys
+<details class="file"><summary>report_all/make_report.py <span class="ln">(99 строк)</span></summary><pre><code class="language-python">import os, re, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LABS = os.path.dirname(ROOT)
 
-# (каталог отчёта, номер, файлы-рисунки)
 PARTS = [
     (&#x27;lab1/report&#x27;, 1),
     (&#x27;lab2/report&#x27;, 2),
@@ -6294,7 +5767,7 @@ PARTS = [
     (&#x27;lab_boolean/report_index&#x27;, 7),
     (&#x27;lab_boolean/report_search&#x27;, 8),
 ]
-BODY = [&#x27;problem&#x27;, &#x27;src&#x27;, &#x27;thinks&#x27;]        # titlepage и literature общие
+BODY = [&#x27;problem&#x27;, &#x27;src&#x27;, &#x27;thinks&#x27;]
 
 BIB = re.compile(r&#x27;\\bibitem\{([^}]*)\}(.*?)(?=\\bibitem|\\end\{thebibliography\})&#x27;, re.S)
 
@@ -6306,7 +5779,7 @@ def shift_headings(tex):
 
 
 def main():
-    bib = {}                                # ключ -&gt; текст (первое вхождение, общий список)
+    bib = {}
     body = []
     for rel, num in PARTS:
         src_dir = os.path.join(LABS, rel)
@@ -6314,7 +5787,7 @@ def main():
         if os.path.exists(dst):
             shutil.rmtree(dst)
         os.makedirs(dst)
-        for f in os.listdir(src_dir):        # рисунки работы
+        for f in os.listdir(src_dir):
             if f.endswith(&#x27;.pdf&#x27;) and f != &#x27;report.pdf&#x27;:
                 shutil.copy(os.path.join(src_dir, f), dst)
         for f in os.listdir(os.path.join(src_dir, &#x27;src&#x27;)):
@@ -6325,7 +5798,6 @@ def main():
             tex = re.sub(r&#x27;\\includegraphics(\[[^\]]*\])?\{([^}/]+\.pdf)\}&#x27;,
                          lambda m: f&#x27;\\includegraphics{m.group(1) or &quot;&quot;}{{lab{num}/{m.group(2)}}}&#x27;, tex)
             if f == &#x27;problem.tex&#x27;:
-                # \CWHeader{Лабораторная работа №N ...} -&gt; раздел верхнего уровня + подраздел «Задание»
                 tex = re.sub(r&#x27;\\CWHeader\{(.*)\}&#x27;, r&#x27;\\section{\1}\n\\subsection*{Задание}&#x27;, tex, count=1)
                 tex = tex.replace(&#x27;\\pagebreak&#x27;, &#x27;&#x27;)
             else:

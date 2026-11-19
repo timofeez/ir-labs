@@ -105,48 +105,42 @@ yaml-конфигу с секциями <code>db</code> (база данных) 
   свежих по <code>lastmod</code>.</li>
 </ul>
 <p>Конфиг (единственный аргумент робота):</p>
-<details class="file"><summary>lab2/config.yaml <span class="ln">(44 строк)</span></summary><pre><code class="language-yaml"># Конфигурация поискового робота (ЛР2). Запуск: python robot.py config.yaml
-
-db:                              # распределённая БД CockroachDB (start_cluster.bat)
-  hosts: [localhost:26257, localhost:26258, localhost:26259]   # узлы кластера: подключение к первому доступному
-  database: robot                 # база создаётся автоматически
+<details class="file"><summary>lab2/config.yaml <span class="ln">(38 строк)</span></summary><pre><code class="language-yaml">db:
+  hosts: [localhost:26257, localhost:26258, localhost:26259]
+  database: robot
   user: root
 
 logic:
-  delay: 0.2                    # задержка между запросами, секунд
-  timeout: 30                   # таймаут одного запроса, секунд
-  retries: 5                    # повторы при ошибках сети / HTTP 429 / 5xx
+  delay: 0.2
+  timeout: 30
+  retries: 5
   user_agent: &quot;MAI-IR-lab/1.0 (https://github.com/toshunster/MAI-IR; educational)&quot;
-  compress: true                # хранить HTML сжатым zlib (сам HTML не меняется)
-  recrawl_interval: 604800      # через сколько секунд документ проверяется на изменения (неделя)
-  idle_sleep: 600               # пауза, когда обкачивать нечего, секунд
-  exit_when_idle: false         # true — завершиться, когда очередь пуста и переобкачивать нечего
-  max_requests: 0               # ограничение запросов за запуск (0 — без ограничения)
-  verbose: false                # печатать каждую страницу (иначе — каждые 100 запросов)
-  respect_robots: true          # соблюдать robots.txt (Disallow и Crawl-delay)
+  compress: true
+  recrawl_interval: 604800
+  idle_sleep: 600
+  exit_when_idle: false
+  max_requests: 0
+  verbose: false
+  respect_robots: true
 
 sources:
-  # type: categories — обход дерева категорий Википедии от стартовых страниц (seeds)
-  # content_selector — CSS-селектор блока статьи: по нему считается хеш содержимого
-  #   (меню и реклама на странице меняются, статья — нет)
   - name: ruwiki
     type: categories
     content_selector: &quot;#mw-content-text&quot;
     seeds: [&quot;https://ru.wikipedia.org/wiki/Категория:Железнодорожный_транспорт&quot;]
-    max_depth: 4                # глубина обхода дерева категорий
-    max_categories: 4000        # не больше стольких категорий (чтобы не уйти в смежные темы)
+    max_depth: 4
+    max_categories: 4000
   - name: enwiki
     type: categories
     content_selector: &quot;#mw-content-text&quot;
     seeds: [&quot;https://en.wikipedia.org/wiki/Category:Rail_transport&quot;]
     max_depth: 3
     max_categories: 4000
-  # type: sitemap — адреса статей берутся из карты сайта (sitemap.xml)
-  - name: gudok                 # газета «Гудок», gudok.ru
+  - name: gudok
     type: sitemap
     sitemap: &quot;https://gudok.ru/sitemap_index.xml&quot;
-    url_pattern: &#x27;^https://gudok\.ru/newspaper/\?ID=\d+$&#x27;   # только статьи печатной газеты
-    max_documents: 20000        # самые свежие по дате lastmod
+    url_pattern: &#x27;^https://gudok\.ru/newspaper/\?ID=\d+$&#x27;
+    max_documents: 20000
     content_selector: &quot;article.article-block__main-body&quot;
 </code></pre></details>
 
@@ -157,19 +151,14 @@ sources:
 http → https, мобильная версия → обычная, без якоря <code>#...</code> и мусорных параметров, единое
 %-кодирование, пробел → <code>_</code>. Ссылки «следующая страница» <code>/w/index.php?title=X&amp;pagefrom=Y</code>
 приводятся к <code>/wiki/X?pagefrom=Y</code>, потому что <strong>путь <code>/w/</code> запрещён в robots.txt Википедии</strong>:</p>
-<div class="code"><div class="code-title">lab2/robot.py — normalize_url <span class="ln">строки 42–66</span></div><pre><code class="language-python">def normalize_url(url, base=None):
-    &quot;&quot;&quot;Приводит URL к единому виду, чтобы одна страница не скачивалась дважды:
-    схема и хост в нижнем регистре, http -&gt; https для Википедии, мобильная версия -&gt; обычная, без порта по умолчанию,
-    без #фрагмента, единое %-кодирование пути, пробелы -&gt; «_»,
-    /w/index.php?title=X&amp;pagefrom=Y -&gt; /wiki/X?pagefrom=Y (путь /w/ запрещён в robots.txt Википедии),
-    из параметров остаются только значимые (KEEP_QUERY), отсортированные.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — normalize_url <span class="ln">строки 18–37</span></div><pre><code class="language-python">def normalize_url(url, base=None):
     if base:
         url = urljoin(base, url)
     p = urlsplit(url.strip())
     scheme = (p.scheme or &#x27;https&#x27;).lower()
     host = (p.hostname or &#x27;&#x27;).lower()
     if scheme == &#x27;http&#x27; and host.endswith(&#x27;wikipedia.org&#x27;):
-        scheme = &#x27;https&#x27;                      # Википедия доступна только по https
+        scheme = &#x27;https&#x27;
     host = re.sub(r&#x27;^([a-z\-]+)\.m\.(wikipedia\.org)$&#x27;, r&#x27;\1.\2&#x27;, host)
     if p.port and p.port not in (80, 443):
         host = f&#x27;{host}:{p.port}&#x27;
@@ -186,9 +175,7 @@ http → https, мобильная версия → обычная, без як�
 <h2 id="4-robotstxt-user-agent">4. Вежливость: robots.txt, задержка, User-Agent<a class="headerlink" href="#4-robotstxt-user-agent" title="Permanent link">#</a></h2>
 <p>Явные правила — robots.txt (проверяется перед каждым адресом, разобранный файл кешируется по хосту);
 неявные — пауза между запросами, один поток на сайт, честный User-Agent, пауза при 429/5xx:</p>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.allowed <span class="ln">строки 146–164</span></div><pre><code class="language-python">    def allowed(self, url):
-        &quot;&quot;&quot;Разрешает ли robots.txt сайта скачивать этот URL. robots.txt скачивается один раз на хост;
-        если в нём указан Crawl-delay для нашего робота, задержка увеличивается до него.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — Robot.allowed <span class="ln">строки 108–124</span></div><pre><code class="language-python">    def allowed(self, url):
         if not self.respect_robots:
             return True
         p = urlsplit(url)
@@ -199,15 +186,14 @@ http → https, мобильная версия → обычная, без як�
             if r is not None and r.status_code == 200:
                 rp.parse(r.text.splitlines())
             else:
-                rp.allow_all = True                    # нет robots.txt — ограничений нет
+                rp.allow_all = True
             cd = rp.crawl_delay(self.http.headers[&#x27;User-Agent&#x27;])
             if cd:
                 self.delay = max(self.delay, float(cd))
             self.robots[key] = rp
         return self.robots[key].can_fetch(self.http.headers[&#x27;User-Agent&#x27;], url)</code></pre></div>
 
-<div class="code"><div class="code-title">lab2/robot.py — Robot.get <span class="ln">строки 126–144</span></div><pre><code class="language-python">    def get(self, url, headers=None):
-        &quot;&quot;&quot;GET с паузой между запросами (logic.delay) и повторами при ошибках.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — Robot.get <span class="ln">строки 89–106</span></div><pre><code class="language-python">    def get(self, url, headers=None):
         for attempt in range(self.retries):
             wait = self.delay - (time.perf_counter() - self.last_request)
             if wait &gt; 0:
@@ -231,14 +217,13 @@ http → https, мобильная версия → обычная, без як�
 (<code>ORDER BY id</code> — порядок добавления, то есть обход в ширину), обрабатывает и <strong>фиксирует транзакцию
 после каждой страницы</strong>. Поэтому его можно остановить в любой момент (Ctrl+C, выключение компьютера) —
 при следующем запуске он продолжит с того же адреса, ничего не потеряв и не скачав дважды:</p>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.crawl_frontier <span class="ln">строки 284–320</span></div><pre><code class="language-python">    def crawl_frontier(self):
-        &quot;&quot;&quot;Обход очереди. Возвращает True, если что-то было сделано.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — Robot.crawl_frontier <span class="ln">строки 234–269</span></div><pre><code class="language-python">    def crawl_frontier(self):
         did = False
         while not self.stop:
             row = self.db.execute(&quot;SELECT id, url, source, kind, depth, is_cont, lastmod FROM frontier &quot;
                                   &quot;WHERE state=&#x27;new&#x27; ORDER BY id LIMIT 1&quot;).fetchone()
             if not row:
-                self.db.commit()          # закрыть читающую транзакцию: следующий шаг увидит свежие данные
+                self.db.commit()
                 return did
             did = True
             fid, url, source, kind, depth, _, lastmod = row
@@ -259,25 +244,25 @@ http → https, мобильная версия → обычная, без як�
                 self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
             else:
                 dup = self.duplicate_of(url, source, r)
-                if dup:                         # «Content seen?» — этот документ уже есть в базе
+                if dup:
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;duplicate&#x27;, error=? WHERE id=?&quot;, (dup, fid))
                 else:
                     self.save_document(self.canonical(url, r), source, r, int(time.time()), lastmod)
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
-            self.db.commit()   # после каждой страницы: остановка в любой момент ничего не теряет
+            self.db.commit()
             self.progress(kind, url)
             if self.max_requests and self.requests_done &gt;= self.max_requests:
                 self.stop = True</code></pre></div>
 
 <p>Добавление в очередь — <code>INSERT ... ON CONFLICT (url) DO NOTHING</code>: адрес, который уже есть в очереди,
 повторно не добавляется (это и есть «Dup URL elim»):</p>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.enqueue <span class="ln">строки 188–191</span></div><pre><code class="language-python">    def enqueue(self, url, source, kind, depth, is_cont=0, lastmod=None):
+<div class="code"><div class="code-title">lab2/robot.py — Robot.enqueue <span class="ln">строки 144–147</span></div><pre><code class="language-python">    def enqueue(self, url, source, kind, depth, is_cont=0, lastmod=None):
         self.db.execute(&#x27;INSERT INTO frontier(url, source, kind, depth, is_cont, lastmod) &#x27;
                         &#x27;VALUES (?,?,?,?,?,?) ON CONFLICT (url) DO NOTHING&#x27;,
                         (url, source, kind, depth, is_cont, lastmod))</code></pre></div>
 
 <p>Разбор страницы категории Википедии:</p>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.process_category <span class="ln">строки 216–241</span></div><pre><code class="language-python">    def process_category(self, row, html):
+<div class="code"><div class="code-title">lab2/robot.py — Robot.process_category <span class="ln">строки 169–194</span></div><pre><code class="language-python">    def process_category(self, row, html):
         url, source, depth = row[1], row[2], row[4]
         src = self.sources[source]
         soup = BeautifulSoup(html, &#x27;lxml&#x27;)
@@ -292,12 +277,12 @@ http → https, мобильная версия → обычная, без як�
                     continue
                 text = a.get_text(strip=True).lower()
                 if text in (&#x27;следующая страница&#x27;, &#x27;next page&#x27;):
-                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)   # продолжение списка
+                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)
                     continue
                 if text in (&#x27;предыдущая страница&#x27;, &#x27;previous page&#x27;) or not urlsplit(link).path.startswith(&#x27;/wiki/&#x27;):
                     continue
                 if a.find_parent(class_=&#x27;redirect-in-category&#x27;):
-                    continue                    # перенаправление на другую статью — дубликат, не качаем
+                    continue
                 if kind == &#x27;category&#x27;:
                     if depth + 1 &lt;= src[&#x27;max_depth&#x27;] and self.categories_count(source) &lt; src[&#x27;max_categories&#x27;]:
                         self.enqueue(link, source, &#x27;category&#x27;, depth + 1)
@@ -309,17 +294,14 @@ http → https, мобильная версия → обычная, без як�
 Две проверки: <strong>канонический URL</strong> (<code>&lt;link rel="canonical"&gt;</code> — сайт сам говорит, какой адрес
 главный) и <strong>хеш содержимого</strong> — SHA-1 только блока статьи (меню и реклама меняются от запроса
 к запросу, а статья — нет):</p>
-<div class="code"><div class="code-title">lab2/robot.py — content_hash <span class="ln">строки 80–87</span></div><pre><code class="language-python">def content_hash(html, selector):
-    &quot;&quot;&quot;SHA-1 содержимого статьи. Хешируется не вся страница, а только блок статьи (selector):
-    меню, реклама и блоки «популярное» меняются от запроса к запросу, а статья — нет.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — content_hash <span class="ln">строки 48–53</span></div><pre><code class="language-python">def content_hash(html, selector):
     if selector:
         el = BeautifulSoup(html, &#x27;lxml&#x27;).select_one(selector)
         if el is not None:
             return hashlib.sha1(el.get_text(&#x27; &#x27;, strip=True).encode(&#x27;utf-8&#x27;)).hexdigest()
     return hashlib.sha1(html).hexdigest()</code></pre></div>
 
-<div class="code"><div class="code-title">lab2/robot.py — Robot.duplicate_of <span class="ln">строки 249–256</span></div><pre><code class="language-python">    def duplicate_of(self, url, source, r):
-        &quot;&quot;&quot;URL уже сохранённого документа, который совпадает с этим (по каноническому URL или по содержимому).&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — Robot.duplicate_of <span class="ln">строки 201–207</span></div><pre><code class="language-python">    def duplicate_of(self, url, source, r):
         canon = self.canonical(url, r)
         if canon != url and self.db.execute(&#x27;SELECT 1 FROM documents WHERE url=?&#x27;, (canon,)).fetchone():
             return canon
@@ -337,15 +319,11 @@ http → https, мобильная версия → обычная, без як�
 <li>В обоих случаях новая версия сохраняется, <strong>только если изменился хеш статьи</strong> (<code>versions + 1</code>,
   новая <code>crawled_at</code>), иначе обновляется только <code>checked_at</code>.</li>
 </ul>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.recrawl <span class="ln">строки 332–376</span></div><pre><code class="language-python">    def recrawl(self):
-        &quot;&quot;&quot;Переобкачка: проверяем документы, у которых истёк recrawl_interval.
-        Источник с sitemap: карта сайта перечитывается, и страница запрашивается, только если её
-        lastmod изменился. Остальные: условный GET If-Modified-Since. В обоих случаях новая версия
-        сохраняется, только если изменилось содержимое статьи (хеш).&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/robot.py — Robot.recrawl <span class="ln">строки 279–316</span></div><pre><code class="language-python">    def recrawl(self):
         did = False
         pass_start = int(time.time())
         due = pass_start - self.recrawl_interval
-        fresh = {}                                    # источник -&gt; {url: lastmod} из перечитанной карты сайта
+        fresh = {}
         for s in self.sources.values():
             if s.get(&#x27;type&#x27;) == &#x27;sitemap&#x27; and self.db.execute(
                     &#x27;SELECT 1 FROM documents WHERE source=? AND checked_at &lt;= ? AND checked_at &lt; ? LIMIT 1&#x27;,
@@ -353,7 +331,6 @@ http → https, мобильная версия → обычная, без як�
                 fresh[s[&#x27;name&#x27;]] = self.read_sitemap(s)
         while not self.stop:
             now = int(time.time())
-            # только документы, проверенные до начала этого прохода, — каждый проверяется один раз
             row = self.db.execute(&#x27;SELECT url, source, last_modified, content_hash, hash_v, sitemap_lastmod &#x27;
                                   &#x27;FROM documents WHERE checked_at &lt;= ? AND checked_at &lt; ? ORDER BY checked_at LIMIT 1&#x27;,
                                   (due, pass_start)).fetchone()
@@ -363,16 +340,14 @@ http → https, мобильная версия → обычная, без як�
             did = True
             url, source, last_modified, old_hash, hash_v, sm_old = row
             if source in fresh and fresh[source].get(url) == sm_old and sm_old:
-                # дата в карте сайта та же — страница не менялась, запрос не нужен
                 self.db.execute(&#x27;UPDATE documents SET checked_at=? WHERE url=?&#x27;, (now, url))
                 status = &#x27;sitemap: not modified&#x27;
             else:
-                # условный запрос: сервер вернёт 304 Not Modified и пустое тело, если страница не менялась
                 r = self.get(url, {&#x27;If-Modified-Since&#x27;: last_modified} if last_modified else None)
                 old = self.stored_hash(url, source, old_hash, hash_v)
                 new_lastmod = fresh.get(source, {}).get(url, sm_old)
                 if r is not None and r.status_code == 200 and content_hash(r.content, self.selector(source)) != old:
-                    self.save_document(url, source, r, now, new_lastmod)   # изменилась — сохраняем новую версию
+                    self.save_document(url, source, r, now, new_lastmod)
                     status = &#x27;updated&#x27;
                 else:
                     self.db.execute(&#x27;UPDATE documents SET checked_at=?, sitemap_lastmod=? WHERE url=?&#x27;,
@@ -385,7 +360,7 @@ http → https, мобильная версия → обычная, без як�
 
 <p>Сохранение документа — <code>INSERT ... ON CONFLICT (url) DO UPDATE</code> («upsert»): новая статья вставляется,
 изменившаяся — перезаписывается:</p>
-<div class="code"><div class="code-title">lab2/robot.py — Robot.save_document <span class="ln">строки 270–282</span></div><pre><code class="language-python">    def save_document(self, url, source, r, now, sitemap_lastmod=None):
+<div class="code"><div class="code-title">lab2/robot.py — Robot.save_document <span class="ln">строки 220–232</span></div><pre><code class="language-python">    def save_document(self, url, source, r, now, sitemap_lastmod=None):
         html = r.content
         h = content_hash(html, self.selector(source))
         blob = zlib.compress(html, 6) if self.compress else html
@@ -449,13 +424,7 @@ http → https, мобильная версия → обычная, без як�
 </tr>
 </tbody>
 </table>
-<details class="file"><summary>lab2/start_cluster.bat <span class="ln">(31 строк)</span></summary><pre><code class="language-dos">@echo off
-rem Distributed database for the crawler: CockroachDB cluster of 3 nodes on this computer.
-rem   node 1: SQL localhost:26257, RPC 26357, web console http://localhost:8091
-rem   node 2: SQL localhost:26258, RPC 26358, http 8092
-rem   node 3: SQL localhost:26259, RPC 26359, http 8093
-rem Node data: %CRDB_DATA%\node1..node3 (default C:\ir_labs_crdb).
-rem Stop: stop_cluster.bat. Starting again brings up the same cluster with the same data.
+<details class="file"><summary>lab2/start_cluster.bat <span class="ln">(24 строк)</span></summary><pre><code class="language-dos">@echo off
 setlocal
 cd /d &quot;%~dp0&quot;
 chcp 65001 &gt;nul
@@ -473,7 +442,6 @@ start &quot;crdb-node2&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&q
 start &quot;crdb-node3&quot; /min &quot;%CRDB_BIN%&quot; start %OPTS% --store=&quot;%CRDB_DATA%\node3&quot; --listen-addr=localhost:26359 --sql-addr=localhost:26259 --http-addr=localhost:8093
 echo Waiting for the nodes to start...
 timeout /t 10 /nobreak &gt;nul
-rem init is needed only on the very first start; on an existing cluster it just reports that
 &quot;%CRDB_BIN%&quot; init --insecure --host=localhost:26357 2&gt;nul
 timeout /t 3 /nobreak &gt;nul
 &quot;%CRDB_BIN%&quot; node status --insecure --host=localhost:26257
@@ -485,8 +453,7 @@ echo Cluster web console: http://localhost:8091
 <p>Схема таблиц в типах CockroachDB, подключение <strong>к первому живому узлу</strong> из списка <code>db.hosts</code>
 (если узел упал — к следующему), переподключение при обрыве. Очередь получает <code>id = unique_rowid()</code> —
 число, растущее со временем, поэтому <code>ORDER BY id</code> сохраняет порядок обхода в ширину.</p>
-<div class="code"><div class="code-title">lab2/db.py — connect_any <span class="ln">строки 55–66</span></div><pre><code class="language-python">def connect_any(hosts, database, user, autocommit=False):
-    &quot;&quot;&quot;Подключение к первому доступному узлу кластера.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab2/db.py — connect_any <span class="ln">строки 41–51</span></div><pre><code class="language-python">def connect_any(hosts, database, user, autocommit=False):
     last = None
     for h in hosts:
         host, _, port = h.partition(&#x27;:&#x27;)
@@ -498,21 +465,7 @@ echo Cluster web console: http://localhost:8091
             last = e
     raise RuntimeError(f&#x27;ни один узел кластера не доступен ({&quot;, &quot;.join(hosts)}): {last}&#x27;)</code></pre></div>
 
-<details class="file"><summary>lab2/db.py <span class="ln">(114 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Доступ к распределённой БД CockroachDB (протокол и SQL PostgreSQL, драйвер psycopg).
-
-Секция db конфига:
-    db:
-      hosts: [localhost:26257, localhost:26258, localhost:26259]   # узлы кластера
-      database: robot
-      user: root
-
-Подключение идёт к первому доступному узлу из списка: если узел упал, робот подключится
-к следующему — данные реплицированы на все узлы (3 копии каждого диапазона).
-
-Класс Db даёт робочему коду привычный интерфейс execute(sql, params) / commit():
-плейсхолдеры «?» заменяются на «%s» (стиль psycopg).
-&quot;&quot;&quot;
-import re
+<details class="file"><summary>lab2/db.py <span class="ln">(96 строк)</span></summary><pre><code class="language-python">import re
 import psycopg
 
 SCHEMA = [
@@ -553,7 +506,6 @@ DEFAULT_HOSTS = [&#x27;localhost:26257&#x27;, &#x27;localhost:26258&#x27;, &#x27
 
 
 def connect_any(hosts, database, user, autocommit=False):
-    &quot;&quot;&quot;Подключение к первому доступному узлу кластера.&quot;&quot;&quot;
     last = None
     for h in hosts:
         host, _, port = h.partition(&#x27;:&#x27;)
@@ -572,7 +524,6 @@ class Db:
         self.hosts = cfg.get(&#x27;hosts&#x27;) or DEFAULT_HOSTS
         self.database = cfg.get(&#x27;database&#x27;, &#x27;robot&#x27;)
         self.user = cfg.get(&#x27;user&#x27;, &#x27;root&#x27;)
-        # база создаётся на кластере при первом запуске
         admin, _ = connect_any(self.hosts, &#x27;defaultdb&#x27;, self.user, autocommit=True)
         admin.execute(f&#x27;CREATE DATABASE IF NOT EXISTS {self.database}&#x27;)
         admin.close()
@@ -595,7 +546,6 @@ class Db:
         self.conn.rollback()
 
     def reconnect(self):
-        &quot;&quot;&quot;Переподключение (к любому живому узлу), если соединение оборвалось.&quot;&quot;&quot;
         try:
             self.conn.close()
         except Exception:
@@ -606,7 +556,6 @@ class Db:
         self.conn.close()
 
     def drop_database(self):
-        &quot;&quot;&quot;Удалить базу целиком (для тестов).&quot;&quot;&quot;
         self.conn.close()
         admin, _ = connect_any(self.hosts, &#x27;defaultdb&#x27;, self.user, autocommit=True)
         admin.execute(f&#x27;DROP DATABASE IF EXISTS {self.database} CASCADE&#x27;)
@@ -655,28 +604,7 @@ bin\lab2.exe sql &quot;SELECT source, count(*) FROM documents GROUP BY 1&quot;
   и протокол PostgreSQL, транзакции, работает на Windows без Docker.</li>
 </ul>
 <h2 id="12">12. Полные исходники<a class="headerlink" href="#12" title="Permanent link">#</a></h2>
-<details class="file"><summary>lab2/robot.py <span class="ln">(419 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Поисковый робот: обкачка документов из нескольких источников в распределённую БД CockroachDB
-(кластер из нескольких узлов, SQL как в PostgreSQL; доступ — db.py).
-
-Запуск:  python robot.py config.yaml
-
-Источники (секция sources конфига) бывают двух типов:
-  categories — Википедия: обход дерева категорий в ширину от стартовых страниц категорий;
-  sitemap    — сайт с картой сайта (газета «Гудок»): адреса статей берутся из sitemap.xml.
-
-Что делает:
-  1. Кладёт стартовые адреса в очередь (таблица frontier): страницы категорий / статьи из sitemap.
-  2. По очереди скачивает страницы:
-       категория — разбирает HTML, добавляет в очередь подкатегории и статьи;
-       статья    — сохраняет «сырой» HTML в таблицу documents (если такой документ ещё не встречался:
-                   проверка по каноническому URL и по хешу содержимого).
-  3. Когда очередь пуста — переобкачка: документы, проверенные давно, проверяются на изменения
-     (условный GET If-Modified-Since или дата lastmod из sitemap) и сохраняются заново,
-     только если их содержимое изменилось.
-Состояние очереди хранится в базе, поэтому робота можно остановить (Ctrl+C) в любой момент:
-при следующем запуске он продолжит с того же места.
-&quot;&quot;&quot;
-import hashlib, re, signal, sys, time, zlib
+<details class="file"><summary>lab2/robot.py <span class="ln">(359 строк)</span></summary><pre><code class="language-python">import hashlib, re, signal, sys, time, zlib
 import urllib.robotparser
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -686,29 +614,21 @@ from bs4 import BeautifulSoup
 
 from db import Db
 
-# ------------------------------------------------------------------ нормализация URL
 SKIP_PREFIXES = (&#x27;Категория:&#x27;, &#x27;Шаблон:&#x27;, &#x27;Портал:&#x27;, &#x27;Википедия:&#x27;, &#x27;Файл:&#x27;, &#x27;Модуль:&#x27;, &#x27;Проект:&#x27;,
                  &#x27;Участник:&#x27;, &#x27;Обсуждение&#x27;, &#x27;Служебная:&#x27;, &#x27;Справка:&#x27;, &#x27;Category:&#x27;, &#x27;Template:&#x27;,
                  &#x27;Portal:&#x27;, &#x27;Wikipedia:&#x27;, &#x27;File:&#x27;, &#x27;Module:&#x27;, &#x27;Help:&#x27;, &#x27;Draft:&#x27;, &#x27;User:&#x27;, &#x27;Talk:&#x27;, &#x27;Special:&#x27;)
-# Значимые параметры URL (влияют на содержимое страницы): постраничный вывод категорий Википедии
-# и номер статьи «Гудка» (?ID=...). Остальные параметры (utm_* и т.п.) отбрасываются.
 KEEP_QUERY = (&#x27;title&#x27;, &#x27;pagefrom&#x27;, &#x27;subcatfrom&#x27;, &#x27;pageuntil&#x27;, &#x27;subcatuntil&#x27;, &#x27;from&#x27;, &#x27;ID&#x27;)
 SAFE = &quot;/:@!$&#x27;()*+,;=-._~&quot;
 
 
 def normalize_url(url, base=None):
-    &quot;&quot;&quot;Приводит URL к единому виду, чтобы одна страница не скачивалась дважды:
-    схема и хост в нижнем регистре, http -&gt; https для Википедии, мобильная версия -&gt; обычная, без порта по умолчанию,
-    без #фрагмента, единое %-кодирование пути, пробелы -&gt; «_»,
-    /w/index.php?title=X&amp;pagefrom=Y -&gt; /wiki/X?pagefrom=Y (путь /w/ запрещён в robots.txt Википедии),
-    из параметров остаются только значимые (KEEP_QUERY), отсортированные.&quot;&quot;&quot;
     if base:
         url = urljoin(base, url)
     p = urlsplit(url.strip())
     scheme = (p.scheme or &#x27;https&#x27;).lower()
     host = (p.hostname or &#x27;&#x27;).lower()
     if scheme == &#x27;http&#x27; and host.endswith(&#x27;wikipedia.org&#x27;):
-        scheme = &#x27;https&#x27;                      # Википедия доступна только по https
+        scheme = &#x27;https&#x27;
     host = re.sub(r&#x27;^([a-z\-]+)\.m\.(wikipedia\.org)$&#x27;, r&#x27;\1.\2&#x27;, host)
     if p.port and p.port not in (80, 443):
         host = f&#x27;{host}:{p.port}&#x27;
@@ -724,19 +644,14 @@ def normalize_url(url, base=None):
 
 
 def title_of(url):
-    &quot;&quot;&quot;Заголовок страницы из URL /wiki/Заголовок.&quot;&quot;&quot;
     path = urlsplit(url).path
     return unquote(path[len(&#x27;/wiki/&#x27;):]).replace(&#x27;_&#x27;, &#x27; &#x27;) if path.startswith(&#x27;/wiki/&#x27;) else &#x27;&#x27;
 
 
-# ------------------------------------------------------------------ база данных
-# Схема таблиц documents и frontier — в db.py (SQL CockroachDB / PostgreSQL)
 HASH_V = 2
 
 
 def content_hash(html, selector):
-    &quot;&quot;&quot;SHA-1 содержимого статьи. Хешируется не вся страница, а только блок статьи (selector):
-    меню, реклама и блоки «популярное» меняются от запроса к запросу, а статья — нет.&quot;&quot;&quot;
     if selector:
         el = BeautifulSoup(html, &#x27;lxml&#x27;).select_one(selector)
         if el is not None:
@@ -745,7 +660,6 @@ def content_hash(html, selector):
 
 
 def parse_sitemap(xml):
-    &quot;&quot;&quot;Разбор sitemap.xml: ([адреса вложенных sitemap], [(url, lastmod)]).&quot;&quot;&quot;
     children = re.findall(r&#x27;&lt;sitemap&gt;\s*&lt;loc&gt;\s*([^&lt;\s]+)\s*&lt;/loc&gt;&#x27;, xml)
     urls = [(u, m or &#x27;&#x27;) for u, m in
             re.findall(r&#x27;&lt;url&gt;\s*&lt;loc&gt;\s*([^&lt;\s]+)\s*&lt;/loc&gt;(?:\s*&lt;lastmod&gt;\s*([^&lt;\s]+)\s*&lt;/lastmod&gt;)?&#x27;, xml)]
@@ -763,11 +677,11 @@ class Robot:
         self.recrawl_interval = int(logic.get(&#x27;recrawl_interval&#x27;, 7 * 24 * 3600))
         self.idle_sleep = int(logic.get(&#x27;idle_sleep&#x27;, 600))
         self.exit_when_idle = bool(logic.get(&#x27;exit_when_idle&#x27;, False))
-        self.max_requests = int(logic.get(&#x27;max_requests&#x27;, 0))   # 0 = без ограничения
+        self.max_requests = int(logic.get(&#x27;max_requests&#x27;, 0))
         self.respect_robots = bool(logic.get(&#x27;respect_robots&#x27;, True))
-        self.robots = {}                                        # хост -&gt; разобранный robots.txt
+        self.robots = {}
         self.sources = {s[&#x27;name&#x27;]: s for s in cfg[&#x27;sources&#x27;]}
-        self.db = Db(cfg[&#x27;db&#x27;])                                 # распределённая БД: кластер CockroachDB
+        self.db = Db(cfg[&#x27;db&#x27;])
         print(f&#x27;БД: CockroachDB, база {self.db.database}, подключение к узлу {self.db.node}&#x27;, flush=True)
         self.http = requests.Session()
         self.http.headers[&#x27;User-Agent&#x27;] = logic.get(&#x27;user_agent&#x27;, &#x27;MAI-IR-robot/1.0&#x27;)
@@ -776,12 +690,9 @@ class Robot:
         self.last_request = 0.0
 
     def selector(self, source):
-        &quot;&quot;&quot;CSS-селектор блока статьи для источника (по нему считается хеш содержимого).&quot;&quot;&quot;
         return self.sources.get(source, {}).get(&#x27;content_selector&#x27;)
 
-    # ---------------------------------------------------------- HTTP
     def get(self, url, headers=None):
-        &quot;&quot;&quot;GET с паузой между запросами (logic.delay) и повторами при ошибках.&quot;&quot;&quot;
         for attempt in range(self.retries):
             wait = self.delay - (time.perf_counter() - self.last_request)
             if wait &gt; 0:
@@ -801,8 +712,6 @@ class Robot:
         return None
 
     def allowed(self, url):
-        &quot;&quot;&quot;Разрешает ли robots.txt сайта скачивать этот URL. robots.txt скачивается один раз на хост;
-        если в нём указан Crawl-delay для нашего робота, задержка увеличивается до него.&quot;&quot;&quot;
         if not self.respect_robots:
             return True
         p = urlsplit(url)
@@ -813,17 +722,14 @@ class Robot:
             if r is not None and r.status_code == 200:
                 rp.parse(r.text.splitlines())
             else:
-                rp.allow_all = True                    # нет robots.txt — ограничений нет
+                rp.allow_all = True
             cd = rp.crawl_delay(self.http.headers[&#x27;User-Agent&#x27;])
             if cd:
                 self.delay = max(self.delay, float(cd))
             self.robots[key] = rp
         return self.robots[key].can_fetch(self.http.headers[&#x27;User-Agent&#x27;], url)
 
-    # ---------------------------------------------------------- sitemap
     def read_sitemap(self, src):
-        &quot;&quot;&quot;Все (url, lastmod) из карты сайта источника, подходящие под url_pattern.
-        Карта может быть индексом (список вложенных sitemap) — обходим рекурсивно.&quot;&quot;&quot;
         pattern = re.compile(src[&#x27;url_pattern&#x27;])
         todo, seen, found = [src[&#x27;sitemap&#x27;]], set(), {}
         while todo and not self.stop:
@@ -841,7 +747,6 @@ class Robot:
                     found[normalize_url(u)] = lastmod
         return found
 
-    # ---------------------------------------------------------- очередь
     def enqueue(self, url, source, kind, depth, is_cont=0, lastmod=None):
         self.db.execute(&#x27;INSERT INTO frontier(url, source, kind, depth, is_cont, lastmod) &#x27;
                         &#x27;VALUES (?,?,?,?,?,?) ON CONFLICT (url) DO NOTHING&#x27;,
@@ -854,11 +759,9 @@ class Robot:
     def seed(self):
         for s in self.sources.values():
             if s.get(&#x27;type&#x27;, &#x27;categories&#x27;) == &#x27;sitemap&#x27;:
-                # Карту сайта читаем один раз: если статьи источника уже в очереди — это продолжение работы
                 if self.db.execute(&#x27;SELECT 1 FROM frontier WHERE source=? LIMIT 1&#x27;, (s[&#x27;name&#x27;],)).fetchone():
                     continue
                 found = self.read_sitemap(s)
-                # Самые свежие сначала: по lastmod, при равенстве — по URL; берём не больше max_documents
                 items = sorted(found.items(), key=lambda t: (t[1], t[0]), reverse=True)
                 for url, lastmod in items[:int(s.get(&#x27;max_documents&#x27;, len(items)))]:
                     self.enqueue(url, s[&#x27;name&#x27;], &#x27;article&#x27;, 0, lastmod=lastmod)
@@ -869,7 +772,6 @@ class Robot:
                     self.enqueue(normalize_url(u), s[&#x27;name&#x27;], &#x27;category&#x27;, 0)
         self.db.commit()
 
-    # ---------------------------------------------------------- обработка страниц
     def process_category(self, row, html):
         url, source, depth = row[1], row[2], row[4]
         src = self.sources[source]
@@ -885,12 +787,12 @@ class Robot:
                     continue
                 text = a.get_text(strip=True).lower()
                 if text in (&#x27;следующая страница&#x27;, &#x27;next page&#x27;):
-                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)   # продолжение списка
+                    self.enqueue(link, source, &#x27;category&#x27;, depth, is_cont=1)
                     continue
                 if text in (&#x27;предыдущая страница&#x27;, &#x27;previous page&#x27;) or not urlsplit(link).path.startswith(&#x27;/wiki/&#x27;):
                     continue
                 if a.find_parent(class_=&#x27;redirect-in-category&#x27;):
-                    continue                    # перенаправление на другую статью — дубликат, не качаем
+                    continue
                 if kind == &#x27;category&#x27;:
                     if depth + 1 &lt;= src[&#x27;max_depth&#x27;] and self.categories_count(source) &lt; src[&#x27;max_categories&#x27;]:
                         self.enqueue(link, source, &#x27;category&#x27;, depth + 1)
@@ -899,12 +801,10 @@ class Robot:
 
     @staticmethod
     def canonical(url, r):
-        &quot;&quot;&quot;Канонический URL из &lt;link rel=&quot;canonical&quot;&gt; (у перенаправлений он указывает на основную статью).&quot;&quot;&quot;
         m = re.search(rb&#x27;&lt;link rel=&quot;canonical&quot; href=&quot;([^&quot;]+)&quot;&#x27;, r.content[:20000])
         return normalize_url(m.group(1).decode(&#x27;utf-8&#x27;, &#x27;replace&#x27;), url) if m else url
 
     def duplicate_of(self, url, source, r):
-        &quot;&quot;&quot;URL уже сохранённого документа, который совпадает с этим (по каноническому URL или по содержимому).&quot;&quot;&quot;
         canon = self.canonical(url, r)
         if canon != url and self.db.execute(&#x27;SELECT 1 FROM documents WHERE url=?&#x27;, (canon,)).fetchone():
             return canon
@@ -914,7 +814,6 @@ class Robot:
 
     @staticmethod
     def page_title(html, url):
-        &quot;&quot;&quot;Заголовок: &lt;h1 id=&quot;firstHeading&quot;&gt; (Википедия), иначе &lt;meta property=&quot;og:title&quot;&gt;, иначе из URL.&quot;&quot;&quot;
         soup = BeautifulSoup(html, &#x27;lxml&#x27;)
         h = soup.find(id=&#x27;firstHeading&#x27;)
         if h:
@@ -939,13 +838,12 @@ class Robot:
              r.headers.get(&#x27;Last-Modified&#x27;), now, now, sitemap_lastmod, HASH_V))
 
     def crawl_frontier(self):
-        &quot;&quot;&quot;Обход очереди. Возвращает True, если что-то было сделано.&quot;&quot;&quot;
         did = False
         while not self.stop:
             row = self.db.execute(&quot;SELECT id, url, source, kind, depth, is_cont, lastmod FROM frontier &quot;
                                   &quot;WHERE state=&#x27;new&#x27; ORDER BY id LIMIT 1&quot;).fetchone()
             if not row:
-                self.db.commit()          # закрыть читающую транзакцию: следующий шаг увидит свежие данные
+                self.db.commit()
                 return did
             did = True
             fid, url, source, kind, depth, _, lastmod = row
@@ -966,19 +864,17 @@ class Robot:
                 self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
             else:
                 dup = self.duplicate_of(url, source, r)
-                if dup:                         # «Content seen?» — этот документ уже есть в базе
+                if dup:
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;duplicate&#x27;, error=? WHERE id=?&quot;, (dup, fid))
                 else:
                     self.save_document(self.canonical(url, r), source, r, int(time.time()), lastmod)
                     self.db.execute(&quot;UPDATE frontier SET state=&#x27;done&#x27; WHERE id=?&quot;, (fid,))
-            self.db.commit()   # после каждой страницы: остановка в любой момент ничего не теряет
+            self.db.commit()
             self.progress(kind, url)
             if self.max_requests and self.requests_done &gt;= self.max_requests:
                 self.stop = True
 
     def stored_hash(self, url, source, old_hash, hash_v):
-        &quot;&quot;&quot;Хеш сохранённой версии в текущем формате. Документы, скачанные до перехода на хеш
-        содержимого статьи (hash_v=1), пересчитываются по сохранённому HTML — без запроса к сайту.&quot;&quot;&quot;
         if hash_v == HASH_V:
             return old_hash
         blob, compressed = self.db.execute(&#x27;SELECT html, compressed FROM documents WHERE url=?&#x27;, (url,)).fetchone()
@@ -987,14 +883,10 @@ class Robot:
         return h
 
     def recrawl(self):
-        &quot;&quot;&quot;Переобкачка: проверяем документы, у которых истёк recrawl_interval.
-        Источник с sitemap: карта сайта перечитывается, и страница запрашивается, только если её
-        lastmod изменился. Остальные: условный GET If-Modified-Since. В обоих случаях новая версия
-        сохраняется, только если изменилось содержимое статьи (хеш).&quot;&quot;&quot;
         did = False
         pass_start = int(time.time())
         due = pass_start - self.recrawl_interval
-        fresh = {}                                    # источник -&gt; {url: lastmod} из перечитанной карты сайта
+        fresh = {}
         for s in self.sources.values():
             if s.get(&#x27;type&#x27;) == &#x27;sitemap&#x27; and self.db.execute(
                     &#x27;SELECT 1 FROM documents WHERE source=? AND checked_at &lt;= ? AND checked_at &lt; ? LIMIT 1&#x27;,
@@ -1002,7 +894,6 @@ class Robot:
                 fresh[s[&#x27;name&#x27;]] = self.read_sitemap(s)
         while not self.stop:
             now = int(time.time())
-            # только документы, проверенные до начала этого прохода, — каждый проверяется один раз
             row = self.db.execute(&#x27;SELECT url, source, last_modified, content_hash, hash_v, sitemap_lastmod &#x27;
                                   &#x27;FROM documents WHERE checked_at &lt;= ? AND checked_at &lt; ? ORDER BY checked_at LIMIT 1&#x27;,
                                   (due, pass_start)).fetchone()
@@ -1012,16 +903,14 @@ class Robot:
             did = True
             url, source, last_modified, old_hash, hash_v, sm_old = row
             if source in fresh and fresh[source].get(url) == sm_old and sm_old:
-                # дата в карте сайта та же — страница не менялась, запрос не нужен
                 self.db.execute(&#x27;UPDATE documents SET checked_at=? WHERE url=?&#x27;, (now, url))
                 status = &#x27;sitemap: not modified&#x27;
             else:
-                # условный запрос: сервер вернёт 304 Not Modified и пустое тело, если страница не менялась
                 r = self.get(url, {&#x27;If-Modified-Since&#x27;: last_modified} if last_modified else None)
                 old = self.stored_hash(url, source, old_hash, hash_v)
                 new_lastmod = fresh.get(source, {}).get(url, sm_old)
                 if r is not None and r.status_code == 200 and content_hash(r.content, self.selector(source)) != old:
-                    self.save_document(url, source, r, now, new_lastmod)   # изменилась — сохраняем новую версию
+                    self.save_document(url, source, r, now, new_lastmod)
                     status = &#x27;updated&#x27;
                 else:
                     self.db.execute(&#x27;UPDATE documents SET checked_at=?, sitemap_lastmod=? WHERE url=?&#x27;,
@@ -1050,7 +939,7 @@ class Robot:
                 if self.exit_when_idle:
                     print(&#x27;Нечего обкачивать — выход.&#x27;)
                     break
-                time.sleep(self.idle_sleep)   # ждём, пока документы «созреют» для переобкачки
+                time.sleep(self.idle_sleep)
         self.db.commit()
         self.db.close()
         self.http.close()
@@ -1074,14 +963,7 @@ def main():
 if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
-<details class="file"><summary>lab2/migrate_sqlite.py <span class="ln">(69 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Однократный перенос базы робота из старого файла SQLite (data/robot.db) в кластер CockroachDB.
-
-Запуск:  python migrate_sqlite.py config.yaml data/robot.db
-Переносятся обе таблицы целиком: documents (сырой HTML, хеши, даты) и frontier (очередь, её порядок —
-номера id сохраняются, поэтому обход продолжается с того же места). Повторный запуск безопасен:
-уже перенесённые строки пропускаются (ON CONFLICT DO NOTHING).
-&quot;&quot;&quot;
-import sqlite3, sys, time
+<details class="file"><summary>lab2/migrate_sqlite.py <span class="ln">(61 строк)</span></summary><pre><code class="language-python">import sqlite3, sys, time
 
 import psycopg
 import yaml
@@ -1102,9 +984,8 @@ def copy(src, db, table, cols, key, batch):
         rows = cur.fetchmany(batch)
         if not rows:
             break
-        for attempt in range(20):           # кластер на одном HDD может ненадолго «задуматься» —
-            try:                            # повторяем порцию с паузой (вставка идемпотентна)
-                # один многострочный INSERT на порцию: одна запись в журнал Raft вместо записи на каждую строку
+        for attempt in range(20):
+            try:
                 sql = (f&#x27;INSERT INTO {table} ({&quot;, &quot;.join(cols)}) VALUES {&quot;, &quot;.join([row_ph] * len(rows))} &#x27;
                        f&#x27;ON CONFLICT ({key}) DO NOTHING&#x27;)
                 db.conn.execute(sql, [v for r in rows for v in r])
@@ -1143,7 +1024,7 @@ def main():
 if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
-<details class="file"><summary>lab2/stats.py <span class="ln">(79 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Просмотр базы робота.
+<details class="file"><summary>lab2/stats.py <span class="ln">(79 строк)</span></summary><pre><code class="language-python">USAGE = &quot;&quot;&quot;Просмотр базы робота.
 
   python stats.py config.yaml                 — статистика: документы, очередь, размеры, скорость
   python stats.py config.yaml show &lt;часть URL или заголовка&gt;   — найти документ и вывести поля + начало HTML
@@ -1198,7 +1079,7 @@ def find(db, q):
 
 def main():
     if len(sys.argv) &lt; 2:
-        print(__doc__); return
+        print(USAGE); return
     cfg = yaml.safe_load(open(sys.argv[1], encoding=&#x27;utf-8&#x27;))
     db = Db(cfg[&#x27;db&#x27;])
     if len(sys.argv) == 2:
@@ -1222,7 +1103,7 @@ def main():
 if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
-<details class="file"><summary>lab2/progress.py <span class="ln">(75 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Прогресс обкачки: сколько страниц из очереди уже обработано, по источникам, скорость и оставшееся время.
+<details class="file"><summary>lab2/progress.py <span class="ln">(72 строк)</span></summary><pre><code class="language-python">USAGE = &quot;&quot;&quot;Прогресс обкачки: сколько страниц из очереди уже обработано, по источникам, скорость и оставшееся время.
 Только читает базу робота — можно запускать, пока робот работает.
 
 Запуск:  python progress.py config.yaml            — один раз
@@ -1260,13 +1141,10 @@ def show(db, prev):
     print(f&#x27;\n  ВСЕГО    {bar(done, total)}&#x27;)
     print(f&#x27;  Документов в базе: {docs:,}&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;))
     if db.execute(&quot;SELECT 1 FROM frontier WHERE kind=&#x27;category&#x27; AND state=&#x27;new&#x27; LIMIT 1&quot;).fetchone():
-        # у источника с обходом по категориям статьи узнаются по ходу: каждая страница категории
-        # добавляет в очередь новые статьи, поэтому знаменатель растёт, а процент — оценка
         print(&#x27;  (ещё есть необработанные страницы категорий — очередь будет пополняться)&#x27;)
-    # скорость — по документам, сохранённым за последние 10 минут
     now = int(time.time())
     recent = db.execute(&#x27;SELECT COUNT(*) FROM documents WHERE crawled_at &gt;= ?&#x27;, (now - 600,)).fetchone()[0]
-    speed = recent / 10                                        # страниц в минуту
+    speed = recent / 10
     left = total - done
     if speed &gt; 0:
         eta = left / speed
@@ -1278,14 +1156,14 @@ def show(db, prev):
 
 def main():
     if len(sys.argv) &lt; 2:
-        print(__doc__); return
+        print(USAGE); return
     cfg = yaml.safe_load(open(sys.argv[1], encoding=&#x27;utf-8&#x27;))
     db = Db(cfg[&#x27;db&#x27;])
     watch = &#x27;--watch&#x27; in sys.argv
     prev = None
     while True:
         prev = show(db, prev)
-        db.commit()                                # следующий снимок — свежие данные
+        db.commit()
         if not watch:
             break
         try:
@@ -1297,40 +1175,24 @@ def main():
 if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
-<details class="file"><summary>lab2/tools/lab2.cpp <span class="ln">(305 строк)</span></summary><pre><code class="language-cpp">// ЛР2 «Поисковый робот» — утилита для проверок и демонстрации (C++). База — распределённая CockroachDB
-// (3 узла); запросы выполняются через клиент cockroach.exe (cockroach sql), путь — переменная CRDB_BIN.
-//
-//   lab2                     — меню
-//   lab2 cluster             — узлы кластера, живые ли, сколько диапазонов (шардов) и реплик у таблиц
-//   lab2 stats               — документы по источникам, размеры, очередь
-//   lab2 frontier            — состояние очереди обхода: new / done / duplicate / error / skipped
-//   lab2 show ВЛ80           — найти документ по заголовку: поля в базе
-//   lab2 failover            — подключение при недоступном узле (первый узел в списке «мёртвый»)
-//   lab2 nodes               — один и тот же запрос через каждый из трёх узлов
-//   lab2 normalize HTTP://RU.Wikipedia.org/wiki/ВЛ80#История   — нормализация URL
-//   lab2 robots https://ru.wikipedia.org/w/index.php?title=X    — разрешён ли адрес robots.txt
-//   lab2 sql SELECT source, count(*) FROM documents GROUP BY 1  — свой запрос к базе
-#include &quot;../../lab_boolean/src/common.h&quot;
+<details class="file"><summary>lab2/tools/lab2.cpp <span class="ln">(281 строк)</span></summary><pre><code class="language-cpp">#include &quot;../../lab_boolean/src/common.h&quot;
 #include &quot;../../lab_boolean/tools/tool.h&quot;
 #include &lt;algorithm&gt;
 #include &lt;map&gt;
 
 static const std::vector&lt;std::string&gt; HOSTS = {&quot;localhost:26257&quot;, &quot;localhost:26258&quot;, &quot;localhost:26259&quot;};
 
-// ---------------------------------------------------------------- доступ к кластеру
 static std::string crdb() {
     const char *e = getenv(&quot;CRDB_BIN&quot;);
     return e &amp;&amp; *e ? e : &quot;D:\\ir_labs_data\\cockroach\\cockroach.exe&quot;;
 }
 
-// Выполнить SQL на узле host; вывод в формате TSV (первая строка — заголовки). ok = узел ответил.
 static std::string sql_on(const std::string &amp;host, const std::string &amp;q, bool *ok = nullptr, const char *db = &quot;robot&quot;) {
-    // запрос передаётся файлом (--file): в командной строке cmd.exe исказил бы символы % и кавычки
     std::string tmp = std::string(getenv(&quot;TEMP&quot;) ? getenv(&quot;TEMP&quot;) : &quot;.&quot;) + &quot;\\lab2_query.sql&quot;;
     FILE *f = tool::open_file(tmp, &quot;wb&quot;);
     std::string body = q;
     while (!body.empty() &amp;&amp; isspace((unsigned char)body.back())) body.pop_back();
-    if (body.empty() || body.back() != &#x27;;&#x27;) body += &#x27;;&#x27;;                  // клиент требует ; в конце
+    if (body.empty() || body.back() != &#x27;;&#x27;) body += &#x27;;&#x27;;
     if (f) { fwrite(body.data(), 1, body.size(), f); fclose(f); }
     int rc = 0;
     std::string out = tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; sql --insecure --host=&quot; + host + &quot; --database=&quot; + db +
@@ -1339,20 +1201,18 @@ static std::string sql_on(const std::string &amp;host, const std::string &amp;q,
     return out;
 }
 
-// Подключение к первому живому узлу — как connect_any в db.py.
 static std::string sql(const std::string &amp;q, std::string *node = nullptr) {
     for (auto &amp;h : HOSTS) {
         bool ok; std::string out = sql_on(h, q, &amp;ok);
         if (ok) { if (node) *node = h; return out; }
         if (out.find(&quot;cannot dial&quot;) == std::string::npos &amp;&amp; out.find(&quot;refused&quot;) == std::string::npos) {
-            if (node) *node = h;                                               // узел ответил, но запрос с ошибкой
+            if (node) *node = h;
             return &quot;ошибка\n&quot; + out;
         }
     }
     return &quot;ни один узел кластера не отвечает — запустите start_cluster.bat\n&quot;;
 }
 
-// Таблица TSV -&gt; строки и столбцы.
 static std::vector&lt;std::vector&lt;std::string&gt;&gt; rows(const std::string &amp;tsv) {
     std::vector&lt;std::vector&lt;std::string&gt;&gt; r;
     size_t p = 0;
@@ -1369,7 +1229,6 @@ static std::vector&lt;std::vector&lt;std::string&gt;&gt; rows(const std::string 
     return r;
 }
 
-// Печать таблицы с выравниванием по ширине столбцов (с учётом кириллицы).
 static void print_table(const std::string &amp;tsv) {
     auto r = rows(tsv);
     if (r.empty()) { printf(&quot;  (пусто)\n&quot;); return; }
@@ -1386,7 +1245,6 @@ static void print_table(const std::string &amp;tsv) {
     }
 }
 
-// ---------------------------------------------------------------- нормализация URL (как normalize_url в robot.py)
 static std::string lower_ascii(std::string s) { for (auto &amp;c : s) c = (char)tolower((unsigned char)c); return s; }
 
 static std::string pct_decode(const std::string &amp;s) {
@@ -1397,7 +1255,6 @@ static std::string pct_decode(const std::string &amp;s) {
         } else r += s[i];
     return r;
 }
-// %-кодирование: буквы, цифры и символы из safe остаются, остальные байты -&gt; %XX (заглавные).
 static std::string pct_encode(const std::string &amp;s, const char *safe) {
     std::string r; char b[4];
     for (unsigned char c : s) {
@@ -1413,14 +1270,14 @@ static const char *KEEP[] = {&quot;title&quot;, &quot;pagefrom&quot;, &quot;subc
 static std::string normalize_url(std::string url, const std::string &amp;base = &quot;&quot;) {
     while (!url.empty() &amp;&amp; isspace((unsigned char)url.back())) url.pop_back();
     while (!url.empty() &amp;&amp; isspace((unsigned char)url[0])) url.erase(0, 1);
-    if (!base.empty() &amp;&amp; url.find(&quot;://&quot;) == std::string::npos) {            // относительная ссылка
+    if (!base.empty() &amp;&amp; url.find(&quot;://&quot;) == std::string::npos) {
         size_t s = base.find(&quot;://&quot;), h = base.find(&#x27;/&#x27;, s + 3);
         std::string origin = base.substr(0, h);
         if (url.rfind(&quot;//&quot;, 0) == 0) url = base.substr(0, s + 1) + url;
         else if (url[0] == &#x27;/&#x27;) url = origin + url;
         else url = base.substr(0, base.rfind(&#x27;/&#x27;) + 1) + url;
     }
-    size_t hash = url.find(&#x27;#&#x27;); if (hash != std::string::npos) url.resize(hash);           // без #фрагмента
+    size_t hash = url.find(&#x27;#&#x27;); if (hash != std::string::npos) url.resize(hash);
     size_t s = url.find(&quot;://&quot;);
     std::string scheme = s == std::string::npos ? &quot;https&quot; : lower_ascii(url.substr(0, s));
     std::string rest = s == std::string::npos ? url : url.substr(s + 3);
@@ -1432,13 +1289,13 @@ static std::string normalize_url(std::string url, const std::string &amp;base = 
     size_t colon = hostport.rfind(&#x27;:&#x27;);
     if (colon != std::string::npos) { host = hostport.substr(0, colon); port = hostport.substr(colon + 1); }
     auto ends = [](const std::string &amp;a, const std::string &amp;b) { return a.size() &gt;= b.size() &amp;&amp; a.compare(a.size() - b.size(), b.size(), b) == 0; };
-    if (scheme == &quot;http&quot; &amp;&amp; ends(host, &quot;wikipedia.org&quot;)) scheme = &quot;https&quot;;                   // Википедия только по https
-    size_t m = host.find(&quot;.m.wikipedia.org&quot;);                                               // мобильная версия -&gt; обычная
+    if (scheme == &quot;http&quot; &amp;&amp; ends(host, &quot;wikipedia.org&quot;)) scheme = &quot;https&quot;;
+    size_t m = host.find(&quot;.m.wikipedia.org&quot;);
     if (m != std::string::npos &amp;&amp; m + 16 == host.size()) host = host.substr(0, m) + &quot;.wikipedia.org&quot;;
     if (!port.empty() &amp;&amp; port != &quot;80&quot; &amp;&amp; port != &quot;443&quot;) host += &quot;:&quot; + port;
     path = pct_decode(path);
     std::replace(path.begin(), path.end(), &#x27; &#x27;, &#x27;_&#x27;);
-    std::vector&lt;std::pair&lt;std::string, std::string&gt;&gt; kv;                                     // значимые параметры
+    std::vector&lt;std::pair&lt;std::string, std::string&gt;&gt; kv;
     std::string title;
     size_t a = 0;
     while (a &lt;= query.size() &amp;&amp; !query.empty()) {
@@ -1459,8 +1316,6 @@ static std::string normalize_url(std::string url, const std::string &amp;base = 
     return scheme + &quot;://&quot; + host + (path.empty() ? &quot;/&quot; : pct_encode(path, SAFE)) + (q.empty() ? &quot;&quot; : &quot;?&quot; + q);
 }
 
-// ---------------------------------------------------------------- robots.txt
-// Правила группы «User-agent: *» (или нашего робота); побеждает самое длинное совпавшее правило, Allow при равенстве.
 static bool robots_allowed(const std::string &amp;robots, const std::string &amp;path, const std::string &amp;agent = &quot;MAI-IR-robot&quot;) {
     struct Rule { bool allow; std::string prefix; };
     std::vector&lt;Rule&gt; mine, star, *cur = nullptr;
@@ -1502,7 +1357,6 @@ static bool robots_allowed(const std::string &amp;robots, const std::string &amp
     return allow;
 }
 
-// ---------------------------------------------------------------- команды
 static void cmd_cluster(const std::string &amp;) {
     printf(&quot;Узлы кластера (cockroach node status):\n&quot;);
     print_table(tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; node status --insecure --host=localhost:26257 --format=tsv\&quot;&quot;));
@@ -1536,7 +1390,7 @@ static void cmd_show(const std::string &amp;arg) {
 }
 
 static void cmd_failover(const std::string &amp;) {
-    std::vector&lt;std::string&gt; hosts = {&quot;127.0.0.1:1&quot;};                       // «мёртвый» узел первым в списке
+    std::vector&lt;std::string&gt; hosts = {&quot;127.0.0.1:1&quot;};
     hosts.insert(hosts.end(), HOSTS.begin(), HOSTS.end());
     double t0 = now_sec();
     for (auto &amp;h : hosts) {
@@ -1602,14 +1456,10 @@ int main(int argc, char **argv) {
 }
 #endif
 </code></pre></details>
-<details class="file"><summary>lab2/tests/test_lab2.cpp <span class="ln">(125 строк)</span></summary><pre><code class="language-cpp">// Тесты ЛР2 на C++ (GoogleTest): нормализация URL, правила robots.txt и распределённая БД CockroachDB
-// (3 живых узла, каждый диапазон в 3 репликах, переключение на живой узел, нет дублей документов,
-// ON CONFLICT не создаёт повторов). Код утилиты подключается напрямую (main отключён LAB2_NO_MAIN).
-#define LAB2_NO_MAIN
+<details class="file"><summary>lab2/tests/test_lab2.cpp <span class="ln">(119 строк)</span></summary><pre><code class="language-cpp">#define LAB2_NO_MAIN
 #include &quot;../tools/lab2.cpp&quot;
 #include &lt;gtest/gtest.h&gt;
 
-// ---------------------------------------------------------------- нормализация URL
 TEST(Lab2_Normalize, scheme_and_host_lowercase) {
     EXPECT_EQ(normalize_url(&quot;HTTPS://RU.Wikipedia.ORG/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
 }
@@ -1645,7 +1495,6 @@ TEST(Lab2_Normalize, tracking_params_dropped_significant_kept) {
     EXPECT_EQ(normalize_url(&quot;https://gudok.ru/newspaper/?utm_source=vk&amp;ID=1234567&quot;), &quot;https://gudok.ru/newspaper/?ID=1234567&quot;);
 }
 
-// ---------------------------------------------------------------- robots.txt
 TEST(Lab2_Robots, disallow_prefix) {
     std::string r = &quot;User-agent: *\nDisallow: /w/\nDisallow: /api/\n&quot;;
     EXPECT_FALSE(robots_allowed(r, &quot;/w/index.php?title=X&quot;));
@@ -1665,7 +1514,6 @@ TEST(Lab2_Robots, empty_robots_allows_all) {
     EXPECT_TRUE(robots_allowed(&quot;&quot;, &quot;/anything&quot;));
 }
 
-// ---------------------------------------------------------------- распределённая БД (нужен запущенный кластер)
 static bool cluster_up() {
     bool ok; sql_on(HOSTS[0], &quot;SELECT 1&quot;, &amp;ok, &quot;defaultdb&quot;);
     return ok;
@@ -1720,7 +1568,7 @@ TEST(Lab2_Cluster, on_conflict_does_not_duplicate) {
     ASSERT_TRUE(ok);
     std::string ins = &quot;INSERT INTO frontier(url, source) VALUES (&#x27;https://x/1&#x27;,&#x27;t&#x27;) ON CONFLICT (url) DO NOTHING;&quot;;
     sql_on(HOSTS[0], &quot;CREATE TABLE frontier (id INT8 PRIMARY KEY DEFAULT unique_rowid(), url STRING UNIQUE NOT NULL, source STRING);&quot; + ins + ins, &amp;ok, db.c_str());
-    sql_on(HOSTS[2], ins, &amp;ok, db.c_str());                                  // та же вставка через другой узел
+    sql_on(HOSTS[2], ins, &amp;ok, db.c_str());
     auto r = rows(sql_on(HOSTS[1], &quot;SELECT count(*) FROM frontier&quot;, &amp;ok, db.c_str()));
     sql_on(HOSTS[0], &quot;DROP DATABASE IF EXISTS &quot; + db + &quot; CASCADE&quot;, &amp;ok, &quot;defaultdb&quot;);
     ASSERT_EQ(r.size(), 2u);

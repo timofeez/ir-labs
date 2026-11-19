@@ -48,9 +48,7 @@ r = 2 и т. д. Закон Ципфа (1949): частота обратно п�
 <p>Тот же токенизатор, что в индексаторе; частоты — в свою хеш-таблицу <code>TermTable</code>, затем номера термов
 сортируются <strong>слиянием по убыванию частоты</strong> (стабильно: при равной частоте — в порядке первого
 появления). Выход — <code>freq.tsv</code>: строки «ранг \t частота \t терм».</p>
-<div class="code"><div class="code-title">lab_boolean/src/termfreq.cpp — sort_by_freq <span class="ln">строки 11–28</span></div><pre><code class="language-cpp">// Сортировка слиянием номеров термов по убыванию частоты (стабильная: при равной частоте —
-// в порядке первого появления терма в корпусе).
-static void sort_by_freq(uint32_t *a, size_t n) {
+<div class="code"><div class="code-title">lab_boolean/src/termfreq.cpp — sort_by_freq <span class="ln">строки 6–21</span></div><pre><code class="language-cpp">static void sort_by_freq(uint32_t *a, size_t n) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
     for (size_t width = 1; width &lt; n; width *= 2) {
@@ -67,17 +65,17 @@ static void sort_by_freq(uint32_t *a, size_t n) {
     free(tmp);
 }</code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/src/termfreq.cpp — main <span class="ln">строки 30–94</span></div><pre><code class="language-cpp">int main(int argc, char **argv) {
+<div class="code"><div class="code-title">lab_boolean/src/termfreq.cpp — main <span class="ln">строки 23–87</span></div><pre><code class="language-cpp">int main(int argc, char **argv) {
     if (argc &lt; 3) { fprintf(stderr, &quot;usage: termfreq corpus.tsv freq.tsv [--stem]\n&quot;); return 1; }
     bool useStem = argc &gt; 3 &amp;&amp; !strcmp(argv[3], &quot;--stem&quot;);
     FILE *in = fopen(argv[1], &quot;rb&quot;);
     if (!in) { fprintf(stderr, &quot;cannot open %s\n&quot;, argv[1]); return 1; }
     double t0 = now_sec();
     LineReader lr(in);
-    TermTable tt;                         // словоформы
-    TermTable stemTab;                    // основы (при --stem)
-    Vec&lt;uint32_t&gt; toStem;                 // словоформа -&gt; основа
-    Vec&lt;uint64_t&gt; freq;                   // частота терма (словоформы или основы)
+    TermTable tt;
+    TermTable stemTab;
+    Vec&lt;uint32_t&gt; toStem;
+    Vec&lt;uint64_t&gt; freq;
     uint64_t tokens = 0;
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
     while (lr.next()) {
@@ -128,22 +126,20 @@ static void sort_by_freq(uint32_t *a, size_t n) {
     fclose(out);
     printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
     printf(&quot;terms              %zu\n&quot;, T);
-    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);         // термы, встретившиеся один раз
+    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);
     printf(&quot;time_total_sec     %.3f\n&quot;, now_sec() - t0);
     return 0;
 }</code></pre></div>
 
 <p>Хеш-таблица термов (используется везде: частоты, индекс): открытая адресация с линейным пробированием,
 хеш FNV-1a, заполнение не больше 50 % — затем удвоение (rehash):</p>
-<div class="code"><div class="code-title">lab_boolean/src/common.h — TermTable <span class="ln">строки 165–209</span></div><pre><code class="language-cpp">// ---------------------------------------------------------------- хеш-таблица термов
-// Открытая адресация с линейным пробированием; строки термов хранятся в общем пуле.
-struct TermTable {
+<div class="code"><div class="code-title">lab_boolean/src/common.h — TermTable <span class="ln">строки 146–187</span></div><pre><code class="language-cpp">struct TermTable {
     struct Slot { uint32_t hash, id; };
     Slot *slots = nullptr;
     size_t cap = 0, size = 0;
-    Vec&lt;char&gt; pool;            // байты всех термов подряд
-    Vec&lt;uint32_t&gt; off;         // off[id]  — смещение терма в пуле
-    Vec&lt;uint8_t&gt; len;          // len[id]  — длина терма в байтах
+    Vec&lt;char&gt; pool;
+    Vec&lt;uint32_t&gt; off;
+    Vec&lt;uint8_t&gt; len;
 
     static uint32_t fnv1a(const char *s, int n) {
         uint32_t h = 2166136261u;
@@ -161,7 +157,6 @@ struct TermTable {
         }
         free(slots); slots = ns; cap = newcap;
     }
-    // Возвращает id терма; если терма ещё нет — добавляет. isNew = true для нового.
     uint32_t get_or_add(const char *s, int n, bool &amp;isNew) {
         if (size * 2 &gt;= cap) rehash(cap ? cap * 2 : 1 &lt;&lt; 16);
         uint32_t h = fnv1a(s, n);
@@ -190,20 +185,18 @@ $\log f$ по $\log(r+\rho)$. Перебираем ρ на сетке и для 
   «перевесят» начало);</li>
 <li>хвост с частотами 1–2 исключается: там частоты — целые «ступеньки», и они искажают наклон.</li>
 </ul>
-<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — linreg <span class="ln">строки 49–54</span></div><pre><code class="language-python">def linreg(xs, ys):
+<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — linreg <span class="ln">строки 39–44</span></div><pre><code class="language-python">def linreg(xs, ys):
     mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
     b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
     a = my - b * mx
     err = sum((y - a - b * x) ** 2 for x, y in zip(xs, ys)) / len(xs)
     return a, b, err</code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — mandelbrot <span class="ln">строки 57–69</span></div><pre><code class="language-python">def mandelbrot(freqs):
-    &quot;&quot;&quot;Подбор P, ρ, B по точкам, равномерным в log r (иначе регрессию задавил бы хвост из единиц).
-    Хвост с частотами 1–2 (горизонтальные «ступеньки» из-за дискретности частот) в подгонку не входит.&quot;&quot;&quot;
+<div class="code"><div class="code-title">lab_boolean/analysis/zipf.py — mandelbrot <span class="ln">строки 47–57</span></div><pre><code class="language-python">def mandelbrot(freqs):
     last = max(i for i, f in enumerate(freqs, 1) if f &gt;= 3)
     ranks = log_sample(last)
     best = None
-    for rho in [x / 2 for x in range(0, 401)]:             # ρ от 0 до 200 с шагом 0,5
+    for rho in [x / 2 for x in range(0, 401)]:
         xs = [math.log(r + rho) for r in ranks]
         ys = [math.log(freqs[r - 1]) for r in ranks]
         a, b, err = linreg(xs, ys)
@@ -323,7 +316,7 @@ $\log f$ по $\log(r+\rho)$. Перебираем ρ на сетке и для 
 <h2 id="8">8. Тесты<a class="headerlink" href="#8" title="Permanent link">#</a></h2>
 <p>GoogleTest <code>Lab5_TermFreq.sort_by_freq_descending</code> (сортировка), <code>DataStructures.term_table_hash_and_rehash</code>
 (хеш-таблица на 100 000 термов с перехешированием) и все тесты токенизатора (ЛР3).</p>
-<div class="code"><div class="code-title">lab_boolean/tests/test_lab5_termfreq.cpp — sort_by_freq_descending <span class="ln">строки 4–11</span></div><pre><code class="language-cpp">TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab5_termfreq.cpp — sort_by_freq_descending <span class="ln">строки 3–10</span></div><pre><code class="language-cpp">TEST(Lab5_TermFreq, sort_by_freq_descending) {
     uint64_t freq[] = {5, 100, 1, 42, 100, 7};
     uint32_t ids[] = {0, 1, 2, 3, 4, 5};
     g_freq = freq;
@@ -349,18 +342,11 @@ bin\lab5.exe plot         — график в log-log шкале прямо в �
 <li><strong>Как сортировали?</strong> Слиянием (стабильно, O(n log n) гарантированно).</li>
 </ul>
 <h2 id="11">11. Полные исходники<a class="headerlink" href="#11" title="Permanent link">#</a></h2>
-<details class="file"><summary>lab_boolean/src/termfreq.cpp <span class="ln">(95 строк)</span></summary><pre><code class="language-cpp">// Частоты термов (ЛР «Закон Ципфа»): сколько раз каждый терм встречается в корпусе.
-// Токенизация — та же, что в индексаторе (next_token из common.h); с --stem считаются основы.
-//
-// Запуск: termfreq corpus.tsv freq.tsv [--stem]
-// Выход:  freq.tsv — строки «ранг \t частота \t терм» по убыванию частоты
-#include &quot;common.h&quot;
+<details class="file"><summary>lab_boolean/src/termfreq.cpp <span class="ln">(88 строк)</span></summary><pre><code class="language-cpp">#include &quot;common.h&quot;
 #include &quot;stem.h&quot;
 
-static const uint64_t *g_freq;            // частоты — для сравнения при сортировке
+static const uint64_t *g_freq;
 
-// Сортировка слиянием номеров термов по убыванию частоты (стабильная: при равной частоте —
-// в порядке первого появления терма в корпусе).
 static void sort_by_freq(uint32_t *a, size_t n) {
     uint32_t *tmp = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t *src = a, *dst = tmp;
@@ -385,10 +371,10 @@ int main(int argc, char **argv) {
     if (!in) { fprintf(stderr, &quot;cannot open %s\n&quot;, argv[1]); return 1; }
     double t0 = now_sec();
     LineReader lr(in);
-    TermTable tt;                         // словоформы
-    TermTable stemTab;                    // основы (при --stem)
-    Vec&lt;uint32_t&gt; toStem;                 // словоформа -&gt; основа
-    Vec&lt;uint64_t&gt; freq;                   // частота терма (словоформы или основы)
+    TermTable tt;
+    TermTable stemTab;
+    Vec&lt;uint32_t&gt; toStem;
+    Vec&lt;uint64_t&gt; freq;
     uint64_t tokens = 0;
     char tok[MAX_TERM_BYTES + 4], sb[MAX_TERM_BYTES + 8];
     while (lr.next()) {
@@ -439,21 +425,12 @@ int main(int argc, char **argv) {
     fclose(out);
     printf(&quot;tokens             %llu\n&quot;, (unsigned long long)tokens);
     printf(&quot;terms              %zu\n&quot;, T);
-    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);         // термы, встретившиеся один раз
+    printf(&quot;hapax_legomena     %zu\n&quot;, hapax);
     printf(&quot;time_total_sec     %.3f\n&quot;, now_sec() - t0);
     return 0;
 }
 </code></pre></details>
-<details class="file"><summary>lab_boolean/analysis/zipf.py <span class="ln">(162 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР «Закон Ципфа»: распределение термов по частотам, закон Ципфа и закон Мандельброта.
-
-1. bin/termfreq.exe считает частоты термов по всему корпусу (и отдельно по каждому источнику).
-2. График «частота — ранг» в логарифмической шкале + закон Ципфа f(r) = C / r, C = f(1).
-3. Подбор констант закона Мандельброта f(r) = P / (r + ρ)^B: для каждого ρ из сетки — линейная
-   регрессия log f = log P − B·log(r + ρ) по точкам, равномерно распределённым по log r;
-   выбирается ρ с наименьшей ошибкой.
-Результаты — в report_zipf/. Запуск (из папки lab_boolean): python analysis/zipf.py
-&quot;&quot;&quot;
-import json, math, os, subprocess, sys, tempfile
+<details class="file"><summary>lab_boolean/analysis/zipf.py <span class="ln">(145 строк)</span></summary><pre><code class="language-python">import json, math, os, subprocess, sys, tempfile
 
 import matplotlib
 matplotlib.use(&#x27;Agg&#x27;)
@@ -479,7 +456,6 @@ def termfreq(corpus, out, stem=False):
 
 
 def log_sample(n, k=400):
-    &quot;&quot;&quot;~k рангов, равномерно распределённых по логарифмической шкале (для регрессии и графика).&quot;&quot;&quot;
     out, x = [], 1.0
     step = math.exp(math.log(n) / k)
     while x &lt;= n:
@@ -501,12 +477,10 @@ def linreg(xs, ys):
 
 
 def mandelbrot(freqs):
-    &quot;&quot;&quot;Подбор P, ρ, B по точкам, равномерным в log r (иначе регрессию задавил бы хвост из единиц).
-    Хвост с частотами 1–2 (горизонтальные «ступеньки» из-за дискретности частот) в подгонку не входит.&quot;&quot;&quot;
     last = max(i for i, f in enumerate(freqs, 1) if f &gt;= 3)
     ranks = log_sample(last)
     best = None
-    for rho in [x / 2 for x in range(0, 401)]:             # ρ от 0 до 200 с шагом 0,5
+    for rho in [x / 2 for x in range(0, 401)]:
         xs = [math.log(r + rho) for r in ranks]
         ys = [math.log(freqs[r - 1]) for r in ranks]
         a, b, err = linreg(xs, ys)
@@ -516,7 +490,6 @@ def mandelbrot(freqs):
 
 
 def split_corpus():
-    &quot;&quot;&quot;Временные файлы корпуса по источникам — чтобы построить кривые отдельно.&quot;&quot;&quot;
     d = tempfile.mkdtemp()
     files = {s: open(os.path.join(d, s + &#x27;.tsv&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) for s in NAMES}
     with open(CORPUS, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;) as f:
@@ -546,7 +519,6 @@ if __name__ == &#x27;__main__&#x27;:
     P, rho, B, err = mandelbrot(freqs)
     print(f&#x27;токенов {N}, термов {T}, hapax {int(st[&quot;hapax_legomena&quot;])}; Ципф C={C}; Мандельброт P={P:.0f} ρ={rho} B={B:.3f}&#x27;)
 
-    # По источникам
     parts, tmpdir = split_corpus()
     per = {}
     for s, path in parts.items():
@@ -554,7 +526,6 @@ if __name__ == &#x27;__main__&#x27;:
         per[s] = (sst, [f for _, f, _ in srows], srows[:10])
         print(s, int(sst[&#x27;tokens&#x27;]), len(srows), [t for _, _, t in srows[:8]])
 
-    # --- график 1: весь корпус, Ципф и Мандельброт
     rs = log_sample(T, 1500)
     plt.figure(figsize=(7, 4.4))
     plt.loglog(rs, [freqs[r - 1] for r in rs], &#x27;.&#x27;, ms=3, label=f&#x27;корпус: {T:,} термов&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;))
@@ -564,7 +535,6 @@ if __name__ == &#x27;__main__&#x27;:
     plt.xlabel(&#x27;ранг r (log)&#x27;); plt.ylabel(&#x27;частота f (log)&#x27;); plt.grid(alpha=.3, which=&#x27;both&#x27;, lw=.4)
     plt.legend(fontsize=8); plt.tight_layout(); plt.savefig(os.path.join(OUT, &#x27;fig_zipf.pdf&#x27;))
 
-    # --- график 2: по источникам и для основ (стемминг)
     plt.figure(figsize=(7, 4.4))
     for s, (sst, fr, _) in per.items():
         rr = log_sample(len(fr), 800)
@@ -576,7 +546,6 @@ if __name__ == &#x27;__main__&#x27;:
     plt.xlabel(&#x27;ранг r (log)&#x27;); plt.ylabel(&#x27;частота f (log)&#x27;); plt.grid(alpha=.3, which=&#x27;both&#x27;, lw=.4)
     plt.legend(fontsize=8); plt.tight_layout(); plt.savefig(os.path.join(OUT, &#x27;fig_sources.pdf&#x27;))
 
-    # --- данные для отчёта
     hapax = int(st[&#x27;hapax_legomena&#x27;])
     once_twice = sum(1 for f in freqs if f &lt;= 2)
     top_share = sum(freqs[:100]) / N
@@ -606,16 +575,7 @@ if __name__ == &#x27;__main__&#x27;:
               open(os.path.join(OUT, &#x27;zipf_results.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;), ensure_ascii=False, indent=1)
     print(&#x27;ok&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(152 строк)</span></summary><pre><code class="language-cpp">// ЛР5 «Закон Ципфа» — утилита для проверок и демонстрации.
-//
-//   lab5              — меню
-//   lab5 top 20       — самые частые термы: ранг, частота, f·r, предсказание Ципфа C/r
-//   lab5 word вагон   — ранг и частота слова, сравнение с законом
-//   lab5 summary      — токенов, термов, hapax legomena, доля топ-100, константы
-//   lab5 ranks        — таблица по рангам 1, 10, 100, ... (Ципф и Мандельброт)
-//   lab5 plot         — график частота–ранг в логарифмическом масштабе (в консоли)
-//   lab5 recount      — пересчитать частоты по корпусу (termfreq.exe)
-#include &quot;../src/common.h&quot;
+<details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(139 строк)</span></summary><pre><code class="language-cpp">#include &quot;../src/common.h&quot;
 #include &quot;../src/stem.h&quot;
 #include &quot;tool.h&quot;
 #include &lt;cmath&gt;
@@ -634,7 +594,6 @@ static bool load() {
     return !g_rows.empty();
 }
 
-// МНК для прямой y = a + b·x; возвращает среднеквадратичную ошибку.
 static double linreg(const std::vector&lt;double&gt; &amp;x, const std::vector&lt;double&gt; &amp;y, double &amp;a, double &amp;b) {
     double n = (double)x.size(), sx = 0, sy = 0, sxx = 0, sxy = 0;
     for (size_t i = 0; i &lt; x.size(); i++) { sx += x[i]; sy += y[i]; sxx += x[i] * x[i]; sxy += x[i] * y[i]; }
@@ -645,8 +604,6 @@ static double linreg(const std::vector&lt;double&gt; &amp;x, const std::vector&l
     return e / n;
 }
 
-// Закон Мандельброта f = P / (r + ρ)^B: перебор ρ, для каждого — МНК в логарифмах.
-// Точки берутся равномерно по log r, хвост с частотами 1–2 не учитывается.
 static void mandelbrot(double &amp;P, double &amp;rho, double &amp;B) {
     size_t last = 0;
     for (size_t i = 0; i &lt; g_rows.size(); i++) if (g_rows[i].f &gt;= 3) last = i + 1;
@@ -719,7 +676,6 @@ static void cmd_ranks(const std::string &amp;) {
     printf(&quot;\nНа малых рангах Ципф завышает частоту; Мандельброт с поправкой ρ ближе к данным.\n&quot;);
 }
 
-// График log f от log r символами: * — данные, + — Ципф C/r.
 static void cmd_plot(const std::string &amp;) {
     if (!load()) return;
     const int W = 70, H = 22;
