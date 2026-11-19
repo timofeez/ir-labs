@@ -18,7 +18,7 @@
 </ul>
 </li>
 <li><a href="#_5">Полный файл тестов</a></li>
-<li><a href="#1-2-python-unittest">Тесты ЛР1 и ЛР2 (Python, unittest)</a></li>
+<li><a href="#1-2-c-googletest">Тесты ЛР1 и ЛР2 (C++, GoogleTest)</a></li>
 </ul>
 </div>
 </aside><h1 id="_1">Тесты<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
@@ -41,16 +41,16 @@
 <td>29</td>
 </tr>
 <tr>
-<td><code>lab1</code> (Python)</td>
-<td>unittest</td>
-<td><code>python tests/test_extract.py</code>, <code>python tests/test_cli.py</code></td>
-<td>26</td>
+<td><code>lab1</code> (ЛР1)</td>
+<td><strong>GoogleTest</strong>, CTest</td>
+<td><code>ctest --preset default</code></td>
+<td>14</td>
 </tr>
 <tr>
-<td><code>lab2</code> (Python)</td>
-<td>unittest, нужен кластер</td>
-<td><code>python tests/test_robot.py</code></td>
-<td>29</td>
+<td><code>lab2</code> (ЛР2)</td>
+<td><strong>GoogleTest</strong>, CTest (тесты базы — на живом кластере)</td>
+<td><code>ctest --preset default</code></td>
+<td>20</td>
 </tr>
 </tbody>
 </table>
@@ -66,7 +66,7 @@
 29/29 Test #29: FullCorpus.StemIndexMatchesReferenceOn300Queries .......   Passed    9.86 sec
 100% tests passed out of 29
 </code></pre>
-<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(40 строк)</span></summary><pre><code class="language-plaintext">﻿# Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(49 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
 #
 #   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
 #   cmake --build --preset default  (сборка программ и тестов)
@@ -87,6 +87,15 @@ endif()
 foreach(prog indexer search tokenize termfreq stemtest)
   add_executable(${prog} src/${prog}.cpp)
   set_target_properties(${prog} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+endforeach()
+
+# Утилиты для демонстрации (C++): по программе на лабораторную — bin/lab3.exe ... bin/lab8.exe
+foreach(t lab3 lab4 lab5 lab7 lab8)
+  add_executable(${t} tools/${t}.cpp)
+  if(WIN32)
+    target_link_libraries(${t} shell32)
+  endif()
+  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 endforeach()
 
 # GoogleTest (исходники лежат в third_party/googletest, версия 1.15.2)
@@ -899,194 +908,85 @@ TEST(FullCorpus, StemIndexMatchesReferenceOn300Queries) {
 }
 </code></pre></details>
 
-<h2 id="1-2-python-unittest">Тесты ЛР1 и ЛР2 (Python, unittest)<a class="headerlink" href="#1-2-python-unittest" title="Permanent link">#</a></h2>
-<p>ЛР1 и ЛР2 написаны на Python (курс разрешает интерпретируемые языки для выкачки и обвязки), поэтому
-и их тесты — на стандартном <code>unittest</code>. ЛР2 проверяется на <strong>локальных тестовых сайтах</strong> (сеть не
-нужна) и на настоящем кластере CockroachDB.</p>
-<details class="file"><summary>lab1/tests/test_extract.py <span class="ln">(92 строк)</span></summary><pre><code class="language-python">import os, sys, unittest
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), &#x27;..&#x27;, &#x27;src&#x27;))
-from extract import clean, clean_html
+<h2 id="1-2-c-googletest">Тесты ЛР1 и ЛР2 (C++, GoogleTest)<a class="headerlink" href="#1-2-c-googletest" title="Permanent link">#</a></h2>
+<p>ЛР1: очистка вики-разметки, разбор строк корпуса и проверка всего корпуса (65 509 документов).
+ЛР2: нормализация URL, правила robots.txt и распределённая база — 3 живых узла, 3 реплики у каждого
+диапазона, переключение на живой узел, одинаковые данные через все узлы, отсутствие дублей.
+Запуск в папке <code>lab1</code> или <code>lab2</code>: <code>cmake --preset default</code>, <code>cmake --build --preset default</code>, <code>ctest --preset default</code>.</p>
+<details class="file"><summary>lab1/tests/test_lab1.cpp <span class="ln">(75 строк)</span></summary><pre><code class="language-cpp">// Тесты ЛР1 на C++ (GoogleTest): очистка вики-разметки, разбор JSON-строк корпуса, декодирование URL,
+// подсчёт слов и проверка самого корпуса (все документы читаются, id уникальны, текст непустой).
+// Код утилиты подключается напрямую, её main() отключён макросом LAB1_NO_MAIN.
+#define LAB1_NO_MAIN
+#include &quot;../tools/lab1.cpp&quot;
+#include &lt;gtest/gtest.h&gt;
+#include &lt;set&gt;
 
+// ---------------------------------------------------------------- очистка вики-разметки
+TEST(Lab1_Clean, bold_italic_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;&#x27;&#x27;&#x27;Электровоз&#x27;&#x27;&#x27; и &#x27;&#x27;тепловоз&#x27;&#x27;&quot;), &quot;Электровоз и тепловоз&quot;);
+}
+TEST(Lab1_Clean, comment_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;до&lt;!-- скрытый комментарий --&gt;после&quot;), &quot;допосле&quot;);
+}
+TEST(Lab1_Clean, refs_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;Текст&lt;ref&gt;Источник&lt;/ref&gt; дальше&lt;ref name=\&quot;a\&quot;/&gt;.&quot;), &quot;Текст дальше.&quot;);
+}
+TEST(Lab1_Clean, nested_templates_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;A{{внешний|{{внутренний|x}}}}B&quot;), &quot;AB&quot;);
+}
+TEST(Lab1_Clean, links_keep_text) {
+    EXPECT_EQ(clean_wikitext(&quot;[[ВЛ80|ВЛ-80]] и [[Электровоз]]&quot;), &quot;ВЛ-80 и Электровоз&quot;);
+}
+TEST(Lab1_Clean, external_link_keeps_text) {
+    EXPECT_EQ(clean_wikitext(&quot;см. [https://rzd.ru сайт РЖД]&quot;), &quot;см. сайт РЖД&quot;);
+}
+TEST(Lab1_Clean, files_and_categories_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;A[[Файл:VL80.jpg|мини|[[ВЛ80]] в депо]]B[[Категория:Электровозы]]&quot;), &quot;AB&quot;);
+}
+TEST(Lab1_Clean, tables_removed) {
+    EXPECT_EQ(clean_wikitext(&quot;до\n{| class=wikitable\n| a || b\n|}\nпосле&quot;), &quot;до\n\nпосле&quot;);
+}
+TEST(Lab1_Clean, headings_and_lists) {
+    EXPECT_EQ(clean_wikitext(&quot;== История ==\n* первый\n# второй&quot;), &quot;История\nпервый\nвторой&quot;);
+}
+TEST(Lab1_Clean, service_tail_cut) {
+    EXPECT_EQ(clean_wikitext(&quot;Основной текст.\n== Примечания ==\nсноски\n== Ссылки ==\nx&quot;), &quot;Основной текст.&quot;);
+}
 
-class TestClean(unittest.TestCase):
+// ---------------------------------------------------------------- вспомогательные функции
+TEST(Lab1_Util, json_string_with_escapes) {
+    std::string j = &quot;{\&quot;id\&quot;: 42, \&quot;title\&quot;: \&quot;А \\\&quot;Б\\\&quot;\&quot;, \&quot;text\&quot;: \&quot;строка1\\nстрока2 \\u0416\&quot;}&quot;;
+    EXPECT_EQ(json_str(j, &quot;id&quot;), &quot;42&quot;);
+    EXPECT_EQ(json_str(j, &quot;title&quot;), &quot;А \&quot;Б\&quot;&quot;);
+    EXPECT_EQ(json_str(j, &quot;text&quot;), &quot;строка1\nстрока2 Ж&quot;);
+    EXPECT_EQ(json_str(j, &quot;нет&quot;), &quot;&quot;);
+}
+TEST(Lab1_Util, url_decode_cyrillic) {
+    EXPECT_EQ(url_decode(&quot;https://ru.wikipedia.org/wiki/%D0%92%D0%9B80&quot;), &quot;https://ru.wikipedia.org/wiki/ВЛ80&quot;);
+}
+TEST(Lab1_Util, words_count) {
+    EXPECT_EQ(words(&quot;Электровоз ВЛ-80, 1961 г.&quot;), 5u);
+    EXPECT_EQ(words(&quot;&quot;), 0u);
+}
 
-    def test_plain_text_unchanged(self):
-        self.assertEqual(clean(&#x27;Электровоз ВЛ80 — грузовой.&#x27;), &#x27;Электровоз ВЛ80 — грузовой.&#x27;)
-
-    def test_internal_link_with_label(self):
-        self.assertEqual(clean(&#x27;по [[Транссибирская магистраль|Транссибу]]&#x27;), &#x27;по Транссибу&#x27;)
-
-    def test_internal_link_without_label(self):
-        self.assertEqual(clean(&#x27;[[Локомотив]]&#x27;), &#x27;Локомотив&#x27;)
-
-    def test_bold_italic(self):
-        self.assertEqual(clean(&quot;&#x27;&#x27;&#x27;ВЛ80&#x27;&#x27;&#x27; и &#x27;&#x27;ЧС2&#x27;&#x27;&quot;), &#x27;ВЛ80 и ЧС2&#x27;)
-
-    def test_nested_templates_removed(self):
-        self.assertEqual(clean(&#x27;A {{Карточка|x={{флаг|Россия}}}} B&#x27;), &#x27;A  B&#x27;)
-
-    def test_refs_removed(self):
-        self.assertEqual(clean(&#x27;Текст&lt;ref name=&quot;a&quot;&gt;Источник&lt;/ref&gt; и&lt;ref name=&quot;b&quot;/&gt; конец&#x27;), &#x27;Текст и конец&#x27;)
-
-    def test_comment_removed(self):
-        self.assertEqual(clean(&#x27;A&lt;!-- скрыто --&gt;B&#x27;), &#x27;AB&#x27;)
-
-    def test_heading_kept_as_text(self):
-        self.assertEqual(clean(&#x27;== История ==&#x27;), &#x27;История&#x27;)
-
-    def test_table_removed(self):
-        self.assertEqual(clean(&#x27;до\n{| class=&quot;wikitable&quot;\n| 1 || 2\n|}\nпосле&#x27;), &#x27;до\n\nпосле&#x27;)
-
-    def test_files_and_categories_removed(self):
-        self.assertEqual(clean(&#x27;[[Файл:VL80.jpg|thumb|Фото [[ВЛ80]]]]Текст[[Категория:Электровозы]]&#x27;), &#x27;Текст&#x27;)
-
-    def test_tail_sections_cut(self):
-        self.assertEqual(clean(&#x27;Основной текст\n== Примечания ==\n{{примечания}}&#x27;), &#x27;Основной текст&#x27;)
-        self.assertEqual(clean(&#x27;Body\n== References ==\nx&#x27;), &#x27;Body&#x27;)
-
-    def test_external_link(self):
-        self.assertEqual(clean(&#x27;[https://rzd.ru сайт РЖД]&#x27;), &#x27;сайт РЖД&#x27;)
-
-    def test_list_markers(self):
-        self.assertEqual(clean(&#x27;* первый\n# второй&#x27;), &#x27;первый\nвторой&#x27;)
-
-
-PAGE = &#x27;&#x27;&#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;Меню сайта Новости Газета&lt;/nav&gt;
-&lt;div class=&quot;article-header&quot;&gt;&lt;h2&gt;&lt;a href=&quot;/newspaper/?archive=2026.10.21&quot;&gt;Выпуск: № 160 (28371) &lt;span&gt;21.10.2026&lt;/span&gt;&lt;/a&gt;&lt;br&gt;1 полоса&lt;/h2&gt;
-&lt;div class=&quot;article-header__description-2&quot;&gt;&lt;p&gt;Миллион за профессионализм&lt;/p&gt;&lt;/div&gt;
-&lt;div class=&quot;article-header__img&quot;&gt;&lt;img src=&quot;/upload/x.jpg&quot;&gt;&lt;/div&gt;&lt;/div&gt;
-&lt;article class=&quot;article-block__main-body&quot;&gt;&lt;h3&gt;Кадры | Первое место занял машинист Дамир Насыров.&lt;/h3&gt;&lt;br&gt;
-Второе место – у депо Новокузнецк.&lt;br&gt;&lt;br&gt;&lt;b&gt;В НОВОМ СТАТУСЕ&lt;/b&gt;&lt;br&gt;&lt;br&gt;Конкурс стал частью нацпроекта.&lt;br&gt;&lt;br&gt;
-&lt;b&gt;Владимир Андреев,&lt;/b&gt;&lt;i&gt; корреспондент газеты «Уральская магистраль», Екатеринбург&lt;/i&gt;&lt;/article&gt;
-&lt;div class=&quot;link-block&quot;&gt;Ещё больше интересных новостей в нашем телеграм-канале&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;&#x27;&#x27;&#x27;
-
-
-class TestCleanHtml(unittest.TestCase):
-
-    def setUp(self):
-        self.text, self.meta = clean_html(PAGE)
-
-    def test_only_article_text(self):
-        self.assertNotIn(&#x27;Меню сайта&#x27;, self.text)
-        self.assertNotIn(&#x27;телеграм&#x27;, self.text)
-        self.assertIn(&#x27;Второе место – у депо Новокузнецк.&#x27;, self.text)
-
-    def test_rubric_removed_from_text(self):
-        self.assertTrue(self.text.startswith(&#x27;Первое место занял машинист&#x27;))
-        self.assertTrue(self.meta[&#x27;rubric&#x27;])
-
-    def test_author_signature(self):
-        self.assertNotIn(&#x27;Андреев&#x27;, self.text)
-        self.assertTrue(self.meta[&#x27;author&#x27;])
-
-    def test_subheading_and_paragraphs(self):
-        self.assertIn(&#x27;\n\nВ НОВОМ СТАТУСЕ\n\n&#x27;, self.text)
-        self.assertTrue(self.meta[&#x27;subheadings&#x27;])
-
-    def test_header_meta(self):
-        self.assertTrue(self.meta[&#x27;issue&#x27;])
-        self.assertTrue(self.meta[&#x27;photo&#x27;])
-
-    def test_page_without_article(self):
-        text, meta = clean_html(&#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;Меню&lt;/nav&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
-        self.assertEqual(text, &#x27;&#x27;)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    unittest.main(verbosity=2)
-</code></pre></details>
-<details class="file"><summary>lab1/tests/test_cli.py <span class="ln">(93 строк)</span></summary><pre><code class="language-python">import gzip, json, os, subprocess, sys, tempfile, unittest, warnings
-
-warnings.simplefilter(&#x27;ignore&#x27;, ResourceWarning)
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, &#x27;..&#x27;, &#x27;src&#x27;)
-PY = sys.executable
-
-
-def gudok_page(title, body):
-    return (f&#x27;&lt;html&gt;&lt;head&gt;&lt;meta property=&quot;og:title&quot; content=&quot;{title}&quot;&gt;&lt;/head&gt;&lt;body&gt;&lt;nav&gt;Меню&lt;/nav&gt;&#x27;
-            f&#x27;&lt;div class=&quot;article-header&quot;&gt;&lt;h2&gt;Выпуск: № 1 &lt;span&gt;01.10.2026&lt;/span&gt;&lt;br&gt;2 полоса&lt;/h2&gt;&lt;/div&gt;&#x27;
-            f&#x27;&lt;article class=&quot;article-block__main-body&quot;&gt;{body}&lt;/article&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
-
-
-def run(*args, env=None):
-    e = dict(os.environ, PYTHONIOENCODING=&#x27;utf-8&#x27;, **(env or {}))
-    r = subprocess.run([PY, *args], capture_output=True, encoding=&#x27;utf-8&#x27;, env=e)
-    return r.returncode, r.stdout + r.stderr
-
-
-class TestCli(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.data = tempfile.mkdtemp()
-        ru = [{&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 1, &#x27;title&#x27;: &#x27;ВЛ80&#x27;, &#x27;url&#x27;: &#x27;u1&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
-               &#x27;wikitext&#x27;: &quot;&#x27;&#x27;&#x27;ВЛ80&#x27;&#x27;&#x27; — [[электровоз]] переменного тока.{{sfn|А|1}}\n== Примечания ==\nx&quot;},
-              {&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 2, &#x27;title&#x27;: &#x27;ЧС2&#x27;, &#x27;url&#x27;: &#x27;u2&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
-               &#x27;wikitext&#x27;: &#x27;[[Файл:x.jpg|thumb]]ЧС2 — пассажирский электровоз.[[Категория:Электровозы]]&#x27;},
-              {&#x27;source&#x27;: &#x27;ruwiki&#x27;, &#x27;id&#x27;: 3, &#x27;title&#x27;: &#x27;ВЛ-80&#x27;, &#x27;url&#x27;: &#x27;u3&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
-               &#x27;wikitext&#x27;: &#x27;#ПЕРЕНАПРАВЛЕНИЕ [[ВЛ80]]&#x27;}]
-        en = [{&#x27;source&#x27;: &#x27;enwiki&#x27;, &#x27;id&#x27;: 10, &#x27;title&#x27;: &#x27;Maglev&#x27;, &#x27;url&#x27;: &#x27;u10&#x27;, &#x27;timestamp&#x27;: &#x27;t&#x27;,
-               &#x27;wikitext&#x27;: &quot;&#x27;&#x27;&#x27;Maglev&#x27;&#x27;&#x27; is a [[train]] system.&lt;ref&gt;src&lt;/ref&gt;&quot;}]
-        gd = [{&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 100, &#x27;title&#x27;: &#x27;Миллион за профессионализм&#x27;, &#x27;url&#x27;: &#x27;u100&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
-               &#x27;html&#x27;: gudok_page(&#x27;Миллион за профессионализм&#x27;, &#x27;Кадры | Конкурс машинистов прошёл в Екатеринбурге.&#x27;)},
-              {&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 101, &#x27;title&#x27;: &#x27;Цифра дня&#x27;, &#x27;url&#x27;: &#x27;u101&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
-               &#x27;html&#x27;: gudok_page(&#x27;Цифра дня&#x27;, &#x27;На 14,4% выросла погрузка зерна.&#x27;)},
-              {&#x27;source&#x27;: &#x27;gudok&#x27;, &#x27;id&#x27;: 102, &#x27;title&#x27;: &#x27;Фото&#x27;, &#x27;url&#x27;: &#x27;u102&#x27;, &#x27;timestamp&#x27;: &#x27;2026-10-20&#x27;,
-               &#x27;html&#x27;: &#x27;&lt;html&gt;&lt;body&gt;&lt;nav&gt;только фото, статьи нет&lt;/nav&gt;&lt;/body&gt;&lt;/html&gt;&#x27;}]
-        for name, rows in ((&#x27;ruwiki_raw.jsonl&#x27;, ru), (&#x27;enwiki_raw.jsonl&#x27;, en)):
-            with open(os.path.join(cls.data, name), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
-                f.writelines(json.dumps(r, ensure_ascii=False) + &#x27;\n&#x27; for r in rows)
-        with gzip.open(os.path.join(cls.data, &#x27;gudok_raw.jsonl.gz&#x27;), &#x27;wt&#x27;, encoding=&#x27;utf-8&#x27;) as f:
-            f.writelines(json.dumps(r, ensure_ascii=False) + &#x27;\n&#x27; for r in gd)
-        cls.code, cls.out = run(os.path.join(SRC, &#x27;extract.py&#x27;), cls.data)
-        cls.env = {&#x27;CORPUS_DATA&#x27;: cls.data}
-
-    def test_extract_creates_files(self):
-        self.assertEqual(self.code, 0, self.out)
-        for name in (&#x27;ruwiki_text.jsonl&#x27;, &#x27;enwiki_text.jsonl&#x27;, &#x27;gudok_text.jsonl&#x27;, &#x27;corpus_stats.json&#x27;):
-            self.assertTrue(os.path.exists(os.path.join(self.data, name)), name)
-
-    def test_extract_counts(self):
-        st = json.load(open(os.path.join(self.data, &#x27;corpus_stats.json&#x27;), encoding=&#x27;utf-8&#x27;))
-        self.assertEqual({k: v[&#x27;docs&#x27;] for k, v in st.items()}, {&#x27;ruwiki&#x27;: 2, &#x27;enwiki&#x27;: 1, &#x27;gudok&#x27;: 2})
-        self.assertEqual(st[&#x27;gudok&#x27;][&#x27;meta_share&#x27;][&#x27;issue&#x27;], 1.0)
-        self.assertEqual(st[&#x27;gudok&#x27;][&#x27;meta_share&#x27;][&#x27;rubric&#x27;], 0.5)
-
-    def test_extract_text(self):
-        rows = [json.loads(l) for l in open(os.path.join(self.data, &#x27;ruwiki_text.jsonl&#x27;), encoding=&#x27;utf-8&#x27;)]
-        self.assertEqual(rows[0][&#x27;text&#x27;], &#x27;ВЛ80 — электровоз переменного тока.&#x27;)
-        g = [json.loads(l) for l in open(os.path.join(self.data, &#x27;gudok_text.jsonl&#x27;), encoding=&#x27;utf-8&#x27;)]
-        self.assertEqual(g[0][&#x27;text&#x27;], &#x27;Конкурс машинистов прошёл в Екатеринбурге.&#x27;)
-
-    def test_corpus_stats(self):
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;stats&#x27;, env=self.env)
-        self.assertEqual(code, 0, out)
-        self.assertIn(&#x27;ВСЕГО документов: 5&#x27;, out)
-
-    def test_corpus_find(self):
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;find&#x27;, &#x27;вл80&#x27;, env=self.env)
-        self.assertIn(&#x27;[ruwiki] 1\tВЛ80&#x27;, out)
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;find&#x27;, &#x27;миллион&#x27;, env=self.env)
-        self.assertIn(&#x27;[gudok] 100&#x27;, out)
-
-    def test_corpus_show_raw(self):
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;show&#x27;, &#x27;1&#x27;, env=self.env)
-        self.assertIn(&#x27;ВЛ80 — электровоз переменного тока.&#x27;, out)
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;raw&#x27;, &#x27;1&#x27;, env=self.env)
-        self.assertIn(&#x27;{{sfn|А|1}}&#x27;, out)
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;raw&#x27;, &#x27;100&#x27;, env=self.env)
-        self.assertIn(&#x27;&lt;article class=&quot;article-block__main-body&quot;&gt;&#x27;, out)
-
-    def test_corpus_errors(self):
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), &#x27;show&#x27;, &#x27;999999&#x27;, env=self.env)
-        self.assertEqual(code, 0); self.assertIn(&#x27;не найдено&#x27;, out)
-        code, out = run(os.path.join(SRC, &#x27;corpus.py&#x27;), env=self.env)
-        self.assertEqual(code, 0); self.assertIn(&#x27;Консольная утилита&#x27;, out)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    unittest.main(verbosity=2)
+// ---------------------------------------------------------------- проверка корпуса (нужны data/*_text.jsonl)
+TEST(Lab1_Corpus, all_documents_valid_and_unique) {
+    tool::init_console();                                     // рабочая папка = lab1
+    if (!tool::exists(&quot;data/ruwiki_text.jsonl&quot;)) GTEST_SKIP() &lt;&lt; &quot;нет корпуса в lab1/data&quot;;
+    std::set&lt;std::string&gt; ids;
+    size_t n = 0, empty = 0, noText = 0, dup = 0;
+    each_doc([&amp;](const Doc &amp;d) {
+        n++;
+        if (d.title.empty() || d.url.rfind(&quot;https://&quot;, 0) != 0) empty++;
+        if (d.text.empty()) noText++;     // статьи только из шаблонов (таблицы станций): после очистки пусто
+        if (!ids.insert(d.source + &quot;:&quot; + d.id).second) dup++;
+        return true;
+    });
+    EXPECT_EQ(n, 65509u) &lt;&lt; &quot;число документов корпуса&quot;;
+    EXPECT_EQ(empty, 0u) &lt;&lt; &quot;документы без заголовка / URL&quot;;
+    EXPECT_LE(noText, n / 1000) &lt;&lt; &quot;пустых после очистки документов не больше 0,1%&quot;;
+    EXPECT_EQ(dup, 0u) &lt;&lt; &quot;повторяющиеся id&quot;;
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

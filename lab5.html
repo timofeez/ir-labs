@@ -19,7 +19,7 @@
 <li><a href="#6">6. Причины расхождения с законом Ципфа</a></li>
 <li><a href="#7">7. Зачем это поисковику</a></li>
 <li><a href="#8">8. Тесты</a></li>
-<li><a href="#9-lab5py">9. Утилита lab5.py</a></li>
+<li><a href="#9-lab5exe-c">9. Утилита lab5.exe (C++)</a></li>
 <li><a href="#10">10. Вопросы на защите</a></li>
 <li><a href="#11">11. Полные исходники</a></li>
 </ul>
@@ -332,12 +332,12 @@ $\log f$ по $\log(r+\rho)$. Перебираем ρ на сетке и для 
     CHECK_EQ(freq[ids[0]], 100); CHECK_EQ(ids[5], 2);
 }</code></pre></div>
 
-<h2 id="9-lab5py">9. Утилита <code>lab5.py</code><a class="headerlink" href="#9-lab5py" title="Permanent link">#</a></h2>
-<pre><code>python lab5.py top 20       — топ термов: f, f·r, C/r
-python lab5.py word вагон   — ранг 632, частота 6 055, предсказания Ципфа и Мандельброта
-python lab5.py summary      — токены, термы, hapax, доля топ-100, константы
-python lab5.py ranks        — факт / Ципф / Мандельброт на рангах 1, 10, 100, …
-python lab5.py plot         — график в log-log шкале (matplotlib)
+<h2 id="9-lab5exe-c">9. Утилита <code>lab5.exe</code> (C++)<a class="headerlink" href="#9-lab5exe-c" title="Permanent link">#</a></h2>
+<pre><code>lab_boolean\bin\lab5.exe top 20       — топ термов: f, f·r, C/r
+lab_boolean\bin\lab5.exe word вагон   — ранг 632, частота 6 055, предсказания Ципфа и Мандельброта
+lab_boolean\bin\lab5.exe summary      — токены, термы, hapax, доля топ-100, константы
+lab_boolean\bin\lab5.exe ranks        — факт / Ципф / Мандельброт на рангах 1, 10, 100, …
+lab_boolean\bin\lab5.exe plot         — график в log-log шкале прямо в консоли
 </code></pre>
 <h2 id="10">10. Вопросы на защите<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
 <ul>
@@ -606,119 +606,157 @@ if __name__ == &#x27;__main__&#x27;:
               open(os.path.join(OUT, &#x27;zipf_results.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;), ensure_ascii=False, indent=1)
     print(&#x27;ok&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/lab5.py <span class="ln">(114 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР5 «Закон Ципфа» — утилита для проверок и демонстрации.
+<details class="file"><summary>lab_boolean/tools/lab5.cpp <span class="ln">(152 строк)</span></summary><pre><code class="language-cpp">// ЛР5 «Закон Ципфа» — утилита для проверок и демонстрации.
+//
+//   lab5              — меню
+//   lab5 top 20       — самые частые термы: ранг, частота, f·r, предсказание Ципфа C/r
+//   lab5 word вагон   — ранг и частота слова, сравнение с законом
+//   lab5 summary      — токенов, термов, hapax legomena, доля топ-100, константы
+//   lab5 ranks        — таблица по рангам 1, 10, 100, ... (Ципф и Мандельброт)
+//   lab5 plot         — график частота–ранг в логарифмическом масштабе (в консоли)
+//   lab5 recount      — пересчитать частоты по корпусу (termfreq.exe)
+#include &quot;../src/common.h&quot;
+#include &quot;../src/stem.h&quot;
+#include &quot;tool.h&quot;
+#include &lt;cmath&gt;
 
-  python lab5.py              — меню
-  python lab5.py top 20       — самые частые термы: ранг, частота, f·r, предсказание Ципфа C/r
-  python lab5.py word вагон   — ранг и частота слова, сравнение с законом
-  python lab5.py summary      — токенов, термов, hapax legomena, доля топ-100, константы
-  python lab5.py ranks        — таблица по рангам 1, 10, 100, ... (Ципф и Мандельброт)
-  python lab5.py plot         — построить график (matplotlib) и открыть
-  python lab5.py recount      — пересчитать частоты по корпусу (termfreq.exe)
-&quot;&quot;&quot;
-import json, os
-from labtool import HERE, DATA, data, fmt, main, run, table
+struct Row { unsigned long long f; std::string t; };
+static std::vector&lt;Row&gt; g_rows;
 
-_cache = {}
+static bool load() {
+    if (!g_rows.empty()) return true;
+    tool::each_line(tool::path(&quot;data/freq.tsv&quot;), [](std::string &amp;l) {
+        size_t a = l.find(&#x27;\t&#x27;), b = l.find(&#x27;\t&#x27;, a + 1);
+        if (b != std::string::npos) g_rows.push_back({strtoull(l.c_str() + a + 1, nullptr, 10), l.substr(b + 1)});
+        return true;
+    });
+    if (g_rows.empty()) printf(&quot;нет data/freq.tsv — выполните: lab5 recount\n&quot;);
+    return !g_rows.empty();
+}
 
+// МНК для прямой y = a + b·x; возвращает среднеквадратичную ошибку.
+static double linreg(const std::vector&lt;double&gt; &amp;x, const std::vector&lt;double&gt; &amp;y, double &amp;a, double &amp;b) {
+    double n = (double)x.size(), sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (size_t i = 0; i &lt; x.size(); i++) { sx += x[i]; sy += y[i]; sxx += x[i] * x[i]; sxy += x[i] * y[i]; }
+    b = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+    a = (sy - b * sx) / n;
+    double e = 0;
+    for (size_t i = 0; i &lt; x.size(); i++) { double d = a + b * x[i] - y[i]; e += d * d; }
+    return e / n;
+}
 
-def freqs():
-    if &#x27;f&#x27; not in _cache:
-        rows = []
-        with open(data(&#x27;freq.tsv&#x27;), encoding=&#x27;utf-8&#x27;) as f:
-            for line in f:
-                r, c, w = line.rstrip(&#x27;\n&#x27;).split(&#x27;\t&#x27;)
-                rows.append((int(r), int(c), w))
-        _cache[&#x27;f&#x27;] = rows
-    return _cache[&#x27;f&#x27;]
+// Закон Мандельброта f = P / (r + ρ)^B: перебор ρ, для каждого — МНК в логарифмах.
+// Точки берутся равномерно по log r, хвост с частотами 1–2 не учитывается.
+static void mandelbrot(double &amp;P, double &amp;rho, double &amp;B) {
+    size_t last = 0;
+    for (size_t i = 0; i &lt; g_rows.size(); i++) if (g_rows[i].f &gt;= 3) last = i + 1;
+    std::vector&lt;size_t&gt; ranks;
+    for (int k = 0; k &lt; 400; k++) {
+        size_t r = (size_t)std::lround(std::exp(std::log((double)last) * k / 399.0));
+        if (ranks.empty() || ranks.back() != r) ranks.push_back(r);
+    }
+    double best = 1e300;
+    for (int i = 0; i &lt;= 400; i++) {
+        double rh = i / 2.0, a, b;
+        std::vector&lt;double&gt; xs, ys;
+        for (size_t r : ranks) { xs.push_back(std::log(r + rh)); ys.push_back(std::log((double)g_rows[r - 1].f)); }
+        double e = linreg(xs, ys, a, b);
+        if (e &lt; best) { best = e; P = std::exp(a); rho = rh; B = -b; }
+    }
+}
 
+static void cmd_top(const std::string &amp;arg) {
+    if (!load()) return;
+    size_t n = arg.empty() ? 20 : (size_t)atoi(arg.c_str());
+    double C = (double)g_rows[0].f;
+    printf(&quot;  %s  %s %s %s %s\n&quot;, tool::lpad(&quot;ранг&quot;, 5).c_str(), tool::pad(&quot;терм&quot;, 20).c_str(), tool::lpad(&quot;частота&quot;, 12).c_str(), tool::lpad(&quot;f·r&quot;, 12).c_str(), tool::lpad(&quot;Ципф C/r&quot;, 12).c_str());
+    for (size_t r = 1; r &lt;= n &amp;&amp; r &lt;= g_rows.size(); r++)
+        printf(&quot;  %5zu  %s %12s %12s %12s\n&quot;, r, tool::pad(g_rows[r - 1].t, 20).c_str(), tool::num(g_rows[r - 1].f).c_str(),
+               tool::num(g_rows[r - 1].f * r).c_str(), tool::num((unsigned long long)(C / r)).c_str());
+    printf(&quot;\nПо закону Ципфа f·r ≈ const (= C, частота первого терма).\n&quot;);
+}
 
-def mandelbrot():
-    p = os.path.join(HERE, &#x27;report_zipf&#x27;, &#x27;zipf_results.json&#x27;)
-    if os.path.exists(p):
-        d = json.load(open(p, encoding=&#x27;utf-8&#x27;))
-        m = d.get(&#x27;mandelbrot&#x27;) or {}
-        if all(k in m for k in (&#x27;P&#x27;, &#x27;rho&#x27;, &#x27;B&#x27;)):
-            return m[&#x27;P&#x27;], m[&#x27;rho&#x27;], m[&#x27;B&#x27;]
-    return 8954818, 16.5, 1.139
+static void cmd_word(const std::string &amp;arg) {
+    if (!load()) return;
+    std::string w = arg.empty() ? &quot;вагон&quot; : arg;
+    char tok[MAX_TERM_BYTES + 4]; size_t pos = 0; int chars;
+    int len = next_token(w.data(), w.size(), pos, tok, chars);
+    std::string t(tok, len &gt; 0 ? len : 0);
+    for (size_t i = 0; i &lt; g_rows.size(); i++)
+        if (g_rows[i].t == t) {
+            double C = (double)g_rows[0].f; size_t r = i + 1;
+            printf(&quot;  терм «%s»: ранг %s, частота %s\n  Ципф предсказывает C/r = %.0f (отношение %.2f)\n&quot;,
+                   t.c_str(), tool::num(r).c_str(), tool::num(g_rows[i].f).c_str(), C / r, g_rows[i].f / (C / r));
+            return;
+        }
+    printf(&quot;  терм «%s» не встречается в корпусе\n&quot;, t.c_str());
+}
 
+static void cmd_summary(const std::string &amp;) {
+    if (!load()) return;
+    unsigned long long tokens = 0, top100 = 0; size_t hapax = 0;
+    for (size_t i = 0; i &lt; g_rows.size(); i++) {
+        tokens += g_rows[i].f;
+        if (i &lt; 100) top100 += g_rows[i].f;
+        if (g_rows[i].f == 1) hapax++;
+    }
+    double P, rho, B; mandelbrot(P, rho, B);
+    printf(&quot;  токенов (вхождений)        %s\n&quot;, tool::num(tokens).c_str());
+    printf(&quot;  различных термов           %s\n&quot;, tool::num(g_rows.size()).c_str());
+    printf(&quot;  hapax legomena (частота 1) %s (%.1f%% словаря)\n&quot;, tool::num(hapax).c_str(), 100.0 * hapax / g_rows.size());
+    printf(&quot;  доля 100 самых частых      %.1f%% всех вхождений\n&quot;, 100.0 * top100 / tokens);
+    printf(&quot;  константа Ципфа C = f(1)   %s\n&quot;, tool::num(g_rows[0].f).c_str());
+    printf(&quot;  Мандельброт: P = %.0f, ρ = %.1f, B = %.3f\n&quot;, P, rho, B);
+}
 
-def cmd_top(arg):
-    n = int(arg or 20)
-    f = freqs(); C = f[0][1]
-    table([(r, w, fmt(c), fmt(c * r), fmt(round(C / r))) for r, c, w in f[:n]],
-          (&#x27;ранг&#x27;, &#x27;терм&#x27;, &#x27;частота f&#x27;, &#x27;f·r&#x27;, &#x27;Ципф C/r&#x27;))
+static void cmd_ranks(const std::string &amp;) {
+    if (!load()) return;
+    double C = (double)g_rows[0].f, P, rho, B; mandelbrot(P, rho, B);
+    printf(&quot;  %s  %s %s %s %s\n&quot;, tool::lpad(&quot;ранг&quot;, 9).c_str(), tool::pad(&quot;терм&quot;, 18).c_str(), tool::lpad(&quot;частота&quot;, 12).c_str(), tool::lpad(&quot;Ципф&quot;, 12).c_str(), tool::lpad(&quot;Мандельброт&quot;, 12).c_str());
+    for (size_t r = 1; r &lt;= g_rows.size(); r *= 10)
+        printf(&quot;  %s  %s %s %12.0f %12.0f\n&quot;, tool::lpad(tool::num(r), 9).c_str(), tool::pad(g_rows[r - 1].t, 18).c_str(),
+               tool::num(g_rows[r - 1].f).c_str(), C / r, P / std::pow(r + rho, B));
+    printf(&quot;\nНа малых рангах Ципф завышает частоту; Мандельброт с поправкой ρ ближе к данным.\n&quot;);
+}
 
+// График log f от log r символами: * — данные, + — Ципф C/r.
+static void cmd_plot(const std::string &amp;) {
+    if (!load()) return;
+    const int W = 70, H = 22;
+    double lr = std::log10((double)g_rows.size()), lf = std::log10((double)g_rows[0].f);
+    std::vector&lt;std::string&gt; g(H, std::string(W, &#x27; &#x27;));
+    for (int x = 0; x &lt; W; x++) {
+        double r = std::pow(10.0, lr * x / (W - 1));
+        size_t ri = (size_t)r; if (ri &lt; 1) ri = 1; if (ri &gt; g_rows.size()) ri = g_rows.size();
+        int yd = (int)std::lround((H - 1) * (1 - std::log10((double)g_rows[ri - 1].f) / lf));
+        double zipf = g_rows[0].f / r;
+        int yz = zipf &gt;= 1 ? (int)std::lround((H - 1) * (1 - std::log10(zipf) / lf)) : -1;
+        if (yz &gt;= 0 &amp;&amp; yz &lt; H) g[yz][x] = &#x27;+&#x27;;
+        if (yd &gt;= 0 &amp;&amp; yd &lt; H) g[yd][x] = &#x27;*&#x27;;
+    }
+    printf(&quot;  log f\n&quot;);
+    for (auto &amp;l : g) printf(&quot;  |%s\n&quot;, l.c_str());
+    printf(&quot;  +%s log r\n  * — частоты корпуса, + — закон Ципфа C/r (оси логарифмические)\n&quot;, std::string(W, &#x27;-&#x27;).c_str());
+}
 
-def cmd_word(arg):
-    w = (arg or input(&#x27;слово: &#x27;)).strip().lower()
-    f = freqs(); C = f[0][1]; P, rho, B = mandelbrot()
-    for r, c, t in f:
-        if t == w:
-            print(f&#x27;«{w}»: ранг {fmt(r)}, частота {fmt(c)}&#x27;)
-            print(f&#x27;  Ципф C/r = {fmt(round(C / r))}   Мандельброт P/(r+ρ)^B = {fmt(round(P / (r + rho) ** B))}&#x27;)
-            return
-    print(f&#x27;«{w}» в корпусе нет (сравнение идёт по нормализованной форме: нижний регистр, ё -&gt; е)&#x27;)
+static void cmd_recount(const std::string &amp;) {
+    std::string cmd = tool::quote(tool::path(&quot;bin/termfreq.exe&quot;)) + &quot; &quot; + tool::quote(tool::path(&quot;data/corpus.tsv&quot;)) + &quot; &quot; +
+                      tool::quote(tool::path(&quot;data/freq.tsv&quot;));
+    printf(&quot;%s&quot;, tool::run(&quot;\&quot;&quot; + cmd + &quot;\&quot;&quot;).c_str());
+    g_rows.clear();
+}
 
-
-def cmd_summary(_):
-    f = freqs()
-    total = sum(c for _, c, _ in f); hapax = sum(1 for _, c, _ in f if c == 1)
-    top100 = sum(c for _, c, _ in f[:100])
-    P, rho, B = mandelbrot()
-    table([(&#x27;токенов (сумма частот)&#x27;, fmt(total)), (&#x27;различных термов&#x27;, fmt(len(f))),
-           (&#x27;hapax legomena (встречаются 1 раз)&#x27;, f&#x27;{fmt(hapax)} ({100 * hapax / len(f):.1f}% словаря)&#x27;),
-           (&#x27;доля 100 самых частых термов&#x27;, f&#x27;{100 * top100 / total:.1f}% всех токенов&#x27;),
-           (&#x27;C = f(1) для закона Ципфа&#x27;, fmt(f[0][1])),
-           (&#x27;Мандельброт: P, ρ, B&#x27;, f&#x27;{fmt(round(P))}, {rho}, {B}&#x27;)])
-
-
-def cmd_ranks(_):
-    f = freqs(); C = f[0][1]; P, rho, B = mandelbrot()
-    rows = []
-    r = 1
-    while r &lt;= len(f):
-        _, c, w = f[r - 1]
-        rows.append((fmt(r), w, fmt(c), fmt(round(C / r)), fmt(round(P / (r + rho) ** B))))
-        r *= 10
-    table(rows, (&#x27;ранг&#x27;, &#x27;терм&#x27;, &#x27;факт&#x27;, &#x27;Ципф&#x27;, &#x27;Мандельброт&#x27;))
-    print(&#x27;\nЦипф завышает начало (служебные слова двух языков) и хвост (частоты целые, корпус конечен).&#x27;)
-
-
-def cmd_plot(_):
-    import matplotlib
-    import matplotlib.pyplot as plt
-    f = freqs(); C = f[0][1]; P, rho, B = mandelbrot()
-    r = [x[0] for x in f]; c = [x[1] for x in f]
-    plt.figure(figsize=(8, 5.5))
-    plt.loglog(r, c, &#x27;.&#x27;, ms=2, label=&#x27;корпус&#x27;)
-    plt.loglog(r, [C / x for x in r], label=&#x27;Ципф C/r&#x27;)
-    plt.loglog(r, [P / (x + rho) ** B for x in r], label=&#x27;Мандельброт&#x27;)
-    plt.xlabel(&#x27;ранг r&#x27;); plt.ylabel(&#x27;частота f&#x27;); plt.legend(); plt.grid(alpha=.3)
-    out = os.path.join(DATA, &#x27;zipf_plot.png&#x27;)
-    plt.savefig(out, dpi=120)
-    print(&#x27;график сохранён:&#x27;, out)
-    try:
-        os.startfile(out)
-    except Exception:
-        plt.show()
-
-
-def cmd_recount(_):
-    out, err = run(&#x27;termfreq&#x27;, [data(&#x27;corpus.tsv&#x27;), os.path.join(DATA, &#x27;freq.tsv&#x27;)])
-    _cache.clear()
-    print(out or err)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    main(&#x27;ЛР5 «Закон Ципфа»&#x27;, [
-        (&#x27;top&#x27;, cmd_top, &#x27;самые частые термы: f, f·r и предсказание Ципфа&#x27;, &#x27;сколько (Enter — 20)&#x27;),
-        (&#x27;word&#x27;, cmd_word, &#x27;ранг и частота слова&#x27;, &#x27;слово&#x27;),
-        (&#x27;summary&#x27;, cmd_summary, &#x27;сводка: токены, термы, hapax, константы&#x27;, None),
-        (&#x27;ranks&#x27;, cmd_ranks, &#x27;факт / Ципф / Мандельброт на рангах 1, 10, 100, ...&#x27;, None),
-        (&#x27;plot&#x27;, cmd_plot, &#x27;построить график в log-log шкале&#x27;, None),
-        (&#x27;recount&#x27;, cmd_recount, &#x27;пересчитать частоты по корпусу (termfreq.exe)&#x27;, None),
-    ])
+int main(int argc, char **argv) {
+    tool::init_console();
+    return tool::main_loop(&quot;ЛР5 «Закон Ципфа»&quot;, {
+        {&quot;top&quot;, &quot;самые частые термы&quot;, &quot;сколько (Enter — 20)&quot;, cmd_top},
+        {&quot;word&quot;, &quot;ранг и частота слова&quot;, &quot;слово&quot;, cmd_word},
+        {&quot;summary&quot;, &quot;сводка: токены, термы, hapax, константы&quot;, &quot;&quot;, cmd_summary},
+        {&quot;ranks&quot;, &quot;Ципф и Мандельброт по рангам 1, 10, 100...&quot;, &quot;&quot;, cmd_ranks},
+        {&quot;plot&quot;, &quot;график частота–ранг (log-log)&quot;, &quot;&quot;, cmd_plot},
+        {&quot;recount&quot;, &quot;пересчитать частоты (termfreq.exe)&quot;, &quot;&quot;, cmd_recount},
+    }, tool::args(argc, argv));
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

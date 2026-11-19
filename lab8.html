@@ -23,7 +23,7 @@
 <li><a href="#5-">5. Веб-сервис</a></li>
 <li><a href="#6">6. Скорость</a></li>
 <li><a href="#7">7. Как проверялась корректность</a></li>
-<li><a href="#8-lab8py">8. Утилита lab8.py</a></li>
+<li><a href="#8-lab8exe-c">8. Утилита lab8.exe (C++)</a></li>
 <li><a href="#9">9. Вопросы на защите</a></li>
 <li><a href="#10">10. Полные исходники</a></li>
 </ul>
@@ -485,12 +485,12 @@ if __name__ == &#x27;__main__&#x27;:
     CHECK_QUERY(idx, &quot;!&quot;, 0);
 }</code></pre></div>
 
-<h2 id="8-lab8py">8. Утилита <code>lab8.py</code><a class="headerlink" href="#8-lab8py" title="Permanent link">#</a></h2>
-<pre><code>python lab8.py search &quot;(электровоз || тепловоз) колея&quot;   — выдача с листанием по 10
-python lab8.py stem &quot;машинисту поезда&quot;                    — поиск по индексу основ
-python lab8.py explain &quot;ноги || красный автомобиль&quot;       — лексемы, дерево, результат
-python lab8.py bench    — скорость разных типов запросов
-python lab8.py web      — веб-сервис на http://localhost:8080
+<h2 id="8-lab8exe-c">8. Утилита <code>lab8.exe</code> (C++)<a class="headerlink" href="#8-lab8exe-c" title="Permanent link">#</a></h2>
+<pre><code>lab_boolean\bin\lab8.exe search &quot;(электровоз || тепловоз) колея&quot;   — выдача с листанием по 10
+lab_boolean\bin\lab8.exe stem &quot;машинисту поезда&quot;                    — поиск по индексу основ
+lab_boolean\bin\lab8.exe explain &quot;ноги || красный автомобиль&quot;       — лексемы, дерево, результат
+lab_boolean\bin\lab8.exe bench    — скорость разных типов запросов
+python web\server.py 8080      — веб-сервис на http://localhost:8080 (ЛР8)
 </code></pre>
 <h2 id="9">9. Вопросы на защите<a class="headerlink" href="#9" title="Permanent link">#</a></h2>
 <ul>
@@ -780,7 +780,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 </code></pre></details>
-<details class="file"><summary>lab_boolean/tests/bench.py <span class="ln">(64 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Замер скорости поиска (для отчёта).
+<details class="file"><summary>lab_boolean/analysis/bench.py <span class="ln">(64 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Замер скорости поиска (для отчёта).
 
 1) Запросы разных типов: каждый выполняется 50 раз, берётся медиана времени (TIME_US из search.exe —
    время разбора и вычисления запроса без вывода).
@@ -844,132 +844,121 @@ if __name__ == &#x27;__main__&#x27;:
           f&#x27;медиана {statistics.median(us):.0f} мкс, максимум {max(us):.0f} мкс; &#x27;
           f&#x27;весь прогон с запуском процесса и загрузкой индекса — {wall:.2f} с&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/lab8.py <span class="ln">(127 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР8 «Булев поиск» — утилита для проверок и демонстрации.
+<details class="file"><summary>lab_boolean/tools/lab8.cpp <span class="ln">(116 строк)</span></summary><pre><code class="language-cpp">// ЛР8 «Булев поиск» — утилита для проверок и демонстрации.
+//
+//   lab8                                         — меню
+//   lab8 search (электровоз || тепловоз) колея   — поиск (без запроса — интерактивно, с листанием)
+//   lab8 stem машинисту поезда                   — то же по индексу основ (ЛР4)
+//   lab8 explain ноги || красный автомобиль       — как разбирается запрос: лексемы и дерево
+//   lab8 bench                                   — скорость разных типов запросов
+// Синтаксис: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
+#include &quot;engine.h&quot;
 
-  python lab8.py                                   — меню
-  python lab8.py search &quot;(электровоз || тепловоз) колея&quot;   — поиск (без аргумента — интерактивно)
-  python lab8.py stem &quot;машинисту поезда&quot;           — то же по индексу основ (ЛР4)
-  python lab8.py explain &quot;ноги || красный автомобиль&quot;    — как разбирается запрос (лексемы и дерево)
-  python lab8.py bench                             — скорость разных типов запросов
-  python lab8.py web                               — веб-сервис на http://localhost:8080
-Синтаксис: пробел или &amp;&amp; — И, || — ИЛИ, ! — НЕ, скобки.
-&quot;&quot;&quot;
-import os, re, subprocess, sys, time
-from labtool import HERE, fmt, main, repl, search, table
+static Index g_plain, g_stem;
+static bool g_p = false, g_s = false;
+static Index *get(bool stem) {
+    if (stem) { if (!g_s) g_s = eng::load(g_stem, true); return g_s ? &amp;g_stem : nullptr; }
+    if (!g_p) g_p = eng::load(g_plain, false);
+    return g_p ? &amp;g_plain : nullptr;
+}
 
+static void one(const Index &amp;idx, const std::string &amp;q) {
+    double us;
+    auto r = eng::query(idx, q, &amp;us);
+    printf(&quot;Запрос: %s\nНайдено документов: %s за %.0f мкс\n&quot;, q.c_str(), tool::num(r.size()).c_str(), us);
+    size_t from = 0;
+    for (;;) {
+        eng::print_results(idx, r, from, 10);
+        from += 10;
+        if (from &gt;= r.size()) break;
+        std::string s = tool::ask(&quot;Enter — следующие 10, q — новый запрос&quot;);
+        if (!s.empty()) break;
+    }
+}
 
-def show(q, index=&#x27;index.bin&#x27;):
-    page = 0
-    while True:
-        total, us, docs = search(q, index, n=10, offset=page * 10)
-        print(f&#x27;  найдено {fmt(total)} документов за {us} мкс&#x27; + (f&#x27;, показаны {page * 10 + 1}–{page * 10 + len(docs)}&#x27; if docs else &#x27;&#x27;))
-        for k, (title, url) in enumerate(docs, page * 10 + 1):
-            print(f&#x27;  {k:4}. {title}\n        {url}&#x27;)
-        if (page + 1) * 10 &gt;= total or not sys.stdin.isatty():
-            return
-        try:
-            if input(&#x27;  [Enter — следующие 10, любая буква — новый запрос] &#x27;).strip():
-                return
-        except (EOFError, KeyboardInterrupt):
-            return
-        page += 1
+static void search_loop(bool stem, const std::string &amp;arg) {
+    Index *idx = get(stem);
+    if (!idx) return;
+    if (!arg.empty()) {                                       // запрос из командной строки: первые 10 результатов
+        double us; auto r = eng::query(*idx, arg, &amp;us);
+        printf(&quot;Запрос: %s\nНайдено документов: %s за %.0f мкс\n&quot;, arg.c_str(), tool::num(r.size()).c_str(), us);
+        eng::print_results(*idx, r, 0, 10);
+        return;
+    }
+    printf(&quot;Индекс %s: %s документов, %s термов. Пустая строка — выход.\n&quot;, stem ? &quot;основ&quot; : &quot;словоформ&quot;,
+           tool::num(idx-&gt;nDocs).c_str(), tool::num(idx-&gt;nTerms).c_str());
+    std::string q;
+    while (true) {
+        printf(&quot;\nзапрос&gt; &quot;); fflush(stdout);
+        if (!tool::read_line(q) || q.empty()) break;
+        one(*idx, q);
+    }
+}
 
+static void print_tree(const Index &amp;idx, const Vec&lt;Node&gt; &amp;n, int v, int depth) {
+    static const char *nm[] = {&quot;TERM&quot;, &quot;AND&quot;, &quot;OR&quot;, &quot;NOT&quot;};
+    const Node &amp;x = n[v];
+    printf(&quot;  %*s%s&quot;, depth * 4, &quot;&quot;, nm[x.type]);
+    if (x.type == N_TERM) {
+        if (x.entry &gt;= 0) printf(&quot;  «%s» (df=%s)&quot;, eng::term_at(idx, x.entry).c_str(), tool::num(eng::df_at(idx, x.entry)).c_str());
+        else printf(&quot;  (нет в словаре — пустой список)&quot;);
+    }
+    Vec&lt;uint32_t&gt; r; eval(idx, n, v, r);
+    printf(&quot;   -&gt; %s док.\n&quot;, tool::num(r.n).c_str());
+    r.release();
+    if (x.l &gt;= 0) print_tree(idx, n, x.l, depth + 1);
+    if (x.r &gt;= 0) print_tree(idx, n, x.r, depth + 1);
+}
 
-def cmd_search(arg, index=&#x27;index.bin&#x27;):
-    if arg:
-        show(arg, index)
-    else:
-        repl(&#x27;запрос&gt; &#x27;, lambda s: show(s, index))
+static void cmd_explain(const std::string &amp;arg) {
+    Index *idx = get(false);
+    if (!idx) return;
+    std::string q = arg.empty() ? &quot;ноги || красный автомобиль&quot; : arg;
+    Vec&lt;QTok&gt; toks; lex(*idx, q.data(), q.size(), toks);
+    static const char *tn[] = {&quot;TERM&quot;, &quot;AND&quot;, &quot;OR&quot;, &quot;NOT&quot;, &quot;(&quot;, &quot;)&quot;};
+    printf(&quot;Запрос: %s\n\n1) Лексер — лексемы:\n  &quot;, q.c_str());
+    for (size_t i = 0; i &lt; toks.n; i++) {
+        printf(&quot;%s&quot;, tn[toks[i].type]);
+        if (toks[i].type == T_TERM) printf(&quot;[%s]&quot;, toks[i].entry &gt;= 0 ? eng::term_at(*idx, toks[i].entry).c_str() : &quot;?&quot;);
+        printf(&quot; &quot;);
+    }
+    printf(&quot;\n  (пробел между словами превращается в AND)\n\n2) Парсер (рекурсивный спуск) — дерево и размер результата каждого узла:\n&quot;);
+    Parser ps(toks);
+    int root = ps.parse();
+    if (root &lt; 0) printf(&quot;  пустой запрос\n&quot;); else print_tree(*idx, ps.nodes, root, 0);
+    printf(&quot;\n3) Вычисление снизу вверх: AND — пересечение, OR — объединение, NOT — дополнение\n&quot;
+           &quot;   (A AND NOT B — разность), всё над отсортированными списками за линейное время.\n&quot;);
+    ps.nodes.release(); toks.release();
+}
 
+static void cmd_bench(const std::string &amp;) {
+    Index *idx = get(false);
+    if (!idx) return;
+    struct Q { const char *kind, *q; };
+    static const Q qs[] = {
+        {&quot;один терм, частый&quot;, &quot;железная&quot;}, {&quot;один терм, редкий&quot;, &quot;электровоз&quot;},
+        {&quot;И двух частых&quot;, &quot;железная дорога&quot;}, {&quot;ИЛИ&quot;, &quot;электровоз || тепловоз&quot;},
+        {&quot;НЕ&quot;, &quot;!поезд&quot;}, {&quot;И НЕ&quot;, &quot;поезд !электричка&quot;},
+        {&quot;сложный&quot;, &quot;(электровоз || тепловоз) &amp;&amp; (вл80 || чс2) !музей&quot;},
+    };
+    printf(&quot;  %s %s %s %s\n&quot;, tool::pad(&quot;тип&quot;, 22).c_str(), tool::pad(&quot;запрос&quot;, 50).c_str(), tool::lpad(&quot;найдено&quot;, 10).c_str(), tool::lpad(&quot;мкс&quot;, 10).c_str());
+    for (auto &amp;x : qs) {
+        double best = 1e18, us; size_t n = 0;
+        for (int k = 0; k &lt; 20; k++) { auto r = eng::query(*idx, x.q, &amp;us); n = r.size(); if (us &lt; best) best = us; }
+        printf(&quot;  %s %s %10s %10.0f\n&quot;, tool::pad(x.kind, 22).c_str(), tool::pad(x.q, 50).c_str(), tool::num(n).c_str(), best);
+    }
+    printf(&quot;\nЛучшее время из 20 запусков. Время пропорционально длинам списков (слияние за линейное время).\n&quot;);
+}
 
-def cmd_stem(arg):
-    cmd_search(arg, &#x27;index_stem.bin&#x27;)
-
-
-TOK = re.compile(r&#x27;\s*(\(|\)|!|&amp;&amp;?|\|\|?|[^\s()!&amp;|]+)&#x27;)
-
-
-def cmd_explain(arg):
-    q = arg or input(&#x27;запрос: &#x27;)
-    toks = [t for t in TOK.findall(q) if t]
-    names = {&#x27;(&#x27;: &#x27;LP&#x27;, &#x27;)&#x27;: &#x27;RP&#x27;, &#x27;!&#x27;: &#x27;NOT&#x27;, &#x27;&amp;&#x27;: &#x27;AND&#x27;, &#x27;&amp;&amp;&#x27;: &#x27;AND&#x27;, &#x27;|&#x27;: &#x27;OR&#x27;, &#x27;||&#x27;: &#x27;OR&#x27;}
-    print(&#x27;лексемы: &#x27; + &#x27;  &#x27;.join(names.get(t, f&#x27;TERM({t})&#x27;) for t in toks))
-    pos = [0]
-
-    def at(*v):
-        return pos[0] &lt; len(toks) and names.get(toks[pos[0]], &#x27;TERM&#x27;) in v
-
-    def unary():
-        if at(&#x27;NOT&#x27;):
-            pos[0] += 1; c = unary(); return (&#x27;НЕ&#x27;, c) if c else None
-        if at(&#x27;LP&#x27;):
-            pos[0] += 1; e = expr()
-            if at(&#x27;RP&#x27;): pos[0] += 1
-            return e
-        if at(&#x27;TERM&#x27;):
-            t = toks[pos[0]]; pos[0] += 1; return t
-        return None
-
-    def conj():
-        left = unary()
-        while True:
-            if at(&#x27;AND&#x27;):
-                pos[0] += 1; continue
-            if at(&#x27;TERM&#x27;, &#x27;NOT&#x27;, &#x27;LP&#x27;):
-                r = unary()
-                if r: left = (&#x27;И&#x27;, left, r) if left else r
-                continue
-            return left
-
-    def expr():
-        left = conj()
-        while at(&#x27;OR&#x27;):
-            pos[0] += 1; r = conj()
-            if r: left = (&#x27;ИЛИ&#x27;, left, r) if left else r
-        return left
-
-    tree = expr()
-
-    def draw(n, ind=&#x27;&#x27;):
-        if isinstance(n, tuple):
-            print(ind + n[0]); [draw(c, ind + &#x27;   &#x27;) for c in n[1:]]
-        else:
-            print(ind + str(n))
-    print(&#x27;дерево (приоритет: НЕ &gt; И &gt; ИЛИ):&#x27;)
-    draw(tree, &#x27;  &#x27;)
-    total, us, _ = search(q, n=1)
-    print(f&#x27;результат: {fmt(total)} документов, {us} мкс&#x27;)
-
-
-def cmd_bench(_):
-    qs = [(&#x27;редкий терм&#x27;, &#x27;пельгорского&#x27;), (&#x27;частый терм&#x27;, &#x27;железная&#x27;), (&#x27;И из 2&#x27;, &#x27;узкоколейная торфопредприятия&#x27;),
-          (&#x27;ИЛИ из 6&#x27;, &#x27;вл80 || вл60 || вл85 || чс2 || чс4 || эп1&#x27;), (&#x27;И + НЕ&#x27;, &#x27;паровоз !англия&#x27;),
-          (&#x27;НЕ частого&#x27;, &#x27;!the&#x27;), (&#x27;много НЕ&#x27;, &#x27;!the !of !and !in !a&#x27;),
-          (&#x27;скобки&#x27;, &#x27;((электровоз || тепловоз) &amp;&amp; (колея || ширина)) !узкоколейная&#x27;)]
-    rows = []
-    for name, q in qs:
-        best = min(search(q, n=1)[1] for _ in range(5))
-        total = search(q, n=1)[0]
-        rows.append((name, q[:40], fmt(total), best))
-    table(rows, (&#x27;тип&#x27;, &#x27;запрос&#x27;, &#x27;найдено&#x27;, &#x27;мкс (лучшее из 5)&#x27;))
-
-
-def cmd_web(_):
-    print(&#x27;Веб-сервис: http://localhost:8080   (Ctrl+C — остановить)&#x27;)
-    try:
-        subprocess.run([sys.executable, os.path.join(HERE, &#x27;web&#x27;, &#x27;server.py&#x27;), &#x27;8080&#x27;], cwd=HERE)
-    except KeyboardInterrupt:
-        pass
-
-
-if __name__ == &#x27;__main__&#x27;:
-    main(&#x27;ЛР8 «Булев поиск»&#x27;, [
-        (&#x27;search&#x27;, cmd_search, &#x27;поиск (интерактивно, листание по 10)&#x27;, None),
-        (&#x27;stem&#x27;, cmd_stem, &#x27;поиск по индексу основ (без учёта словоформ)&#x27;, None),
-        (&#x27;explain&#x27;, cmd_explain, &#x27;разбор запроса: лексемы, дерево, результат&#x27;, &#x27;запрос&#x27;),
-        (&#x27;bench&#x27;, cmd_bench, &#x27;скорость запросов разных типов&#x27;, None),
-        (&#x27;web&#x27;, cmd_web, &#x27;запустить веб-сервис (localhost:8080)&#x27;, None),
-    ])
+int main(int argc, char **argv) {
+    tool::init_console();
+    return tool::main_loop(&quot;ЛР8 «Булев поиск»&quot;, {
+        {&quot;search&quot;, &quot;поиск (Enter — интерактивный режим)&quot;, &quot;запрос (Enter — интерактивно)&quot;, [](const std::string &amp;a) { search_loop(false, a); }},
+        {&quot;stem&quot;, &quot;поиск по индексу основ (со стеммингом)&quot;, &quot;запрос (Enter — интерактивно)&quot;, [](const std::string &amp;a) { search_loop(true, a); }},
+        {&quot;explain&quot;, &quot;разбор запроса: лексемы и дерево&quot;, &quot;запрос&quot;, cmd_explain},
+        {&quot;bench&quot;, &quot;скорость разных типов запросов&quot;, &quot;&quot;, cmd_bench},
+    }, tool::args(argc, argv));
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

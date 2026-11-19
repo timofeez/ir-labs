@@ -19,7 +19,7 @@
 <li><a href="#6">6. Результаты</a></li>
 <li><a href="#7">7. Неудачные токены и как поправить правила</a></li>
 <li><a href="#8-googletest-lab3_tokenizer">8. Тесты (GoogleTest, группа Lab3_Tokenizer)</a></li>
-<li><a href="#9-lab3py">9. Утилита lab3.py</a></li>
+<li><a href="#9-lab3exe-c">9. Утилита lab3.exe (C++)</a></li>
 <li><a href="#10">10. Вопросы на защите</a></li>
 <li><a href="#11">11. Полные исходники</a></li>
 </ul>
@@ -416,12 +416,12 @@ O(1) кроме буфера. <strong>Оптимальна ли скорость
     n = tokens_joined(&quot;新幹線&quot;, out);             CHECK_EQ(n, 0);
 }</code></pre></div>
 
-<h2 id="9-lab3py">9. Утилита <code>lab3.py</code><a class="headerlink" href="#9-lab3py" title="Permanent link">#</a></h2>
-<pre><code>python lab3.py text &quot;Электровоз ВЛ-80 проехал Санкт-Петербург&quot;   — токены
-python lab3.py stats    — число токенов, средняя длина, скорость (весь корпус)
-python lab3.py speed    — время для 5, 20, 80 МБ и всего корпуса: видно, что линейно
-python lab3.py bad      — неудачные токены и исправления
-python lab3.py utf8 &quot;Ж€&quot; — коды Unicode, байты UTF-8, класс символа
+<h2 id="9-lab3exe-c">9. Утилита <code>lab3.exe</code> (C++)<a class="headerlink" href="#9-lab3exe-c" title="Permanent link">#</a></h2>
+<pre><code>lab_boolean\bin\lab3.exe text &quot;Электровоз ВЛ-80 проехал Санкт-Петербург&quot;   — токены
+lab_boolean\bin\lab3.exe stats    — число токенов, средняя длина, скорость (весь корпус)
+lab_boolean\bin\lab3.exe speed    — время для 5, 20, 80 МБ и всего корпуса: видно, что линейно
+lab_boolean\bin\lab3.exe bad      — неудачные токены и исправления
+lab_boolean\bin\lab3.exe utf8 &quot;Ж€&quot; — коды Unicode, байты UTF-8, класс символа
 </code></pre>
 <h2 id="10">10. Вопросы на защите<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
 <ul>
@@ -876,97 +876,136 @@ if __name__ == &#x27;__main__&#x27;:
         print(f&quot;{row[&#x27;name&#x27;]}: {row[&#x27;count&#x27;]}  {list(zip(row[&#x27;examples&#x27;], row[&#x27;tokens&#x27;]))[:3]}&quot;)
     print(f&#x27;аппроксимация: {a*1000:.2f} мс/МБ, b={b*1000:.1f} мс, R^2={r2:.4f}&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/lab3.py <span class="ln">(92 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР3 «Токенизация» — утилита для проверок и демонстрации.
+<details class="file"><summary>lab_boolean/tools/lab3.cpp <span class="ln">(131 строк)</span></summary><pre><code class="language-cpp">// ЛР3 «Токенизация» — утилита для проверок и демонстрации.
+//
+//   lab3                                     — меню
+//   lab3 text Электровоз ВЛ-80 проехал Санкт-Петербург   — токены текста
+//   lab3 stats                               — токены всего корпуса: число, средняя длина, скорость
+//   lab3 speed                               — время токенизации от объёма (5, 20, 80 МБ, весь корпус)
+//   lab3 bad                                 — неудачные случаи токенизации и как их исправить
+//   lab3 utf8 Ж€                             — байты UTF-8 символов и их класс для токенизатора
+#include &quot;../src/common.h&quot;
+#include &quot;tool.h&quot;
 
-  python lab3.py                 — меню
-  python lab3.py text &quot;Электровоз ВЛ-80 проехал Санкт-Петербург&quot;   — токены текста
-  python lab3.py stats           — число токенов, средняя длина, скорость (весь корпус, tokenize.exe)
-  python lab3.py speed           — зависимость времени от объёма (5, 20, 80 МБ и весь корпус)
-  python lab3.py bad             — неудачные токены: примеры и как исправить правила
-  python lab3.py utf8 &quot;Ж€&quot;       — как символы выглядят в UTF-8 и к какому классу относятся
-&quot;&quot;&quot;
-import json, os
-from labtool import HERE, data, fmt, main, repl, run, table
+// Все токены строки (правила — next_token из common.h, те же, что в индексаторе).
+static std::vector&lt;std::string&gt; tokens(const std::string &amp;s) {
+    std::vector&lt;std::string&gt; r;
+    char tok[MAX_TERM_BYTES + 4];
+    size_t pos = 0; int chars, len;
+    while ((len = next_token(s.data(), s.size(), pos, tok, chars)) &gt; 0) r.emplace_back(tok, len);
+    return r;
+}
 
-BAD = [
-    (&#x27;ВЛ-80&#x27;, &#x27;дефис — разделитель&#x27;, &#x27;хранить составной токен «вл-80» вместе с частями&#x27;),
-    (&#x27;Санкт-Петербург&#x27;, &#x27;дефис — разделитель&#x27;, &#x27;то же; или словарь составных слов&#x27;),
-    (&#x27;14,4 км&#x27;, &#x27;запятая — разделитель&#x27;, &#x27;правило для чисел: цифры,цифры — один токен&#x27;),
-    (&#x27;т. е.&#x27;, &#x27;точка — разделитель&#x27;, &#x27;словарь сокращений&#x27;),
-    (&#x27;В. И. Ленин&#x27;, &#x27;инициалы — однобуквенные токены&#x27;, &#x27;шаблон «буква. буква. Фамилия»&#x27;),
-    (&#x27;info@gudok.ru&#x27;, &#x27;@ и . — разделители&#x27;, &#x27;шаблон e-mail / URL&#x27;),
-    (&quot;world&#x27;s&quot;, &#x27;апостроф — разделитель&#x27;, &quot;правило для &#x27;s&quot;),
-    (&#x27;新幹線&#x27;, &#x27;иероглифы не входят в класс букв&#x27;, &#x27;добавить CJK и сегментацию по словарю&#x27;),
-    (&#x27;Железнодоро́жный&#x27;, &#x27;знак ударения&#x27;, &#x27;уже исправлено: ударение пропускается&#x27;),
-    (&#x27;Ёлка&#x27;, &#x27;ё&#x27;, &#x27;уже исправлено: ё -&gt; е&#x27;),
-]
+static void show_tokens(const std::string &amp;s) {
+    auto t = tokens(s);
+    printf(&quot;  текст:   %s\n  токены:  &quot;, s.c_str());
+    for (size_t i = 0; i &lt; t.size(); i++) printf(&quot;%s%s&quot;, i ? &quot; | &quot; : &quot;&quot;, t[i].c_str());
+    printf(&quot;   (%zu шт.)\n&quot;, t.size());
+}
 
+static void cmd_text(const std::string &amp;arg) {
+    if (!arg.empty()) { show_tokens(arg); return; }
+    printf(&quot;Вводите текст (пустая строка — выход):\n&quot;);
+    std::string s;
+    while (true) { printf(&quot;текст&gt; &quot;); fflush(stdout); if (!tool::read_line(s) || s.empty()) break; show_tokens(s); }
+}
 
-def tokens(text):
-    out, _ = run(&#x27;tokenize&#x27;, stdin=text)
-    return out.split()
+// Статистика: читаем corpus.tsv так же, как tokenize.exe --stats (лимит в байтах текста, 0 — весь корпус).
+struct Stats { uint64_t docs = 0, bytes = 0, tokens = 0, chars = 0, tbytes = 0; double sec = 0; };
+static Stats corpus_stats(double limitMb) {
+    Stats st;
+    uint64_t limit = limitMb &gt; 0 ? (uint64_t)(limitMb * 1048576) : UINT64_MAX;
+    char tok[MAX_TERM_BYTES + 4];
+    tool::each_line(tool::path(&quot;data/corpus.tsv&quot;), [&amp;](std::string &amp;line) {
+        size_t f[6], k = 0; f[0] = 0;                        // начала полей
+        for (size_t i = 0; i &lt; line.size() &amp;&amp; k &lt; 4; i++) if (line[i] == &#x27;\t&#x27;) f[++k] = i + 1;
+        if (k &lt; 4) return true;
+        size_t t3 = line.find(&#x27;\t&#x27;, f[2]);                   // конец заголовка
+        st.docs++;
+        double t0 = now_sec();
+        const char *parts[2] = {line.data() + f[2], line.data() + f[4]};
+        size_t lens[2] = {t3 - f[2], line.size() - f[4]};
+        for (int p = 0; p &lt; 2; p++) {
+            size_t pos = 0; int chars, len;
+            st.bytes += lens[p];
+            while ((len = next_token(parts[p], lens[p], pos, tok, chars)) &gt; 0) { st.tokens++; st.chars += chars; st.tbytes += len; }
+        }
+        st.sec += now_sec() - t0;
+        return st.bytes &lt; limit;
+    });
+    return st;
+}
 
+static void cmd_stats(const std::string &amp;) {
+    if (!tool::exists(tool::path(&quot;data/corpus.tsv&quot;))) { printf(&quot;нет data/corpus.tsv\n&quot;); return; }
+    printf(&quot;Токенизация всего корпуса...\n&quot;);
+    Stats s = corpus_stats(0);
+    printf(&quot;  документов                    %s\n&quot;, tool::num(s.docs).c_str());
+    printf(&quot;  текст, байт                   %s\n&quot;, tool::num(s.bytes).c_str());
+    printf(&quot;  токенов                       %s\n&quot;, tool::num(s.tokens).c_str());
+    printf(&quot;  средняя длина токена, символов %.3f\n&quot;, (double)s.chars / s.tokens);
+    printf(&quot;  средняя длина токена, байт     %.3f\n&quot;, (double)s.tbytes / s.tokens);
+    printf(&quot;  время токенизации, с          %.3f\n&quot;, s.sec);
+    printf(&quot;  мс на КБ                      %.5f\n&quot;, s.sec * 1000 / (s.bytes / 1024.0));
+    printf(&quot;  МБ/с                          %.2f\n&quot;, s.bytes / 1048576.0 / s.sec);
+}
 
-def cmd_text(arg):
-    if arg:
-        t = tokens(arg); print(f&#x27;{len(t)} токенов: &#x27; + &#x27; | &#x27;.join(t)); return
-    repl(&#x27;текст&gt; &#x27;, lambda s: print(&#x27;  &#x27; + &#x27; | &#x27;.join(tokens(s)) + f&#x27;   ({len(tokens(s))})&#x27;))
+static void cmd_speed(const std::string &amp;) {
+    printf(&quot;  %s %s %s %s\n&quot;, tool::pad(&quot;объём&quot;, 12).c_str(), tool::lpad(&quot;токенов&quot;, 14).c_str(), tool::lpad(&quot;время, с&quot;, 10).c_str(), tool::lpad(&quot;мс/КБ&quot;, 10).c_str());
+    for (double mb : {5.0, 20.0, 80.0, 0.0}) {
+        Stats s = corpus_stats(mb);
+        printf(&quot;  %s %s %10.3f %10.5f\n&quot;, tool::pad(mb ? std::to_string((int)mb) + &quot; МБ&quot; : &quot;весь корпус&quot;, 12).c_str(),
+               tool::lpad(tool::num(s.tokens), 14).c_str(), s.sec, s.sec * 1000 / (s.bytes / 1024.0));
+    }
+    printf(&quot;\nВремя растёт линейно с объёмом (каждый байт обрабатывается один раз, O(n)); мс/КБ почти постоянно.\n&quot;);
+}
 
+static void cmd_bad(const std::string &amp;) {
+    struct Bad { const char *text, *why, *fix; };
+    static const Bad bad[] = {
+        {&quot;ВЛ-80&quot;, &quot;дефис — разделитель&quot;, &quot;хранить составной токен «вл-80» вместе с частями&quot;},
+        {&quot;Санкт-Петербург&quot;, &quot;дефис — разделитель&quot;, &quot;то же; или словарь составных слов&quot;},
+        {&quot;14,4 км&quot;, &quot;запятая — разделитель&quot;, &quot;правило для чисел: цифры,цифры — один токен&quot;},
+        {&quot;т. е.&quot;, &quot;точка — разделитель&quot;, &quot;словарь сокращений&quot;},
+        {&quot;В. И. Ленин&quot;, &quot;инициалы — однобуквенные токены&quot;, &quot;шаблон «буква. буква. Фамилия»&quot;},
+        {&quot;info@gudok.ru&quot;, &quot;@ и . — разделители&quot;, &quot;шаблон e-mail / URL&quot;},
+        {&quot;新幹線&quot;, &quot;иероглифы не входят в класс букв&quot;, &quot;добавить CJK и сегментацию по словарю&quot;},
+        {&quot;Железнодоро́жный&quot;, &quot;знак ударения&quot;, &quot;уже исправлено: ударение пропускается&quot;},
+        {&quot;Ёлка&quot;, &quot;ё&quot;, &quot;уже исправлено: ё -&gt; е&quot;},
+    };
+    for (auto &amp;b : bad) {
+        auto t = tokens(b.text);
+        std::string j;
+        for (auto &amp;x : t) j += (j.empty() ? &quot;&quot; : &quot; | &quot;) + x;
+        printf(&quot;  %s -&gt; %s\n      причина: %s\n      исправление: %s\n&quot;, tool::pad(b.text, 18).c_str(), j.empty() ? &quot;(нет токенов)&quot; : j.c_str(), b.why, b.fix);
+    }
+}
 
-def cmd_stats(_):
-    out, _ = run(&#x27;tokenize&#x27;, [&#x27;--stats&#x27;, data(&#x27;corpus.tsv&#x27;)])
-    v = dict(l.split(None, 1) for l in out.splitlines() if l.strip())
-    table([(&#x27;документов&#x27;, fmt(int(v[&#x27;documents&#x27;]))), (&#x27;текст, байт&#x27;, fmt(int(v[&#x27;text_bytes&#x27;]))),
-           (&#x27;токенов&#x27;, fmt(int(v[&#x27;tokens&#x27;]))), (&#x27;средняя длина токена, символов&#x27;, v[&#x27;avg_token_len&#x27;]),
-           (&#x27;средняя длина токена, байт UTF-8&#x27;, v[&#x27;avg_token_bytes&#x27;]),
-           (&#x27;время токенизации, с&#x27;, v[&#x27;time_tokenize_sec&#x27;]), (&#x27;мс на КБ&#x27;, v[&#x27;ms_per_kb&#x27;]),
-           (&#x27;МБ/с&#x27;, v[&#x27;mb_per_sec&#x27;])])
+static void cmd_utf8(const std::string &amp;arg) {
+    std::string s = arg.empty() ? &quot;Жa€ё́&quot; : arg;
+    const unsigned char *u = (const unsigned char *)s.data();
+    size_t i = 0;
+    static const char *cls[] = {&quot;разделитель&quot;, &quot;часть слова&quot;, &quot;пропускается (ударение)&quot;};
+    while (i &lt; s.size()) {
+        size_t st = i;
+        uint32_t c = utf8_decode(u, s.size(), i);
+        printf(&quot;  U+%04X  байты:&quot;, c);
+        for (size_t k = st; k &lt; i; k++) printf(&quot; %02X&quot;, u[k]);
+        printf(&quot;%*s  символ «%s» -&gt; %s, нижний регистр U+%04X\n&quot;, (int)(4 - (i - st)) * 3, &quot;&quot;,
+               s.substr(st, i - st).c_str(), cls[char_class(c)], to_lower(c));
+    }
+}
 
-
-def cmd_speed(_):
-    rows = []
-    for mb in (5, 20, 80, 0):
-        out, _ = run(&#x27;tokenize&#x27;, [&#x27;--stats&#x27;, data(&#x27;corpus.tsv&#x27;)] + ([&#x27;--limit-mb&#x27;, str(mb)] if mb else []))
-        v = dict(l.split(None, 1) for l in out.splitlines() if l.strip())
-        size = int(v[&#x27;text_bytes&#x27;]) / 2 ** 20
-        rows.append((f&#x27;{size:.0f} МБ&#x27;, fmt(int(v[&#x27;tokens&#x27;])), v[&#x27;time_tokenize_sec&#x27;], v[&#x27;ms_per_kb&#x27;]))
-    table(rows, (&#x27;объём&#x27;, &#x27;токенов&#x27;, &#x27;время, с&#x27;, &#x27;мс/КБ&#x27;))
-    print(&#x27;\nВремя растёт линейно с объёмом: каждый байт обрабатывается один раз (O(n)); мс/КБ почти постоянно.&#x27;)
-    j = os.path.join(HERE, &#x27;report_tokenization&#x27;, &#x27;tokenization_results.json&#x27;)
-    if os.path.exists(j):
-        print(&#x27;Подробный замер с графиком — отчёт ЛР3 (report_tokenization/fig_time.pdf).&#x27;)
-
-
-def cmd_bad(_):
-    rows = [(src, &#x27; | &#x27;.join(tokens(src)) or &#x27;(нет токенов)&#x27;, why, fix) for src, why, fix in BAD]
-    for src, got, why, fix in rows:
-        print(f&#x27;  {src!r:24} -&gt; {got}\n      причина: {why}\n      исправление: {fix}&#x27;)
-
-
-def cmd_utf8(arg):
-    import sys
-    sys.path.insert(0, HERE)
-    s = arg or input(&#x27;символы: &#x27;)
-    for ch in s:
-        cp = ord(ch); b = ch.encode(&#x27;utf-8&#x27;)
-        if (0x30 &lt;= cp &lt;= 0x39) or (0x41 &lt;= cp &lt;= 0x5A) or (0x61 &lt;= cp &lt;= 0x7A) or 0xC0 &lt;= cp &lt;= 0x24F and cp not in (0xD7, 0xF7) \
-                or 0x370 &lt;= cp &lt;= 0x3FF or 0x400 &lt;= cp &lt;= 0x4FF:
-            cls = &#x27;1 — часть слова&#x27;
-        elif 0x300 &lt;= cp &lt;= 0x36F:
-            cls = &#x27;2 — пропускается (ударение)&#x27;
-        else:
-            cls = &#x27;0 — разделитель&#x27;
-        print(f&#x27;  {ch!r:6} U+{cp:04X}  байты UTF-8: {b.hex(&quot; &quot;).upper():12} ({len(b)} байт)  класс {cls}&#x27;)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    main(&#x27;ЛР3 «Токенизация»&#x27;, [
-        (&#x27;text&#x27;, cmd_text, &#x27;разбить текст на токены (интерактивно)&#x27;, None),
-        (&#x27;stats&#x27;, cmd_stats, &#x27;статистика токенизации всего корпуса (tokenize.exe --stats)&#x27;, None),
-        (&#x27;speed&#x27;, cmd_speed, &#x27;зависимость времени от объёма текста&#x27;, None),
-        (&#x27;bad&#x27;, cmd_bad, &#x27;неудачные токены и как исправить правила&#x27;, None),
-        (&#x27;utf8&#x27;, cmd_utf8, &#x27;символ -&gt; код Unicode, байты UTF-8, класс в токенизаторе&#x27;, &#x27;символы&#x27;),
-    ])
+int main(int argc, char **argv) {
+    tool::init_console();
+    return tool::main_loop(&quot;ЛР3 «Токенизация»&quot;, {
+        {&quot;text&quot;, &quot;разбить текст на токены&quot;, &quot;текст (Enter — ввод нескольких строк)&quot;, cmd_text},
+        {&quot;stats&quot;, &quot;статистика токенизации всего корпуса&quot;, &quot;&quot;, cmd_stats},
+        {&quot;speed&quot;, &quot;зависимость времени от объёма текста&quot;, &quot;&quot;, cmd_speed},
+        {&quot;bad&quot;, &quot;неудачные случаи токенизации&quot;, &quot;&quot;, cmd_bad},
+        {&quot;utf8&quot;, &quot;символы: байты UTF-8 и класс&quot;, &quot;символы&quot;, cmd_utf8},
+    }, tool::args(argc, argv));
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

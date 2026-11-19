@@ -28,7 +28,7 @@
 <li><a href="#_4">Что я узнал на практике</a></li>
 </ul>
 </li>
-<li><a href="#9-lab2py">9. Утилита lab2.py</a></li>
+<li><a href="#9-lab2exe-c">9. Утилита lab2.exe (C++)</a></li>
 <li><a href="#10">10. Тесты</a></li>
 <li><a href="#11">11. Вопросы на защите</a></li>
 <li><a href="#12">12. Полные исходники</a></li>
@@ -625,26 +625,21 @@ class Db:
 <strong>сам аварийно останавливал узел</strong> (<code>disk stall detected</code>) — защита от повреждения данных. Решение —
 данные узлов на SSD и исключение для антивируса. Это хорошая иллюстрация того, что распределённая база
 опирается на быстрые подтверждения записи: медленный диск = медленный консенсус.</p>
-<h2 id="9-lab2py">9. Утилита <code>lab2.py</code><a class="headerlink" href="#9-lab2py" title="Permanent link">#</a></h2>
-<pre><code>python lab2.py cluster    — узлы, живые ли, диапазоны и реплики таблиц
-python lab2.py nodes      — один запрос через каждый из трёх узлов: данные одинаковые
-python lab2.py failover   — первый узел в списке недоступен → подключение к следующему
-python lab2.py frontier   — очередь по состояниям
-python lab2.py show ВЛ80  — документ из базы: поля + начало HTML
-python lab2.py normalize &quot;HTTP://RU.Wikipedia.org/wiki/ВЛ80#История&quot;
-python lab2.py robots &quot;https://ru.wikipedia.org/w/index.php?title=X&quot;
-python lab2.py sql &quot;SELECT source, count(*) FROM documents GROUP BY 1&quot;
-python lab2.py crawl 30   — запустить робота на 30 запросов (остановка/продолжение)
+<h2 id="9-lab2exe-c">9. Утилита <code>lab2.exe</code> (C++)<a class="headerlink" href="#9-lab2exe-c" title="Permanent link">#</a></h2>
+<pre><code>bin\lab2.exe cluster    — узлы, живые ли, диапазоны и реплики таблиц
+bin\lab2.exe nodes      — один запрос через каждый из трёх узлов: данные одинаковые
+bin\lab2.exe failover   — первый узел в списке недоступен → подключение к следующему
+bin\lab2.exe frontier   — очередь по состояниям
+bin\lab2.exe show ВЛ80  — документ из базы: поля + начало HTML
+bin\lab2.exe normalize &quot;HTTP://RU.Wikipedia.org/wiki/ВЛ80#История&quot;
+bin\lab2.exe robots &quot;https://ru.wikipedia.org/w/index.php?title=X&quot;
+bin\lab2.exe sql &quot;SELECT source, count(*) FROM documents GROUP BY 1&quot;
 </code></pre>
 <h2 id="10">10. Тесты<a class="headerlink" href="#10" title="Permanent link">#</a></h2>
-<p>29 тестов (<code>unittest</code>, <code>tests/test_robot.py</code>), сеть не нужна: локальный HTTP-сервер имитирует
-«Википедию» (категории с постраничным выводом, перенаправление, синоним с canonical, копия,
-<code>Last-Modified</code> и 304) и «Гудок» (sitemap с <code>lastmod</code>, меняющаяся реклама). Каждый тест работает в
-своей временной базе на кластере. Проверяются: нормализация URL (11 тестов), полная обкачка и поля
-документа, хранение без сжатия, остановка и продолжение, задержка, глубина, robots.txt, дубликаты,
-переобкачка только изменённого, запуск из командной строки с yaml, отбор свежих статей из sitemap,
-переобкачка по <code>lastmod</code>, реклама не считается изменением, <strong>3 живых узла, 3 реплики каждого
-диапазона, переключение на другой узел, понятная ошибка, если узлов нет</strong>.</p>
+<p>20 тестов на C++ (GoogleTest, <code>tests/test_lab2.cpp</code>): нормализация URL (10), правила robots.txt (4)
+и распределённая база на живом кластере (6) — 3 узла, 3 реплики у каждого диапазона, переключение на
+живой узел, одинаковые данные через все узлы, уникальность URL, <code>ON CONFLICT</code> не создаёт дублей.
+Запуск: <code>ctest --preset default</code> в папке <code>lab2</code>.</p>
 <h2 id="11">11. Вопросы на защите<a class="headerlink" href="#11" title="Permanent link">#</a></h2>
 <ul>
 <li><strong>Почему обход в ширину?</strong> Ближние к корню страницы релевантнее, робот не «тонет» в одной ветке.</li>
@@ -1302,680 +1297,435 @@ def main():
 if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
-<details class="file"><summary>lab2/lab2.py <span class="ln">(225 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР2 «Поисковый робот» — утилита для проверок и демонстрации (база — распределённая CockroachDB).
-
-  python lab2.py                  — меню
-  python lab2.py cluster          — узлы кластера, живые ли, сколько диапазонов и реплик у таблиц
-  python lab2.py stats            — документы по источникам, размеры, очередь
-  python lab2.py frontier         — состояние очереди обхода: new / done / duplicate / error / skipped
-  python lab2.py show ВЛ80        — найти документ: поля в базе + начало «сырого» HTML
-  python lab2.py failover         — подключение при недоступном узле (первый узел в списке «мёртвый»)
-  python lab2.py nodes            — один и тот же запрос через каждый из трёх узлов
-  python lab2.py normalize &quot;HTTP://RU.Wikipedia.org/wiki/ВЛ80#История&quot;   — нормализация URL
-  python lab2.py robots https://ru.wikipedia.org/w/index.php?title=X      — разрешён ли адрес robots.txt
-  python lab2.py sql &quot;SELECT source, count(*) FROM documents GROUP BY 1&quot;  — свой SELECT к базе
-  python lab2.py crawl 30         — запустить робота на 30 запросов (продолжение обкачки), затем остановить
-&quot;&quot;&quot;
-import os, subprocess, sys, time, zlib
-from urllib.parse import unquote
-
-import yaml
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-from db import DEFAULT_HOSTS, Db, connect_any  # noqa: E402
-
-try:
-    sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;); sys.stdin.reconfigure(encoding=&#x27;utf-8&#x27;)
-except Exception:
-    pass
-
-CFG = yaml.safe_load(open(os.path.join(HERE, &#x27;config.yaml&#x27;), encoding=&#x27;utf-8&#x27;))
-
-
-def fmt(n):
-    return f&#x27;{int(n):,}&#x27;.replace(&#x27;,&#x27;, &#x27; &#x27;)
-
-
-def table(rows, headers=None):
-    rows = [[str(c) for c in r] for r in rows]
-    if headers:
-        rows.insert(0, list(headers))
-    if not rows:
-        return
-    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-    for k, r in enumerate(rows):
-        print(&#x27;  &#x27; + &#x27;  &#x27;.join(c.ljust(w[i]) if i == 0 else c.rjust(w[i]) for i, c in enumerate(r)))
-        if headers and k == 0:
-            print(&#x27;  &#x27; + &#x27;  &#x27;.join(&#x27;-&#x27; * x for x in w))
-
-
-def db():
-    try:
-        return Db(CFG[&#x27;db&#x27;])
-    except RuntimeError as e:
-        raise SystemExit(f&#x27;{e}\nЗапустите кластер: start_cluster.bat&#x27;)
-
-
-def cmd_cluster(_):
-    d = db()
-    print(f&#x27;Подключено к узлу {d.node}\n&#x27;)
-    rows = d.execute(&#x27;SELECT node_id, address, sql_address, is_live FROM crdb_internal.gossip_nodes &#x27;
-                     &#x27;ORDER BY node_id&#x27;).fetchall()
-    table([(n, a, s, &#x27;да&#x27; if live else &#x27;НЕТ&#x27;) for n, a, s, live in rows], (&#x27;узел&#x27;, &#x27;адрес (RPC)&#x27;, &#x27;SQL&#x27;, &#x27;жив&#x27;))
-    print()
-    for t in (&#x27;documents&#x27;, &#x27;frontier&#x27;):
-        r = d.execute(f&#x27;SELECT replicas, lease_holder FROM [SHOW RANGES FROM TABLE {d.database}.{t} WITH DETAILS]&#x27;).fetchall()
-        holders = sorted({x[1] for x in r})
-        print(f&#x27;таблица {t}: {len(r)} диапазон(ов), реплики на узлах {sorted(set(n for x in r for n in x[0]))}, &#x27;
-              f&#x27;лидеры (leaseholder) на узлах {holders}&#x27;)
-    print(&#x27;\nКаждый диапазон хранится в 3 копиях (Raft): запись подтверждается 2 из 3 узлов,\n&#x27;
-          &#x27;поэтому при отказе одного узла база продолжает работать.&#x27;)
-    print(&#x27;Веб-консоль кластера: http://localhost:8091&#x27;)
-    d.close()
-
-
-def cmd_stats(_):
-    import stats
-    d = db(); stats.stats(d); d.close()
-
-
-def cmd_frontier(_):
-    d = db()
-    rows = d.execute(&#x27;SELECT source, kind, state, count(*) FROM frontier GROUP BY 1, 2, 3 ORDER BY 1, 2, 3&#x27;).fetchall()
-    table([(s, k, st, fmt(n)) for s, k, st, n in rows], (&#x27;источник&#x27;, &#x27;тип&#x27;, &#x27;состояние&#x27;, &#x27;адресов&#x27;))
-    nxt = d.execute(&quot;SELECT url FROM frontier WHERE state=&#x27;new&#x27; ORDER BY id LIMIT 3&quot;).fetchall()
-    print(&#x27;\nследующие в очереди: &#x27; + (&#x27;, &#x27;.join(unquote(u) for (u,) in nxt) if nxt else &#x27;очередь пуста&#x27;))
-    d.close()
-
-
-def cmd_show(arg):
-    q = arg or input(&#x27;часть URL или заголовка: &#x27;)
-    d = db()
-    row = d.execute(&#x27;SELECT url, source, title, html, compressed, html_size, content_hash, last_modified, &#x27;
-                    &#x27;crawled_at, checked_at, versions, sitemap_lastmod FROM documents &#x27;
-                    &#x27;WHERE title ILIKE ? OR url ILIKE ? LIMIT 1&#x27;, (f&#x27;%{q}%&#x27;, f&#x27;%{q}%&#x27;)).fetchone()
-    d.close()
-    if not row:
-        print(&#x27;не найдено&#x27;); return
-    url, src, title, blob, comp, size, h, lm, cr, ch, ver, sm = row
-    blob = bytes(blob)
-    html = (zlib.decompress(blob) if comp else blob).decode(&#x27;utf-8&#x27;, &#x27;replace&#x27;)
-    table([(&#x27;url&#x27;, unquote(url)), (&#x27;source&#x27;, src), (&#x27;title&#x27;, title),
-           (&#x27;html_size&#x27;, f&#x27;{fmt(size)} байт (в базе {fmt(len(blob))}, zlib: {&quot;да&quot; if comp else &quot;нет&quot;})&#x27;),
-           (&#x27;content_hash&#x27;, h), (&#x27;last_modified&#x27;, lm), (&#x27;sitemap_lastmod&#x27;, sm),
-           (&#x27;crawled_at&#x27;, f&#x27;{cr} ({time.strftime(&quot;%Y-%m-%d %H:%M&quot;, time.localtime(cr))})&#x27;),
-           (&#x27;checked_at&#x27;, ch), (&#x27;versions&#x27;, ver)])
-    print(&#x27;\n--- начало HTML ---\n&#x27; + html[:700])
-
-
-def cmd_failover(_):
-    hosts = [&#x27;127.0.0.1:1&#x27;] + CFG[&#x27;db&#x27;].get(&#x27;hosts&#x27;, DEFAULT_HOSTS)
-    print(&#x27;список узлов: &#x27; + &#x27;, &#x27;.join(hosts) + &#x27;   (127.0.0.1:1 — заведомо недоступен)&#x27;)
-    t = time.time()
-    d = Db({**CFG[&#x27;db&#x27;], &#x27;hosts&#x27;: hosts})
-    n = d.execute(&#x27;SELECT count(*) FROM documents&#x27;).fetchone()[0]
-    print(f&#x27;подключились к {d.node} за {time.time() - t:.1f} с; документов: {fmt(n)}&#x27;)
-    d.close()
-
-
-def cmd_nodes(_):
-    rows = []
-    for h in CFG[&#x27;db&#x27;].get(&#x27;hosts&#x27;, DEFAULT_HOSTS):
-        try:
-            c, _ = connect_any([h], CFG[&#x27;db&#x27;].get(&#x27;database&#x27;, &#x27;robot&#x27;), &#x27;root&#x27;)
-            t = time.time()
-            n = c.execute(&#x27;SELECT count(*) FROM documents&#x27;).fetchone()[0]
-            rows.append((h, fmt(n), f&#x27;{1000 * (time.time() - t):.0f} мс&#x27;))
-            c.close()
-        except Exception as e:
-            rows.append((h, &#x27;недоступен&#x27;, str(e)[:40]))
-    table(rows, (&#x27;узел&#x27;, &#x27;документов&#x27;, &#x27;время запроса&#x27;))
-    print(&#x27;\nДанные одни и те же через любой узел: это одна база, распределённая по трём узлам.&#x27;)
-
-
-def cmd_normalize(arg):
-    from robot import normalize_url
-    u = arg or input(&#x27;URL: &#x27;)
-    n = normalize_url(u)
-    print(f&#x27;  {u}\n-&gt;{n}\n  ({unquote(n)})&#x27;)
-
-
-def cmd_robots(arg):
-    import urllib.robotparser
-    from urllib.parse import urlsplit
-    u = arg or input(&#x27;URL: &#x27;)
-    p = urlsplit(u)
-    rp = urllib.robotparser.RobotFileParser(f&#x27;{p.scheme}://{p.netloc}/robots.txt&#x27;)
-    rp.read()
-    ua = CFG[&#x27;logic&#x27;].get(&#x27;user_agent&#x27;, &#x27;*&#x27;)
-    print(f&#x27;{u}\n  разрешён для робота: {&quot;ДА&quot; if rp.can_fetch(ua, u) else &quot;НЕТ (Disallow)&quot;}; &#x27;
-          f&#x27;Crawl-delay: {rp.crawl_delay(ua)}&#x27;)
-
-
-def cmd_sql(arg):
-    q = arg or input(&#x27;SELECT ...: &#x27;)
-    if not q.strip().lower().startswith((&#x27;select&#x27;, &#x27;show&#x27;, &#x27;with&#x27;)):
-        raise SystemExit(&#x27;только запросы на чтение (SELECT / SHOW)&#x27;)
-    d = db()
-    cur = d.execute(q)
-    rows = cur.fetchmany(50)
-    table([[x if not isinstance(x, (bytes, memoryview)) else f&#x27;&lt;{len(x)} байт&gt;&#x27; for x in r] for r in rows],
-          [c.name for c in cur.description])
-    d.close()
-
-
-def cmd_crawl(arg):
-    n = int(arg or 30)
-    cfg = dict(CFG); cfg[&#x27;logic&#x27;] = {**CFG[&#x27;logic&#x27;], &#x27;max_requests&#x27;: n, &#x27;exit_when_idle&#x27;: True, &#x27;verbose&#x27;: True}
-    p = os.path.join(HERE, &#x27;data&#x27;, &#x27;_demo_config.yaml&#x27;)
-    os.makedirs(os.path.dirname(p), exist_ok=True)
-    yaml.safe_dump(cfg, open(p, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;), allow_unicode=True)
-    print(f&#x27;робот: python robot.py &lt;конфиг&gt; с max_requests={n} (Ctrl+C — остановить в любой момент)\n&#x27;)
-    try:
-        subprocess.run([sys.executable, os.path.join(HERE, &#x27;robot.py&#x27;), p], cwd=HERE)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        os.remove(p)
-
-
-COMMANDS = [
-    (&#x27;cluster&#x27;, cmd_cluster, &#x27;кластер: узлы, диапазоны, реплики&#x27;, None),
-    (&#x27;stats&#x27;, cmd_stats, &#x27;статистика документов и очереди&#x27;, None),
-    (&#x27;frontier&#x27;, cmd_frontier, &#x27;очередь обхода по состояниям&#x27;, None),
-    (&#x27;show&#x27;, cmd_show, &#x27;документ из базы: поля и начало HTML&#x27;, &#x27;часть URL или заголовка&#x27;),
-    (&#x27;failover&#x27;, cmd_failover, &#x27;подключение при недоступном узле&#x27;, None),
-    (&#x27;nodes&#x27;, cmd_nodes, &#x27;один запрос через каждый из трёх узлов&#x27;, None),
-    (&#x27;normalize&#x27;, cmd_normalize, &#x27;нормализация URL&#x27;, &#x27;URL&#x27;),
-    (&#x27;robots&#x27;, cmd_robots, &#x27;проверить адрес по robots.txt&#x27;, &#x27;URL&#x27;),
-    (&#x27;sql&#x27;, cmd_sql, &#x27;свой SELECT-запрос к базе&#x27;, &#x27;SELECT ...&#x27;),
-    (&#x27;crawl&#x27;, cmd_crawl, &#x27;запустить робота на N запросов (продолжение обкачки)&#x27;, &#x27;сколько запросов (Enter — 30)&#x27;),
-]
-
-
-def main():
-    by = {c[0]: c for c in COMMANDS}
-    if len(sys.argv) &gt; 1:
-        if sys.argv[1] in by:
-            by[sys.argv[1]][1](&#x27; &#x27;.join(sys.argv[2:])); return
-        print(__doc__); return
-    while True:
-        print(&#x27;\n=== ЛР2 «Поисковый робот» (CockroachDB) ===&#x27;)
-        for i, (_, _, d, _) in enumerate(COMMANDS, 1):
-            print(f&#x27; {i:2}. {d}&#x27;)
-        print(&#x27;  0. выход&#x27;)
-        try:
-            c = input(&#x27;Номер команды: &#x27;).strip()
-        except (EOFError, KeyboardInterrupt):
-            return
-        if c in (&#x27;0&#x27;, &#x27;&#x27;):
-            return
-        if not c.isdigit() or not 1 &lt;= int(c) &lt;= len(COMMANDS):
-            continue
-        _, fn, _, hint = COMMANDS[int(c) - 1]
-        try:
-            arg = input(f&#x27;{hint}: &#x27;).strip() if hint else &#x27;&#x27;
-            print(); fn(arg)
-            input(&#x27;\n[Enter — к меню]&#x27;)
-        except (EOFError, KeyboardInterrupt):
-            print()
-        except SystemExit as e:
-            print(e)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    main()
-</code></pre></details>
-<details class="file"><summary>lab2/tests/test_robot.py <span class="ln">(450 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Автотесты поискового робота.
-
-Часть 1 — нормализация URL.
-Часть 2 — интеграционные тесты на локальном тестовом сайте, имитирующем Википедию
-(категория со списком подкатегорий и статей, постраничный вывод, заголовок Last-Modified,
-ответ 304 на условный запрос). Сеть не нужна.
-
-Нужен запущенный кластер CockroachDB (start_cluster.bat): каждый тест работает в своей
-временной базе на кластере и удаляет её в конце.
-
-Запуск: python tests/test_robot.py
-&quot;&quot;&quot;
-import itertools, os, subprocess, sys, tempfile, threading, time, unittest, zlib
-from email.utils import formatdate
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote, unquote, urlsplit
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, &#x27;..&#x27;))
-from robot import Robot, normalize_url  # noqa: E402
-from db import DEFAULT_HOSTS, Db, connect_any  # noqa: E402
-
-_ids = itertools.count(1)
-
-
-def new_db_name():
-    &quot;&quot;&quot;Имя отдельной временной базы для теста (на том же кластере).&quot;&quot;&quot;
-    return f&#x27;robot_test_{os.getpid()}_{next(_ids)}&#x27;
-
-
-class SqlDb:
-    &quot;&quot;&quot;Прямое подключение к базе теста — проверить, что лежит в таблицах.&quot;&quot;&quot;
-    def __init__(self, name):
-        self.conn, _ = connect_any(DEFAULT_HOSTS, name, &#x27;root&#x27;)
-
-    def execute(self, sql, params=()):
-        return self.conn.execute(sql.replace(&#x27;?&#x27;, &#x27;%s&#x27;), params)
-
-    def commit(self):
-        self.conn.commit()
-
-    def close(self):
-        self.conn.close()
-
-
-def drop_db(name):
-    admin, _ = connect_any(DEFAULT_HOSTS, &#x27;defaultdb&#x27;, &#x27;root&#x27;, autocommit=True)
-    admin.execute(f&#x27;DROP DATABASE IF EXISTS {name} CASCADE&#x27;)
-    admin.close()
-
-
-sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
-import warnings
-warnings.simplefilter(&#x27;ignore&#x27;, ResourceWarning)
-
-
-class TestNormalize(unittest.TestCase):
-    def test_lowercase_scheme_host(self):
-        self.assertEqual(normalize_url(&#x27;HTTPS://RU.Wikipedia.ORG/wiki/X&#x27;), &#x27;https://ru.wikipedia.org/wiki/X&#x27;)
-
-    def test_http_to_https(self):
-        self.assertEqual(normalize_url(&#x27;http://ru.wikipedia.org/wiki/X&#x27;), &#x27;https://ru.wikipedia.org/wiki/X&#x27;)
-
-    def test_fragment_removed(self):
-        self.assertEqual(normalize_url(&#x27;https://ru.wikipedia.org/wiki/X#История&#x27;), &#x27;https://ru.wikipedia.org/wiki/X&#x27;)
-
-    def test_mobile_to_desktop(self):
-        self.assertEqual(normalize_url(&#x27;https://ru.m.wikipedia.org/wiki/X&#x27;), &#x27;https://ru.wikipedia.org/wiki/X&#x27;)
-
-    def test_default_port_removed(self):
-        self.assertEqual(normalize_url(&#x27;https://ru.wikipedia.org:443/wiki/X&#x27;), &#x27;https://ru.wikipedia.org/wiki/X&#x27;)
-
-    def test_same_page_different_encoding(self):
-        a = normalize_url(&#x27;https://ru.wikipedia.org/wiki/ВЛ80&#x27;)
-        b = normalize_url(&#x27;https://ru.wikipedia.org/wiki/%D0%92%D0%9B80&#x27;)
-        self.assertEqual(a, b)
-        self.assertEqual(a, &#x27;https://ru.wikipedia.org/wiki/%D0%92%D0%9B80&#x27;)
-
-    def test_spaces_to_underscores(self):
-        self.assertEqual(normalize_url(&#x27;https://en.wikipedia.org/wiki/Rail transport&#x27;),
-                         &#x27;https://en.wikipedia.org/wiki/Rail_transport&#x27;)
-
-    def test_index_php_title(self):
-        self.assertEqual(normalize_url(&#x27;https://en.wikipedia.org/w/index.php?title=Maglev&amp;action=view&#x27;),
-                         &#x27;https://en.wikipedia.org/wiki/Maglev&#x27;)
-
-    def test_pagination_to_wiki_path(self):
-        # /w/ запрещён в robots.txt Википедии -&gt; приводим к /wiki/Категория?pagefrom=...
-        self.assertEqual(normalize_url(&#x27;https://en.wikipedia.org/w/index.php?title=Category:X&amp;pagefrom=Y&amp;utm=1#mw-pages&#x27;),
-                         &#x27;https://en.wikipedia.org/wiki/Category:X?pagefrom=Y&#x27;)
-
-    def test_relative_link(self):
-        self.assertEqual(normalize_url(&#x27;/wiki/Maglev&#x27;, &#x27;https://en.wikipedia.org/wiki/Category:Rail_transport&#x27;),
-                         &#x27;https://en.wikipedia.org/wiki/Maglev&#x27;)
-
-    def test_tracking_query_removed(self):
-        self.assertEqual(normalize_url(&#x27;https://en.wikipedia.org/wiki/Maglev?utm_source=x&#x27;),
-                         &#x27;https://en.wikipedia.org/wiki/Maglev&#x27;)
-
-
-# ------------------------------------------------------------------ тестовый сайт
-def article(title, body, canonical=None):
-    link = f&#x27;&lt;link rel=&quot;canonical&quot; href=&quot;{canonical}&quot;&gt;&#x27; if canonical else &#x27;&#x27;
-    return f&#x27;&lt;html&gt;&lt;head&gt;{link}&lt;/head&gt;&lt;body&gt;&lt;h1 id=&quot;firstHeading&quot;&gt;{title}&lt;/h1&gt;&lt;div&gt;{body}&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;&#x27;
-
-
-def category(subcats, pages, next_page=None):
-    sub = &#x27;&#x27;.join(f&#x27;&lt;li&gt;&lt;a href=&quot;/wiki/{quote(c)}&quot;&gt;{c}&lt;/a&gt;&lt;/li&gt;&#x27; for c in subcats)
-    # «~» в начале — перенаправление (в Википедии такие ссылки обёрнуты в span.redirect-in-category)
-    pg = &#x27;&#x27;.join(f&#x27;&lt;li&gt;&lt;span class=&quot;redirect-in-category&quot;&gt;&lt;a href=&quot;{p[1:]}&quot;&gt;{p}&lt;/a&gt;&lt;/span&gt;&lt;/li&gt;&#x27; if p[0] == &#x27;~&#x27;
-                 else f&#x27;&lt;li&gt;&lt;a href=&quot;{p}&quot;&gt;{unquote(p.split(&quot;/&quot;)[-1])}&lt;/a&gt;&lt;/li&gt;&#x27; for p in pages)
-    nxt = f&#x27;&lt;a href=&quot;{next_page}&quot;&gt;Следующая страница&lt;/a&gt;&#x27; if next_page else &#x27;&#x27;
-    return (f&#x27;&lt;html&gt;&lt;body&gt;&lt;h1 id=&quot;firstHeading&quot;&gt;cat&lt;/h1&gt;&lt;div id=&quot;mw-subcategories&quot;&gt;&lt;ul&gt;{sub}&lt;/ul&gt;&lt;/div&gt;&#x27;
-            f&#x27;&lt;div id=&quot;mw-pages&quot;&gt;{nxt}&lt;ul&gt;{pg}&lt;/ul&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
-
-
-class Site:
-    &quot;&quot;&quot;Состояние тестового сайта: страницы, даты изменения, журнал запросов.&quot;&quot;&quot;
-    def __init__(self):
-        t = formatdate(1_700_000_000, usegmt=True)
-        self.pages = {
-            &#x27;/wiki/Категория:Корень&#x27;: (category([&#x27;Категория:Подкатегория&#x27;],
-                                                [&#x27;/wiki/Статья_А&#x27;, &#x27;/wiki/Статья_Б?utm=1#раздел&#x27;, &#x27;/wiki/Шаблон:Мусор&#x27;],
-                                                &#x27;/w/index.php?title=Категория:Корень&amp;pagefrom=В#mw-pages&#x27;), t),
-            &#x27;/wiki/Категория:Корень?pagefrom=В&#x27;: (category([], [&#x27;/wiki/Статья_В&#x27;]), t),
-            &#x27;/wiki/Категория:Подкатегория&#x27;: (category([], [&#x27;/wiki/Статья_Г&#x27;, &#x27;/wiki/Статья_А&#x27;, &#x27;~/wiki/Перенаправление&#x27;,
-                                                           &#x27;/wiki/Синоним_А&#x27;, &#x27;/wiki/Копия_Б&#x27;]), t),
-            &#x27;/wiki/Перенаправление&#x27;: (article(&#x27;Статья Г&#x27;, &#x27;текст Г&#x27;, &#x27;/wiki/Статья_Г&#x27;), t),
-            &#x27;/wiki/Синоним_А&#x27;: (article(&#x27;Статья А&#x27;, &#x27;текст А&#x27;, &#x27;/wiki/Статья_А&#x27;), t),   # тот же документ, другой URL
-            &#x27;/wiki/Копия_Б&#x27;: (article(&#x27;Статья Б&#x27;, &#x27;текст Б&#x27;), t),                     # то же содержимое
-            &#x27;/wiki/Статья_А&#x27;: (article(&#x27;Статья А&#x27;, &#x27;текст А&#x27;), t),
-            &#x27;/wiki/Статья_Б&#x27;: (article(&#x27;Статья Б&#x27;, &#x27;текст Б&#x27;), t),
-            &#x27;/wiki/Статья_В&#x27;: (article(&#x27;Статья В&#x27;, &#x27;текст В&#x27;), t),
-            &#x27;/wiki/Статья_Г&#x27;: (article(&#x27;Статья Г&#x27;, &#x27;текст Г&#x27;), t),
+<details class="file"><summary>lab2/tools/lab2.cpp <span class="ln">(305 строк)</span></summary><pre><code class="language-cpp">// ЛР2 «Поисковый робот» — утилита для проверок и демонстрации (C++). База — распределённая CockroachDB
+// (3 узла); запросы выполняются через клиент cockroach.exe (cockroach sql), путь — переменная CRDB_BIN.
+//
+//   lab2                     — меню
+//   lab2 cluster             — узлы кластера, живые ли, сколько диапазонов (шардов) и реплик у таблиц
+//   lab2 stats               — документы по источникам, размеры, очередь
+//   lab2 frontier            — состояние очереди обхода: new / done / duplicate / error / skipped
+//   lab2 show ВЛ80           — найти документ по заголовку: поля в базе
+//   lab2 failover            — подключение при недоступном узле (первый узел в списке «мёртвый»)
+//   lab2 nodes               — один и тот же запрос через каждый из трёх узлов
+//   lab2 normalize HTTP://RU.Wikipedia.org/wiki/ВЛ80#История   — нормализация URL
+//   lab2 robots https://ru.wikipedia.org/w/index.php?title=X    — разрешён ли адрес robots.txt
+//   lab2 sql SELECT source, count(*) FROM documents GROUP BY 1  — свой запрос к базе
+#include &quot;../../lab_boolean/src/common.h&quot;
+#include &quot;../../lab_boolean/tools/tool.h&quot;
+#include &lt;algorithm&gt;
+#include &lt;map&gt;
+
+static const std::vector&lt;std::string&gt; HOSTS = {&quot;localhost:26257&quot;, &quot;localhost:26258&quot;, &quot;localhost:26259&quot;};
+
+// ---------------------------------------------------------------- доступ к кластеру
+static std::string crdb() {
+    const char *e = getenv(&quot;CRDB_BIN&quot;);
+    return e &amp;&amp; *e ? e : &quot;D:\\ir_labs_data\\cockroach\\cockroach.exe&quot;;
+}
+
+// Выполнить SQL на узле host; вывод в формате TSV (первая строка — заголовки). ok = узел ответил.
+static std::string sql_on(const std::string &amp;host, const std::string &amp;q, bool *ok = nullptr, const char *db = &quot;robot&quot;) {
+    // запрос передаётся файлом (--file): в командной строке cmd.exe исказил бы символы % и кавычки
+    std::string tmp = std::string(getenv(&quot;TEMP&quot;) ? getenv(&quot;TEMP&quot;) : &quot;.&quot;) + &quot;\\lab2_query.sql&quot;;
+    FILE *f = tool::open_file(tmp, &quot;wb&quot;);
+    std::string body = q;
+    while (!body.empty() &amp;&amp; isspace((unsigned char)body.back())) body.pop_back();
+    if (body.empty() || body.back() != &#x27;;&#x27;) body += &#x27;;&#x27;;                  // клиент требует ; в конце
+    if (f) { fwrite(body.data(), 1, body.size(), f); fclose(f); }
+    int rc = 0;
+    std::string out = tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; sql --insecure --host=&quot; + host + &quot; --database=&quot; + db +
+                                &quot; --format=tsv --file=&quot; + tool::quote(tmp) + &quot;\&quot;&quot;, &amp;rc);
+    if (ok) *ok = rc == 0;
+    return out;
+}
+
+// Подключение к первому живому узлу — как connect_any в db.py.
+static std::string sql(const std::string &amp;q, std::string *node = nullptr) {
+    for (auto &amp;h : HOSTS) {
+        bool ok; std::string out = sql_on(h, q, &amp;ok);
+        if (ok) { if (node) *node = h; return out; }
+        if (out.find(&quot;cannot dial&quot;) == std::string::npos &amp;&amp; out.find(&quot;refused&quot;) == std::string::npos) {
+            if (node) *node = h;                                               // узел ответил, но запрос с ошибкой
+            return &quot;ошибка\n&quot; + out;
         }
-        self.log = []      # (время, путь, заголовок If-Modified-Since)
-        self.robots = None  # текст robots.txt (None — 404)
+    }
+    return &quot;ни один узел кластера не отвечает — запустите start_cluster.bat\n&quot;;
+}
 
+// Таблица TSV -&gt; строки и столбцы.
+static std::vector&lt;std::vector&lt;std::string&gt;&gt; rows(const std::string &amp;tsv) {
+    std::vector&lt;std::vector&lt;std::string&gt;&gt; r;
+    size_t p = 0;
+    while (p &lt; tsv.size()) {
+        size_t q = tsv.find(&#x27;\n&#x27;, p); if (q == std::string::npos) q = tsv.size();
+        std::string l = tsv.substr(p, q - p); p = q + 1;
+        if (!l.empty() &amp;&amp; l.back() == &#x27;\r&#x27;) l.pop_back();
+        if (l.empty()) continue;
+        std::vector&lt;std::string&gt; c; size_t a = 0, b;
+        while ((b = l.find(&#x27;\t&#x27;, a)) != std::string::npos) { c.push_back(l.substr(a, b - a)); a = b + 1; }
+        c.push_back(l.substr(a));
+        r.push_back(c);
+    }
+    return r;
+}
 
-def make_handler(site):
-    class H(BaseHTTPRequestHandler):
-        def do_GET(self):
-            p = urlsplit(self.path)
-            key = unquote(p.path) + (&#x27;?&#x27; + unquote(p.query) if p.query else &#x27;&#x27;)
-            ims = self.headers.get(&#x27;If-Modified-Since&#x27;)
-            site.log.append((time.time(), key, ims))
-            if key == &#x27;/robots.txt&#x27; and site.robots is not None:
-                data = site.robots.encode()
-                self.send_response(200); self.send_header(&#x27;Content-Length&#x27;, str(len(data))); self.end_headers()
-                self.wfile.write(data); return
-            if key not in site.pages:
-                self.send_response(404); self.end_headers(); return
-            html, modified = site.pages[key]
-            if modified and ims == modified:
-                self.send_response(304); self.end_headers(); return
-            data = html.encode(&#x27;utf-8&#x27;)
-            self.send_response(200)
-            self.send_header(&#x27;Content-Type&#x27;, &#x27;text/html; charset=utf-8&#x27;)
-            if modified:                    # None — сайт не сообщает Last-Modified (как «Гудок»)
-                self.send_header(&#x27;Last-Modified&#x27;, modified)
-            self.send_header(&#x27;Content-Length&#x27;, str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+// Печать таблицы с выравниванием по ширине столбцов (с учётом кириллицы).
+static void print_table(const std::string &amp;tsv) {
+    auto r = rows(tsv);
+    if (r.empty()) { printf(&quot;  (пусто)\n&quot;); return; }
+    std::vector&lt;size_t&gt; w;
+    for (auto &amp;row : r) for (size_t i = 0; i &lt; row.size(); i++) {
+        if (w.size() &lt;= i) w.push_back(0);
+        w[i] = std::max(w[i], std::min&lt;size_t&gt;(tool::u8len(row[i]), 60));
+    }
+    for (size_t k = 0; k &lt; r.size(); k++) {
+        printf(&quot;  &quot;);
+        for (size_t i = 0; i &lt; r[k].size(); i++) printf(&quot;%s  &quot;, tool::pad(tool::u8prefix(r[k][i], 60), w[i]).c_str());
+        printf(&quot;\n&quot;);
+        if (k == 0) { printf(&quot;  &quot;); for (size_t x : w) printf(&quot;%s  &quot;, std::string(x, &#x27;-&#x27;).c_str()); printf(&quot;\n&quot;); }
+    }
+}
 
-        def log_message(self, *a):
-            pass
-    return H
+// ---------------------------------------------------------------- нормализация URL (как normalize_url в robot.py)
+static std::string lower_ascii(std::string s) { for (auto &amp;c : s) c = (char)tolower((unsigned char)c); return s; }
 
+static std::string pct_decode(const std::string &amp;s) {
+    std::string r;
+    for (size_t i = 0; i &lt; s.size(); i++)
+        if (s[i] == &#x27;%&#x27; &amp;&amp; i + 2 &lt; s.size() &amp;&amp; isxdigit((unsigned char)s[i + 1]) &amp;&amp; isxdigit((unsigned char)s[i + 2])) {
+            r += (char)strtol(s.substr(i + 1, 2).c_str(), nullptr, 16); i += 2;
+        } else r += s[i];
+    return r;
+}
+// %-кодирование: буквы, цифры и символы из safe остаются, остальные байты -&gt; %XX (заглавные).
+static std::string pct_encode(const std::string &amp;s, const char *safe) {
+    std::string r; char b[4];
+    for (unsigned char c : s) {
+        if (isalnum(c) || strchr(&quot;_.-~&quot;, c) || (c &amp;&amp; strchr(safe, c))) r += (char)c;
+        else { snprintf(b, sizeof b, &quot;%%%02X&quot;, c); r += b; }
+    }
+    return r;
+}
 
-class TestRobot(unittest.TestCase):
-    def setUp(self):
-        self.site = Site()
-        self.server = ThreadingHTTPServer((&#x27;127.0.0.1&#x27;, 0), make_handler(self.site))
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.base = f&#x27;http://127.0.0.1:{self.server.server_address[1]}&#x27;
-        self.tmp = tempfile.mkdtemp()
-        self.db_path = new_db_name()
+static const char *SAFE = &quot;/:@!$&#x27;()*+,;=-._~&quot;;
+static const char *KEEP[] = {&quot;title&quot;, &quot;pagefrom&quot;, &quot;subcatfrom&quot;, &quot;pageuntil&quot;, &quot;subcatuntil&quot;, &quot;from&quot;, &quot;ID&quot;};
 
-    def tearDown(self):
-        self.server.shutdown()
-        drop_db(self.db_path)
+static std::string normalize_url(std::string url, const std::string &amp;base = &quot;&quot;) {
+    while (!url.empty() &amp;&amp; isspace((unsigned char)url.back())) url.pop_back();
+    while (!url.empty() &amp;&amp; isspace((unsigned char)url[0])) url.erase(0, 1);
+    if (!base.empty() &amp;&amp; url.find(&quot;://&quot;) == std::string::npos) {            // относительная ссылка
+        size_t s = base.find(&quot;://&quot;), h = base.find(&#x27;/&#x27;, s + 3);
+        std::string origin = base.substr(0, h);
+        if (url.rfind(&quot;//&quot;, 0) == 0) url = base.substr(0, s + 1) + url;
+        else if (url[0] == &#x27;/&#x27;) url = origin + url;
+        else url = base.substr(0, base.rfind(&#x27;/&#x27;) + 1) + url;
+    }
+    size_t hash = url.find(&#x27;#&#x27;); if (hash != std::string::npos) url.resize(hash);           // без #фрагмента
+    size_t s = url.find(&quot;://&quot;);
+    std::string scheme = s == std::string::npos ? &quot;https&quot; : lower_ascii(url.substr(0, s));
+    std::string rest = s == std::string::npos ? url : url.substr(s + 3);
+    size_t slash = rest.find_first_of(&quot;/?&quot;);
+    std::string hostport = lower_ascii(rest.substr(0, slash)), tail = slash == std::string::npos ? &quot;&quot; : rest.substr(slash);
+    size_t qm = tail.find(&#x27;?&#x27;);
+    std::string path = tail.substr(0, qm), query = qm == std::string::npos ? &quot;&quot; : tail.substr(qm + 1);
+    std::string host = hostport, port;
+    size_t colon = hostport.rfind(&#x27;:&#x27;);
+    if (colon != std::string::npos) { host = hostport.substr(0, colon); port = hostport.substr(colon + 1); }
+    auto ends = [](const std::string &amp;a, const std::string &amp;b) { return a.size() &gt;= b.size() &amp;&amp; a.compare(a.size() - b.size(), b.size(), b) == 0; };
+    if (scheme == &quot;http&quot; &amp;&amp; ends(host, &quot;wikipedia.org&quot;)) scheme = &quot;https&quot;;                   // Википедия только по https
+    size_t m = host.find(&quot;.m.wikipedia.org&quot;);                                               // мобильная версия -&gt; обычная
+    if (m != std::string::npos &amp;&amp; m + 16 == host.size()) host = host.substr(0, m) + &quot;.wikipedia.org&quot;;
+    if (!port.empty() &amp;&amp; port != &quot;80&quot; &amp;&amp; port != &quot;443&quot;) host += &quot;:&quot; + port;
+    path = pct_decode(path);
+    std::replace(path.begin(), path.end(), &#x27; &#x27;, &#x27;_&#x27;);
+    std::vector&lt;std::pair&lt;std::string, std::string&gt;&gt; kv;                                     // значимые параметры
+    std::string title;
+    size_t a = 0;
+    while (a &lt;= query.size() &amp;&amp; !query.empty()) {
+        size_t e = query.find(&#x27;&amp;&#x27;, a); if (e == std::string::npos) e = query.size();
+        std::string p = query.substr(a, e - a); a = e + 1;
+        size_t eq = p.find(&#x27;=&#x27;);
+        if (eq == std::string::npos || eq + 1 == p.size()) { if (e == query.size()) break; continue; }
+        std::string k = pct_decode(p.substr(0, eq)), v = pct_decode(p.substr(eq + 1));
+        std::replace(v.begin(), v.end(), &#x27;+&#x27;, &#x27; &#x27;); std::replace(v.begin(), v.end(), &#x27; &#x27;, &#x27;_&#x27;);
+        bool keep = false; for (auto x : KEEP) keep |= k == x;
+        if (keep) { if (k == &quot;title&quot;) title = v; else kv.push_back({k, v}); }
+        if (e == query.size()) break;
+    }
+    if (path == &quot;/w/index.php&quot; &amp;&amp; !title.empty()) path = &quot;/wiki/&quot; + title;
+    std::sort(kv.begin(), kv.end());
+    std::string q;
+    for (auto &amp;x : kv) q += (q.empty() ? &quot;&quot; : &quot;&amp;&quot;) + pct_encode(x.first, SAFE) + &quot;=&quot; + pct_encode(x.second, SAFE);
+    return scheme + &quot;://&quot; + host + (path.empty() ? &quot;/&quot; : pct_encode(path, SAFE)) + (q.empty() ? &quot;&quot; : &quot;?&quot; + q);
+}
 
-    def config(self, **logic):
-        cfg = {&#x27;db&#x27;: {&#x27;database&#x27;: self.db_path},
-               &#x27;logic&#x27;: {&#x27;delay&#x27;: 0, &#x27;exit_when_idle&#x27;: True, &#x27;recrawl_interval&#x27;: 3600, &#x27;idle_sleep&#x27;: 0},
-               &#x27;sources&#x27;: [{&#x27;name&#x27;: &#x27;testwiki&#x27;, &#x27;seeds&#x27;: [self.base + &#x27;/wiki/Категория:Корень&#x27;],
-                            &#x27;max_depth&#x27;: 3, &#x27;max_categories&#x27;: 100}]}
-        cfg[&#x27;logic&#x27;].update(logic)
-        return cfg
+// ---------------------------------------------------------------- robots.txt
+// Правила группы «User-agent: *» (или нашего робота); побеждает самое длинное совпавшее правило, Allow при равенстве.
+static bool robots_allowed(const std::string &amp;robots, const std::string &amp;path, const std::string &amp;agent = &quot;MAI-IR-robot&quot;) {
+    struct Rule { bool allow; std::string prefix; };
+    std::vector&lt;Rule&gt; mine, star, *cur = nullptr;
+    bool lastWasAgent = false;
+    size_t p = 0;
+    std::vector&lt;std::vector&lt;Rule&gt; *&gt; group;
+    while (p &lt;= robots.size()) {
+        size_t q = robots.find(&#x27;\n&#x27;, p); if (q == std::string::npos) q = robots.size();
+        std::string l = robots.substr(p, q - p); p = q + 1;
+        size_t h = l.find(&#x27;#&#x27;); if (h != std::string::npos) l.resize(h);
+        while (!l.empty() &amp;&amp; isspace((unsigned char)l.back())) l.pop_back();
+        size_t c = l.find(&#x27;:&#x27;);
+        if (c != std::string::npos) {
+            std::string k = lower_ascii(l.substr(0, c)), v = l.substr(c + 1);
+            while (!v.empty() &amp;&amp; v[0] == &#x27; &#x27;) v.erase(0, 1);
+            if (k == &quot;user-agent&quot;) {
+                if (!lastWasAgent) group.clear();
+                if (v == &quot;*&quot;) group.push_back(&amp;star);
+                else if (lower_ascii(agent).find(lower_ascii(v)) != std::string::npos) group.push_back(&amp;mine);
+                lastWasAgent = true;
+            } else {
+                lastWasAgent = false;
+                if ((k == &quot;allow&quot; || k == &quot;disallow&quot;) &amp;&amp; !v.empty())
+                    for (auto *g : group) g-&gt;push_back({k == &quot;allow&quot;, v});
+            }
+        }
+        if (q == robots.size()) break;
+    }
+    cur = mine.empty() ? &amp;star : &amp;mine;
+    int best = -1; bool allow = true;
+    for (auto &amp;r : *cur) {
+        std::string pre = r.prefix; bool endAnchor = !pre.empty() &amp;&amp; pre.back() == &#x27;$&#x27;;
+        if (endAnchor) pre.pop_back();
+        size_t star_ = pre.find(&#x27;*&#x27;);
+        bool match = star_ == std::string::npos ? (endAnchor ? path == pre : path.rfind(pre, 0) == 0)
+                                                : path.rfind(pre.substr(0, star_), 0) == 0 &amp;&amp; path.find(pre.substr(star_ + 1)) != std::string::npos;
+        if (match &amp;&amp; ((int)r.prefix.size() &gt; best || ((int)r.prefix.size() == best &amp;&amp; r.allow))) { best = (int)r.prefix.size(); allow = r.allow; }
+    }
+    return allow;
+}
 
-    def docs(self):
-        db = SqlDb(self.db_path)
-        rows = db.execute(&#x27;SELECT url, source, title, html, compressed, crawled_at, versions, content_hash &#x27;
-                          &#x27;FROM documents ORDER BY title&#x27;).fetchall()
-        db.close()
-        return rows
+// ---------------------------------------------------------------- команды
+static void cmd_cluster(const std::string &amp;) {
+    printf(&quot;Узлы кластера (cockroach node status):\n&quot;);
+    print_table(tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; node status --insecure --host=localhost:26257 --format=tsv\&quot;&quot;));
+    printf(&quot;\nТаблицы базы robot: диапазоны (шарды) и реплики:\n&quot;);
+    print_table(sql(&quot;SELECT table_name AS таблица, count(*) AS диапазонов, min(array_length(replicas,1)) AS реплик_мин, &quot;
+                    &quot;max(array_length(replicas,1)) AS реплик_макс FROM [SHOW CLUSTER RANGES WITH TABLES, DETAILS] &quot;
+                    &quot;WHERE database_name=&#x27;robot&#x27; GROUP BY 1 ORDER BY 1&quot;));
+    printf(&quot;\nДиапазоны таблицы documents: на каком узле главная копия (leaseholder), где реплики, размер:\n&quot;);
+    print_table(sql(&quot;SELECT range_id, lease_holder, replicas, round(range_size_mb) AS mb FROM [SHOW RANGES FROM TABLE documents WITH DETAILS]&quot;));
+}
 
-    def article_requests(self):
-        return [k for _, k, _ in self.site.log if k.startswith(&#x27;/wiki/Статья&#x27;)]
+static void cmd_stats(const std::string &amp;) {
+    std::string node;
+    print_table(sql(&quot;SELECT source AS источник, count(*) AS документов, round(sum(html_size)/1048576.0) AS html_мб, &quot;
+                    &quot;round(avg(html_size)/1024.0) AS ср_кб, sum(versions-1) AS обновлений FROM documents GROUP BY 1 ORDER BY 1&quot;, &amp;node));
+    print_table(sql(&quot;SELECT count(*) AS всего_документов, (SELECT count(*) FROM frontier WHERE state=&#x27;new&#x27;) AS в_очереди FROM documents&quot;));
+    printf(&quot;(запрос выполнен через узел %s)\n&quot;, node.c_str());
+}
 
-    def test_full_crawl(self):
-        Robot(self.config()).run()
-        docs = self.docs()
-        self.assertEqual([d[2] for d in docs], [&#x27;Статья А&#x27;, &#x27;Статья Б&#x27;, &#x27;Статья В&#x27;, &#x27;Статья Г&#x27;])
-        self.assertTrue(all(d[1] == &#x27;testwiki&#x27; for d in docs))                      # название источника
-        self.assertNotIn(&#x27;Шаблон&#x27;, &#x27; &#x27;.join(d[0] for d in docs))                   # служебные страницы пропущены
-        self.assertIn(&#x27;/wiki/%D0%A1%D1%82%D0%B0%D1%82%D1%8C%D1%8F_%D0%91&#x27;, [d[0] for d in docs][1])  # без ?utm и #
-        self.assertEqual(zlib.decompress(docs[0][3]).decode(&#x27;utf-8&#x27;), self.site.pages[&#x27;/wiki/Статья_А&#x27;][0])
-        self.assertTrue(all(abs(d[5] - time.time()) &lt; 60 for d in docs))          # Unix timestamp
-        self.assertEqual(sorted(self.article_requests()), sorted(set(self.article_requests())))  # без повторов
+static void cmd_frontier(const std::string &amp;) {
+    print_table(sql(&quot;SELECT state AS состояние, kind AS тип, count(*) AS адресов FROM frontier GROUP BY 1, 2 ORDER BY 1, 2&quot;));
+    printf(&quot;\nnew — ещё не обработан, done — скачан, duplicate — такой документ уже есть, error — ошибка, skipped — запрещён robots.txt\n&quot;);
+}
 
-    def test_raw_html_without_compression(self):
-        Robot(self.config(compress=False)).run()
-        d = self.docs()[0]
-        self.assertEqual(d[4], 0)
-        self.assertEqual(d[3].decode(&#x27;utf-8&#x27;), self.site.pages[&#x27;/wiki/Статья_А&#x27;][0])
+static void cmd_show(const std::string &amp;arg) {
+    std::string w = arg.empty() ? &quot;ВЛ80&quot; : arg, esc;
+    for (char c : w) { if (c == &#x27;\&#x27;&#x27;) esc += &quot;&#x27;&#x27;&quot;; else esc += c; }
+    print_table(sql(&quot;SELECT title AS заголовок, source AS источник, html_size AS байт, versions AS версий, &quot;
+                    &quot;to_timestamp(crawled_at::FLOAT)::DATE AS скачан, left(content_hash, 12) AS хеш, url FROM documents &quot;
+                    &quot;WHERE title ILIKE &#x27;%&quot; + esc + &quot;%&#x27; LIMIT 10&quot;));
+}
 
-    def test_resume_after_stop(self):
-        Robot(self.config(max_requests=3)).run()                                   # «остановили» после 3 запросов
-        first = len(self.site.log)
-        self.assertEqual(first, 3)
-        self.assertLess(len(self.docs()), 4)
-        Robot(self.config()).run()                                                 # перезапуск
-        self.assertEqual(len(self.docs()), 4)
-        paths = [k for _, k, _ in self.site.log if k != &#x27;/robots.txt&#x27;]
-        self.assertEqual(len(paths), len(set(paths)))                              # ни одна страница не скачана дважды
+static void cmd_failover(const std::string &amp;) {
+    std::vector&lt;std::string&gt; hosts = {&quot;127.0.0.1:1&quot;};                       // «мёртвый» узел первым в списке
+    hosts.insert(hosts.end(), HOSTS.begin(), HOSTS.end());
+    double t0 = now_sec();
+    for (auto &amp;h : hosts) {
+        bool ok;
+        std::string out = sql_on(h, &quot;SELECT crdb_internal.node_id() AS узел, count(*) AS документов FROM documents&quot;, &amp;ok);
+        printf(&quot;  подключение к %-18s %s\n&quot;, h.c_str(), ok ? &quot;успешно&quot; : &quot;НЕ ОТВЕЧАЕТ — пробуем следующий узел&quot;);
+        if (ok) { print_table(out); break; }
+    }
+    printf(&quot;  время с переключением: %.1f с\nДанные доступны: каждый диапазон хранится в 3 копиях, ответит любой живой узел.\n&quot;, now_sec() - t0);
+}
 
-    def test_delay_between_requests(self):
-        robot = Robot(self.config(delay=0.2))
-        times, real_get = [], robot.http.get
+static void cmd_nodes(const std::string &amp;) {
+    for (auto &amp;h : HOSTS) {
+        bool ok;
+        std::string out = sql_on(h, &quot;SELECT crdb_internal.node_id() AS узел, count(*) AS документов, &quot;
+                                    &quot;(SELECT count(*) FROM frontier) AS в_frontier FROM documents&quot;, &amp;ok);
+        printf(&quot;%s:\n&quot;, h.c_str());
+        if (ok) print_table(out); else printf(&quot;  узел не отвечает\n&quot;);
+    }
+    printf(&quot;Все узлы возвращают одно и то же: это одна логическая база.\n&quot;);
+}
 
-        def timed_get(*a, **kw):                     # время отправки каждого запроса со стороны робота
-            times.append(time.perf_counter())
-            return real_get(*a, **kw)
-        robot.http.get = timed_get
-        robot.run()
-        gaps = [b - a for a, b in zip(times, times[1:])]
-        self.assertEqual(len(times), 10)
-        self.assertGreaterEqual(min(gaps), 0.199)
+static void cmd_normalize(const std::string &amp;arg) {
+    std::vector&lt;std::string&gt; ex = {&quot;HTTP://RU.Wikipedia.org/wiki/ВЛ80#История&quot;, &quot;https://ru.m.wikipedia.org/wiki/%D0%92%D0%9B80&quot;,
+                                   &quot;https://en.wikipedia.org/w/index.php?title=Category:X&amp;pagefrom=Y&amp;utm=1#mw-pages&quot;,
+                                   &quot;https://gudok.ru/newspaper/?ID=1234567&amp;utm_source=vk&quot;};
+    if (!arg.empty()) ex = {arg};
+    for (auto &amp;u : ex) {
+        std::string n = normalize_url(u);
+        printf(&quot;  %s\n  -&gt; %s\n     (для чтения: %s)\n\n&quot;, u.c_str(), n.c_str(), pct_decode(n).c_str());
+    }
+}
 
-    def test_max_depth(self):
-        cfg = self.config()
-        cfg[&#x27;sources&#x27;][0][&#x27;max_depth&#x27;] = 0                                         # подкатегории не обходим
-        Robot(cfg).run()
-        self.assertEqual([d[2] for d in self.docs()], [&#x27;Статья А&#x27;, &#x27;Статья Б&#x27;, &#x27;Статья В&#x27;])
+static void cmd_robots(const std::string &amp;arg) {
+    std::string url = arg.empty() ? &quot;https://ru.wikipedia.org/w/index.php?title=X&quot; : arg;
+    size_t s = url.find(&quot;://&quot;), h = url.find(&#x27;/&#x27;, s + 3);
+    std::string origin = url.substr(0, h), path = h == std::string::npos ? &quot;/&quot; : url.substr(h);
+    std::string r = tool::run(&quot;curl -s -m 20 -A MAI-IR-robot/1.0 &quot; + origin + &quot;/robots.txt&quot;);
+    printf(&quot;  robots.txt сайта %s: %s байт\n  адрес %s\n  -&gt; %s\n&quot;, origin.c_str(), tool::num(r.size()).c_str(), url.c_str(),
+           robots_allowed(r, path) ? &quot;РАЗРЕШЁН&quot; : &quot;ЗАПРЕЩЁН&quot;);
+}
 
-    def test_recrawl_only_changed(self):
-        robot = Robot(self.config())
-        robot.seed(); robot.crawl_frontier()
-        before = {d[0]: d for d in self.docs()}
-        # меняем одну статью: новый текст и новая дата изменения
-        self.site.pages[&#x27;/wiki/Статья_А&#x27;] = (article(&#x27;Статья А&#x27;, &#x27;новый текст&#x27;), formatdate(1_800_000_000, usegmt=True))
-        time.sleep(1.1)
-        robot.recrawl_interval = 0
-        self.site.log.clear()
-        robot.recrawl()
-        after = {d[0]: d for d in self.docs()}
-        self.assertTrue(all(ims for _, _, ims in self.site.log))                  # все запросы условные
-        changed = [u for u in after if after[u][7] != before[u][7]]
-        self.assertEqual(len(changed), 1)                                          # обновлена только «Статья А»
-        self.assertEqual(after[changed[0]][2], &#x27;Статья А&#x27;)
-        self.assertEqual(after[changed[0]][6], 2)                                  # versions = 2
-        self.assertGreater(after[changed[0]][5], before[changed[0]][5])            # новая дата обкачки
-        self.assertTrue(all(after[u][6] == 1 for u in after if u not in changed))
+static void cmd_sql(const std::string &amp;arg) {
+    std::string q = arg.empty() ? &quot;SELECT source, count(*) FROM documents GROUP BY 1&quot; : arg;
+    printf(&quot;%s\n&quot;, q.c_str());
+    print_table(sql(q));
+}
 
-    def test_robots_txt(self):
-        self.site.robots = &#x27;User-agent: *\nDisallow: /wiki/%D0%A1%D1%82%D0%B0%D1%82%D1%8C%D1%8F_%D0%93\n&#x27;
-        Robot(self.config()).run()
-        self.assertEqual([d[2] for d in self.docs()], [&#x27;Статья А&#x27;, &#x27;Статья Б&#x27;, &#x27;Статья В&#x27;])
-        self.assertNotIn(&#x27;/wiki/Статья_Г&#x27;, self.article_requests())               # запрещённая страница не запрошена
-        db = SqlDb(self.db_path)
-        self.assertEqual(db.execute(&quot;SELECT COUNT(*) FROM frontier WHERE state=&#x27;skipped&#x27;&quot;).fetchone()[0], 1)
-        db.close()
+#ifndef LAB2_NO_MAIN
+int main(int argc, char **argv) {
+    tool::init_console();
+    return tool::main_loop(&quot;ЛР2 «Поисковый робот» (CockroachDB)&quot;, {
+        {&quot;cluster&quot;, &quot;узлы, диапазоны (шарды), реплики&quot;, &quot;&quot;, cmd_cluster},
+        {&quot;stats&quot;, &quot;документы по источникам&quot;, &quot;&quot;, cmd_stats},
+        {&quot;frontier&quot;, &quot;состояние очереди обхода&quot;, &quot;&quot;, cmd_frontier},
+        {&quot;show&quot;, &quot;найти документ в базе по заголовку&quot;, &quot;часть заголовка&quot;, cmd_show},
+        {&quot;failover&quot;, &quot;отказ узла: подключение к следующему&quot;, &quot;&quot;, cmd_failover},
+        {&quot;nodes&quot;, &quot;один запрос через каждый узел&quot;, &quot;&quot;, cmd_nodes},
+        {&quot;normalize&quot;, &quot;нормализация URL&quot;, &quot;URL (Enter — примеры)&quot;, cmd_normalize},
+        {&quot;robots&quot;, &quot;разрешён ли адрес в robots.txt&quot;, &quot;URL&quot;, cmd_robots},
+        {&quot;sql&quot;, &quot;свой SQL-запрос к базе&quot;, &quot;SQL&quot;, cmd_sql},
+    }, tool::args(argc, argv));
+}
+#endif
+</code></pre></details>
+<details class="file"><summary>lab2/tests/test_lab2.cpp <span class="ln">(125 строк)</span></summary><pre><code class="language-cpp">// Тесты ЛР2 на C++ (GoogleTest): нормализация URL, правила robots.txt и распределённая БД CockroachDB
+// (3 живых узла, каждый диапазон в 3 репликах, переключение на живой узел, нет дублей документов,
+// ON CONFLICT не создаёт повторов). Код утилиты подключается напрямую (main отключён LAB2_NO_MAIN).
+#define LAB2_NO_MAIN
+#include &quot;../tools/lab2.cpp&quot;
+#include &lt;gtest/gtest.h&gt;
 
-    def test_duplicates(self):
-        Robot(self.config()).run()
-        self.assertEqual(len(self.docs()), 4)                                      # дубликаты не сохранены
-        self.assertNotIn(&#x27;/wiki/Перенаправление&#x27;, [k for _, k, _ in self.site.log])  # перенаправление не запрошено
-        db = SqlDb(self.db_path)
-        dups = db.execute(&quot;SELECT url, error FROM frontier WHERE state=&#x27;duplicate&#x27; ORDER BY url&quot;).fetchall()
-        db.close()
-        self.assertEqual(len(dups), 2)                                             # Синоним_А (canonical) и Копия_Б (хеш)
-        self.assertEqual({unquote(e.split(&#x27;/&#x27;)[-1]) for _, e in dups}, {&#x27;Статья_А&#x27;, &#x27;Статья_Б&#x27;})
+// ---------------------------------------------------------------- нормализация URL
+TEST(Lab2_Normalize, scheme_and_host_lowercase) {
+    EXPECT_EQ(normalize_url(&quot;HTTPS://RU.Wikipedia.ORG/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
+}
+TEST(Lab2_Normalize, http_to_https_for_wikipedia) {
+    EXPECT_EQ(normalize_url(&quot;http://ru.wikipedia.org/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
+}
+TEST(Lab2_Normalize, fragment_removed) {
+    EXPECT_EQ(normalize_url(&quot;https://ru.wikipedia.org/wiki/X#История&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
+}
+TEST(Lab2_Normalize, mobile_to_desktop) {
+    EXPECT_EQ(normalize_url(&quot;https://ru.m.wikipedia.org/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
+}
+TEST(Lab2_Normalize, default_port_removed) {
+    EXPECT_EQ(normalize_url(&quot;https://ru.wikipedia.org:443/wiki/X&quot;), &quot;https://ru.wikipedia.org/wiki/X&quot;);
+}
+TEST(Lab2_Normalize, same_percent_encoding) {
+    EXPECT_EQ(normalize_url(&quot;https://ru.wikipedia.org/wiki/ВЛ80&quot;), normalize_url(&quot;https://ru.wikipedia.org/wiki/%D0%92%D0%9B80&quot;));
+    EXPECT_EQ(normalize_url(&quot;https://ru.wikipedia.org/wiki/ВЛ80&quot;), &quot;https://ru.wikipedia.org/wiki/%D0%92%D0%9B80&quot;);
+}
+TEST(Lab2_Normalize, spaces_to_underscores) {
+    EXPECT_EQ(normalize_url(&quot;https://en.wikipedia.org/wiki/Rail transport&quot;), &quot;https://en.wikipedia.org/wiki/Rail_transport&quot;);
+}
+TEST(Lab2_Normalize, index_php_title_to_wiki_path) {
+    EXPECT_EQ(normalize_url(&quot;https://en.wikipedia.org/w/index.php?title=Maglev&amp;action=view&quot;), &quot;https://en.wikipedia.org/wiki/Maglev&quot;);
+    EXPECT_EQ(normalize_url(&quot;https://en.wikipedia.org/w/index.php?title=Category:X&amp;pagefrom=Y&amp;utm=1#mw-pages&quot;),
+              &quot;https://en.wikipedia.org/wiki/Category:X?pagefrom=Y&quot;);
+}
+TEST(Lab2_Normalize, relative_link_resolved) {
+    EXPECT_EQ(normalize_url(&quot;/wiki/Maglev&quot;, &quot;https://en.wikipedia.org/wiki/Category:Rail_transport&quot;), &quot;https://en.wikipedia.org/wiki/Maglev&quot;);
+}
+TEST(Lab2_Normalize, tracking_params_dropped_significant_kept) {
+    EXPECT_EQ(normalize_url(&quot;https://en.wikipedia.org/wiki/Maglev?utm_source=x&quot;), &quot;https://en.wikipedia.org/wiki/Maglev&quot;);
+    EXPECT_EQ(normalize_url(&quot;https://gudok.ru/newspaper/?utm_source=vk&amp;ID=1234567&quot;), &quot;https://gudok.ru/newspaper/?ID=1234567&quot;);
+}
 
-    def test_cli_run_with_yaml(self):
-        # запуск робота как утилиты командной строки: python robot.py &lt;конфиг.yaml&gt;
-        import yaml
-        cfg_path = os.path.join(self.tmp, &#x27;config.yaml&#x27;)
-        with open(cfg_path, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
-            yaml.safe_dump(self.config(), f, allow_unicode=True)
-        r = subprocess.run([sys.executable, os.path.join(HERE, &#x27;..&#x27;, &#x27;robot.py&#x27;), cfg_path],
-                           capture_output=True, encoding=&#x27;utf-8&#x27;, env=dict(os.environ, PYTHONIOENCODING=&#x27;utf-8&#x27;))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn(&#x27;Остановлен&#x27;, r.stdout)
-        self.assertEqual([d[2] for d in self.docs()], [&#x27;Статья А&#x27;, &#x27;Статья Б&#x27;, &#x27;Статья В&#x27;, &#x27;Статья Г&#x27;])
+// ---------------------------------------------------------------- robots.txt
+TEST(Lab2_Robots, disallow_prefix) {
+    std::string r = &quot;User-agent: *\nDisallow: /w/\nDisallow: /api/\n&quot;;
+    EXPECT_FALSE(robots_allowed(r, &quot;/w/index.php?title=X&quot;));
+    EXPECT_TRUE(robots_allowed(r, &quot;/wiki/X&quot;));
+}
+TEST(Lab2_Robots, longest_rule_wins_allow_over_disallow) {
+    std::string r = &quot;User-agent: *\nDisallow: /wiki/Special:\nAllow: /wiki/Special:Search\n&quot;;
+    EXPECT_FALSE(robots_allowed(r, &quot;/wiki/Special:Random&quot;));
+    EXPECT_TRUE(robots_allowed(r, &quot;/wiki/Special:Search&quot;));
+}
+TEST(Lab2_Robots, own_group_overrides_star) {
+    std::string r = &quot;User-agent: *\nDisallow: /\n\nUser-agent: MAI-IR-robot\nDisallow: /private/\n&quot;;
+    EXPECT_TRUE(robots_allowed(r, &quot;/news/&quot;));
+    EXPECT_FALSE(robots_allowed(r, &quot;/private/x&quot;));
+}
+TEST(Lab2_Robots, empty_robots_allows_all) {
+    EXPECT_TRUE(robots_allowed(&quot;&quot;, &quot;/anything&quot;));
+}
 
-    def test_single_argument(self):
-        r = subprocess.run([sys.executable, os.path.join(HERE, &#x27;..&#x27;, &#x27;robot.py&#x27;)], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn(&#x27;usage&#x27;, r.stdout)
+// ---------------------------------------------------------------- распределённая БД (нужен запущенный кластер)
+static bool cluster_up() {
+    bool ok; sql_on(HOSTS[0], &quot;SELECT 1&quot;, &amp;ok, &quot;defaultdb&quot;);
+    return ok;
+}
+#define NEED_CLUSTER() do { tool::init_console(); if (!cluster_up()) GTEST_SKIP() &lt;&lt; &quot;кластер не запущен (start_cluster.bat)&quot;; } while (0)
 
-
-# ------------------------------------------------------------------ источник с картой сайта
-def news_page(title, body, ad=&#x27;реклама 1&#x27;):
-    &quot;&quot;&quot;Страница статьи в разметке «Гудка»: меню, меняющийся рекламный блок, статья.&quot;&quot;&quot;
-    return (f&#x27;&lt;html&gt;&lt;head&gt;&lt;meta property=&quot;og:title&quot; content=&quot;{title}&quot;&gt;&lt;/head&gt;&lt;body&gt;&#x27;
-            f&#x27;&lt;nav&gt;Меню&lt;/nav&gt;&lt;div class=&quot;ad&quot;&gt;{ad}&lt;/div&gt;&#x27;
-            f&#x27;&lt;article class=&quot;article-block__main-body&quot;&gt;{body}&lt;/article&gt;&lt;/body&gt;&lt;/html&gt;&#x27;)
-
-
-class TestSitemap(unittest.TestCase):
-    &quot;&quot;&quot;Источник типа sitemap (как газета «Гудок»): сайт без Last-Modified, адреса — из sitemap.xml.&quot;&quot;&quot;
-
-    def setUp(self):
-        self.site = Site()
-        self.site.pages = {}
-        self.server = ThreadingHTTPServer((&#x27;127.0.0.1&#x27;, 0), make_handler(self.site))
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.base = f&#x27;http://127.0.0.1:{self.server.server_address[1]}&#x27;
-        self.db_path = new_db_name()
-        # 5 статей: ID 1..5 с датами 2026-10-01..05; плюс адрес другого раздела (не должен попасть)
-        self.lastmod = {i: f&#x27;2026-10-0{i}&#x27; for i in range(1, 6)}
-        for i in range(1, 6):
-            self.site.pages[f&#x27;/newspaper/?ID={i}&#x27;] = (news_page(f&#x27;Статья {i}&#x27;, f&#x27;текст {i}&#x27;), None)
-        self.write_sitemap()
-
-    def write_sitemap(self):
-        urls = &#x27;&#x27;.join(f&#x27;&lt;url&gt;&lt;loc&gt;{self.base}/newspaper/?ID={i}&lt;/loc&gt;&lt;lastmod&gt;{m}&lt;/lastmod&gt;&lt;/url&gt;&#x27;
-                       for i, m in self.lastmod.items())
-        urls += f&#x27;&lt;url&gt;&lt;loc&gt;{self.base}/news/?ID=99&lt;/loc&gt;&lt;lastmod&gt;2026-10-09&lt;/lastmod&gt;&lt;/url&gt;&#x27;
-        self.site.pages[&#x27;/sitemap_index.xml&#x27;] = (
-            f&#x27;&lt;sitemapindex&gt;&lt;sitemap&gt;&lt;loc&gt;{self.base}/sitemap-1.xml&lt;/loc&gt;&lt;/sitemap&gt;&lt;/sitemapindex&gt;&#x27;, None)
-        self.site.pages[&#x27;/sitemap-1.xml&#x27;] = (f&#x27;&lt;urlset&gt;{urls}&lt;/urlset&gt;&#x27;, None)
-
-    def tearDown(self):
-        self.server.shutdown()
-        drop_db(self.db_path)
-
-    def config(self, **logic):
-        cfg = {&#x27;db&#x27;: {&#x27;database&#x27;: self.db_path},
-               &#x27;logic&#x27;: {&#x27;delay&#x27;: 0, &#x27;exit_when_idle&#x27;: True, &#x27;recrawl_interval&#x27;: 3600, &#x27;idle_sleep&#x27;: 0},
-               &#x27;sources&#x27;: [{&#x27;name&#x27;: &#x27;testnews&#x27;, &#x27;type&#x27;: &#x27;sitemap&#x27;, &#x27;sitemap&#x27;: self.base + &#x27;/sitemap_index.xml&#x27;,
-                            &#x27;url_pattern&#x27;: r&#x27;/newspaper/\?ID=\d+$&#x27;, &#x27;max_documents&#x27;: 3,
-                            &#x27;content_selector&#x27;: &#x27;article.article-block__main-body&#x27;}]}
-        cfg[&#x27;logic&#x27;].update(logic)
-        return cfg
-
-    def docs(self):
-        db = SqlDb(self.db_path)
-        rows = {r[0].split(&#x27;ID=&#x27;)[1]: r for r in db.execute(
-            &#x27;SELECT url, title, versions, content_hash, sitemap_lastmod FROM documents&#x27;)}
-        db.close()
-        return rows
-
-    def test_sitemap_selects_newest(self):
-        Robot(self.config()).run()
-        docs = self.docs()
-        self.assertEqual(sorted(docs), [&#x27;3&#x27;, &#x27;4&#x27;, &#x27;5&#x27;])                # 3 самые свежие по lastmod
-        self.assertEqual(docs[&#x27;5&#x27;][1], &#x27;Статья 5&#x27;)                     # заголовок из og:title
-        self.assertEqual(docs[&#x27;5&#x27;][4], &#x27;2026-10-05&#x27;)                   # lastmod из карты сайта сохранён
-        self.assertTrue(docs[&#x27;5&#x27;][0].endswith(&#x27;/newspaper/?ID=5&#x27;))     # параметр ID сохранён в URL
-        self.assertNotIn(&#x27;/news/?ID=99&#x27;, [k for _, k, _ in self.site.log])   # чужой раздел не запрошен
-
-    def test_sitemap_read_once(self):
-        Robot(self.config(max_requests=3)).run()                       # остановили посреди обкачки
-        Robot(self.config()).run()                                     # продолжение
-        self.assertEqual(len(self.docs()), 3)
-        self.assertEqual([k for _, k, _ in self.site.log].count(&#x27;/sitemap_index.xml&#x27;), 1)  # карта прочитана 1 раз
-
-    def test_recrawl_by_sitemap_lastmod(self):
-        robot = Robot(self.config())
-        robot.seed(); robot.crawl_frontier()
-        before = self.docs()
-        # статья 4 изменилась: новый текст и новая дата в карте сайта; у остальных реклама сменилась
-        self.lastmod[4] = &#x27;2026-10-20&#x27;
-        self.write_sitemap()
-        for i in (3, 5):
-            self.site.pages[f&#x27;/newspaper/?ID={i}&#x27;] = (news_page(f&#x27;Статья {i}&#x27;, f&#x27;текст {i}&#x27;, ad=&#x27;реклама 2&#x27;), None)
-        self.site.pages[&#x27;/newspaper/?ID=4&#x27;] = (news_page(&#x27;Статья 4&#x27;, &#x27;новый текст 4&#x27;), None)
-        time.sleep(1.1)
-        robot.recrawl_interval = 0
-        self.site.log.clear()
-        robot.recrawl()
-        after = self.docs()
-        pages = [k for _, k, _ in self.site.log if k.startswith(&#x27;/newspaper/&#x27;)]
-        self.assertEqual(pages, [&#x27;/newspaper/?ID=4&#x27;])                  # запрошена только изменившаяся
-        self.assertEqual(after[&#x27;4&#x27;][2], 2)                             # новая версия
-        self.assertNotEqual(after[&#x27;4&#x27;][3], before[&#x27;4&#x27;][3])
-        self.assertEqual(after[&#x27;4&#x27;][4], &#x27;2026-10-20&#x27;)
-        self.assertEqual([after[i][2] for i in (&#x27;3&#x27;, &#x27;5&#x27;)], [1, 1])    # остальные не тронуты
-
-    def test_ads_do_not_count_as_change(self):
-        robot = Robot(self.config())
-        robot.seed(); robot.crawl_frontier()
-        # сменилась только реклама; карта сайта «не знает» о документе (lastmod сброшен) -&gt; страница запрашивается
-        for i in (3, 4, 5):
-            self.site.pages[f&#x27;/newspaper/?ID={i}&#x27;] = (news_page(f&#x27;Статья {i}&#x27;, f&#x27;текст {i}&#x27;, ad=&#x27;реклама 2&#x27;), None)
-        db = SqlDb(self.db_path); db.execute(&#x27;UPDATE documents SET sitemap_lastmod=NULL&#x27;); db.commit(); db.close()
-        time.sleep(1.1)
-        robot.recrawl_interval = 0
-        robot.recrawl()
-        self.assertTrue(all(d[2] == 1 for d in self.docs().values()))  # статьи те же — новых версий нет
-
-
-class TestDistributedDb(unittest.TestCase):
-    &quot;&quot;&quot;Распределённая БД: кластер CockroachDB из 3 узлов (запущен start_cluster.bat).&quot;&quot;&quot;
-
-    def setUp(self):
-        self.name = new_db_name()
-
-    def tearDown(self):
-        drop_db(self.name)
-
-    def test_cluster_has_three_live_nodes(self):
-        db = Db({&#x27;database&#x27;: self.name})
-        live = db.execute(&#x27;SELECT count(*) FROM crdb_internal.gossip_liveness WHERE NOT draining&#x27;).fetchone()[0]
-        db.close()
-        self.assertGreaterEqual(live, 3)
-
-    def test_every_range_replicated_on_three_nodes(self):
-        db = Db({&#x27;database&#x27;: self.name})
-        db.execute(&quot;INSERT INTO documents(url, source, html, compressed, html_size, content_hash, crawled_at, &quot;
-                   &quot;checked_at) VALUES (&#x27;https://x/1&#x27;, &#x27;t&#x27;, ?, 0, 1, &#x27;h&#x27;, 1, 1)&quot;, (b&#x27;x&#x27;,))
-        db.commit()
-        rows = db.execute(f&#x27;SELECT replicas FROM [SHOW RANGES FROM TABLE {self.name}.documents WITH DETAILS]&#x27;).fetchall()
-        db.close()
-        self.assertTrue(rows)
-        self.assertTrue(all(len(set(r[0])) == 3 for r in rows))          # 3 копии на 3 разных узлах
-
-    def test_failover_to_next_node(self):
-        # первый узел в списке недоступен (порт, на котором никого нет) — подключение к следующему
-        db = Db({&#x27;database&#x27;: self.name, &#x27;hosts&#x27;: [&#x27;127.0.0.1:1&#x27;, &#x27;localhost:26258&#x27;, &#x27;localhost:26259&#x27;]})
-        self.assertEqual(db.node, &#x27;localhost:26258&#x27;)
-        db.execute(&quot;INSERT INTO frontier(url, source, kind, depth) VALUES (&#x27;https://x/a&#x27;, &#x27;t&#x27;, &#x27;article&#x27;, 0)&quot;)
-        db.commit()
-        db.close()
-        other = Db({&#x27;database&#x27;: self.name, &#x27;hosts&#x27;: [&#x27;localhost:26259&#x27;]})    # данные видны с другого узла
-        n = other.execute(&#x27;SELECT count(*) FROM frontier&#x27;).fetchone()[0]
-        other.close()
-        self.assertEqual(n, 1)
-
-    def test_no_live_node_gives_clear_error(self):
-        with self.assertRaises(RuntimeError) as e:
-            Db({&#x27;database&#x27;: self.name, &#x27;hosts&#x27;: [&#x27;127.0.0.1:1&#x27;, &#x27;127.0.0.1:2&#x27;]})
-        self.assertIn(&#x27;ни один узел кластера не доступен&#x27;, str(e.exception))
-
-
-if __name__ == &#x27;__main__&#x27;:
-    unittest.main(verbosity=2)
+TEST(Lab2_Cluster, three_live_nodes) {
+    NEED_CLUSTER();
+    auto r = rows(tool::run(&quot;\&quot;&quot; + tool::quote(crdb()) + &quot; node status --insecure --host=localhost:26257 --format=tsv\&quot;&quot;));
+    ASSERT_GE(r.size(), 2u);
+    size_t live = 0, col = 0;
+    for (size_t i = 0; i &lt; r[0].size(); i++) if (r[0][i] == &quot;is_live&quot;) col = i;
+    for (size_t k = 1; k &lt; r.size(); k++) if (r[k][col] == &quot;true&quot;) live++;
+    EXPECT_EQ(live, 3u);
+}
+TEST(Lab2_Cluster, every_range_replicated_on_three_nodes) {
+    NEED_CLUSTER();
+    auto r = rows(sql(&quot;SELECT count(*), min(array_length(replicas,1)) FROM [SHOW CLUSTER RANGES WITH TABLES, DETAILS] WHERE database_name=&#x27;robot&#x27;&quot;));
+    ASSERT_EQ(r.size(), 2u);
+    EXPECT_GT(atoi(r[1][0].c_str()), 1) &lt;&lt; &quot;таблицы разбиты на несколько диапазонов (шардов)&quot;;
+    EXPECT_EQ(r[1][1], &quot;3&quot;) &lt;&lt; &quot;у каждого диапазона 3 реплики&quot;;
+}
+TEST(Lab2_Cluster, failover_to_live_node) {
+    NEED_CLUSTER();
+    bool ok;
+    sql_on(&quot;127.0.0.1:1&quot;, &quot;SELECT 1&quot;, &amp;ok);
+    EXPECT_FALSE(ok) &lt;&lt; &quot;недоступный узел&quot;;
+    std::string out = sql_on(HOSTS[1], &quot;SELECT count(*) FROM documents&quot;, &amp;ok);
+    EXPECT_TRUE(ok) &lt;&lt; &quot;живой узел отвечает&quot;;
+}
+TEST(Lab2_Cluster, same_data_on_every_node) {
+    NEED_CLUSTER();
+    std::string first;
+    for (auto &amp;h : HOSTS) {
+        bool ok; auto r = rows(sql_on(h, &quot;SELECT count(*) FROM documents&quot;, &amp;ok));
+        ASSERT_TRUE(ok); ASSERT_EQ(r.size(), 2u);
+        if (first.empty()) first = r[1][0]; else EXPECT_EQ(r[1][0], first);
+    }
+    EXPECT_GT(atol(first.c_str()), 60000) &lt;&lt; &quot;все документы корпуса в базе&quot;;
+}
+TEST(Lab2_Cluster, no_duplicate_documents) {
+    NEED_CLUSTER();
+    auto r = rows(sql(&quot;SELECT count(*) - count(DISTINCT url), count(*) - count(DISTINCT content_hash) FROM documents&quot;));
+    ASSERT_EQ(r.size(), 2u);
+    EXPECT_EQ(r[1][0], &quot;0&quot;) &lt;&lt; &quot;URL уникальны&quot;;
+}
+TEST(Lab2_Cluster, on_conflict_does_not_duplicate) {
+    NEED_CLUSTER();
+    std::string db = &quot;robot_test_cpp&quot;;
+    bool ok;
+    sql_on(HOSTS[0], &quot;DROP DATABASE IF EXISTS &quot; + db + &quot; CASCADE; CREATE DATABASE &quot; + db, &amp;ok, &quot;defaultdb&quot;);
+    ASSERT_TRUE(ok);
+    std::string ins = &quot;INSERT INTO frontier(url, source) VALUES (&#x27;https://x/1&#x27;,&#x27;t&#x27;) ON CONFLICT (url) DO NOTHING;&quot;;
+    sql_on(HOSTS[0], &quot;CREATE TABLE frontier (id INT8 PRIMARY KEY DEFAULT unique_rowid(), url STRING UNIQUE NOT NULL, source STRING);&quot; + ins + ins, &amp;ok, db.c_str());
+    sql_on(HOSTS[2], ins, &amp;ok, db.c_str());                                  // та же вставка через другой узел
+    auto r = rows(sql_on(HOSTS[1], &quot;SELECT count(*) FROM frontier&quot;, &amp;ok, db.c_str()));
+    sql_on(HOSTS[0], &quot;DROP DATABASE IF EXISTS &quot; + db + &quot; CASCADE&quot;, &amp;ok, &quot;defaultdb&quot;);
+    ASSERT_EQ(r.size(), 2u);
+    EXPECT_EQ(r[1][0], &quot;1&quot;);
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

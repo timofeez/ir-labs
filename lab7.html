@@ -18,7 +18,7 @@
 <li><a href="#5">5. Результаты</a></li>
 <li><a href="#6">6. Масштабирование</a></li>
 <li><a href="#7-googletest-lab7_index-datastructures">7. Тесты (GoogleTest, Lab7_Index, DataStructures)</a></li>
-<li><a href="#8-lab7py">8. Утилита lab7.py</a></li>
+<li><a href="#8-lab7exe-c">8. Утилита lab7.exe (C++)</a></li>
 <li><a href="#9">9. Вопросы на защите</a></li>
 <li><a href="#10">10. Полные исходники</a></li>
 </ul>
@@ -263,7 +263,7 @@ static inline int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) 
 <p><strong>Расширяемость:</strong> новые данные — <strong>новые секции</strong> (позиции слов для фразового поиска, сжатые
 списки, веса tf-idf): старые программы читают таблицу секций и неизвестные типы просто пропускают.
 Поле флагов уже использовано в ЛР4 (индекс основ), резервные поля — на будущее.</p>
-<p>Реальные значения моего индекса (<code>python lab7.py format</code>):</p>
+<p>Реальные значения моего индекса (<code>lab_boolean\bin\lab7.exe format</code>):</p>
 <pre><code>0..3    42 49 44 58   сигнатура BIDX          DOCS      смещение 112          размер 8 456 596
 4..7    01 00 00 00   версия 1                DICT      смещение 8 456 712    размер 15 410 980
 8..11   04 00 00 00   4 секции                TERMSTR   смещение 23 867 696   размер 8 806 181
@@ -464,12 +464,12 @@ df), прямой индекс, нормализация. Плюс <code>FullCor
     }
 }</code></pre></div>
 
-<h2 id="8-lab7py">8. Утилита <code>lab7.py</code><a class="headerlink" href="#8-lab7py" title="Permanent link">#</a></h2>
-<pre><code>python lab7.py info          — статистика индексации
-python lab7.py format        — заголовок и таблица секций index.bin побайтово
-python lab7.py term вагон    — запись словаря: df = 2 050, первые документы списка
-python lab7.py doc 5         — прямой индекс: заголовок и URL по номеру
-python lab7.py dict электровоз   — соседи в отсортированном словаре
+<h2 id="8-lab7exe-c">8. Утилита <code>lab7.exe</code> (C++)<a class="headerlink" href="#8-lab7exe-c" title="Permanent link">#</a></h2>
+<pre><code>lab_boolean\bin\lab7.exe info          — статистика индексации
+lab_boolean\bin\lab7.exe format        — заголовок и таблица секций index.bin побайтово
+lab_boolean\bin\lab7.exe term вагон    — запись словаря: df = 2 050, первые документы списка
+lab_boolean\bin\lab7.exe doc 5         — прямой индекс: заголовок и URL по номеру
+lab_boolean\bin\lab7.exe dict электровоз   — соседи в отсортированном словаре
 </code></pre>
 <h2 id="9">9. Вопросы на защите<a class="headerlink" href="#9" title="Permanent link">#</a></h2>
 <ul>
@@ -723,147 +723,116 @@ with open(OUT, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;, newline=&#x27;\n&#x27;
             counts[name] += 1
 print(f&#x27;{sum(counts.values())} documents {counts} -&gt; {OUT}&#x27;)
 </code></pre></details>
-<details class="file"><summary>lab_boolean/lab7.py <span class="ln">(142 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;ЛР7 «Булев индекс» — утилита для проверок и демонстрации.
+<details class="file"><summary>lab_boolean/tools/lab7.cpp <span class="ln">(111 строк)</span></summary><pre><code class="language-cpp">// ЛР7 «Булев индекс» — утилита для проверок и демонстрации.
+//
+//   lab7              — меню
+//   lab7 info         — статистика индексации (документы, термы, размер, время, скорость)
+//   lab7 format       — разбор бинарного файла index.bin: заголовок и таблица секций побайтово
+//   lab7 term вагон   — запись словаря: df и первые номера документов из списка
+//   lab7 doc 5        — прямой индекс: заголовок и URL документа по номеру
+//   lab7 dict вагон   — соседи терма в отсортированном словаре
+//   lab7 build        — пересобрать оба индекса (indexer.exe) и показать статистику
+#include &quot;engine.h&quot;
 
-  python lab7.py              — меню
-  python lab7.py info         — статистика индексации (документы, термы, размер, время, скорость)
-  python lab7.py format       — разбор бинарного файла index.bin: заголовок и таблица секций побайтово
-  python lab7.py term вагон   — запись словаря: df и первые номера документов из списка
-  python lab7.py doc 5        — прямой индекс: заголовок и URL документа по номеру
-  python lab7.py dict вагон   — соседи терма в отсортированном словаре
-  python lab7.py build        — пересобрать индекс (indexer.exe) и показать статистику
-&quot;&quot;&quot;
-import os, struct
-from urllib.parse import unquote
-from labtool import DATA, data, fmt, main, run, table
+static Index g_idx;
+static bool g_loaded = false;
+static bool idx() { if (!g_loaded) g_loaded = eng::load(g_idx, false); return g_loaded; }
 
-SEC = {1: &#x27;DOCS — прямой индекс&#x27;, 2: &#x27;DICT — словарь&#x27;, 3: &#x27;TERMSTR — строки термов&#x27;, 4: &#x27;POSTINGS — списки документов&#x27;}
+static void cmd_info(const std::string &amp;) {
+    for (const char *f : {&quot;data/index_stats.txt&quot;, &quot;data/index_stem_stats.txt&quot;}) {
+        std::string s = tool::read_file(tool::path(f));
+        printf(&quot;== %s ==\n%s\n&quot;, f, s.empty() ? &quot;(нет файла: lab7 build)\n&quot; : s.c_str());
+    }
+}
 
+static void cmd_format(const std::string &amp;) {
+    if (!idx()) return;
+    const unsigned char *d = (const unsigned char *)g_idx.data;
+    printf(&quot;Файл data/index.bin, %s байт\n\nЗаголовок (16 байт):\n  &quot;, tool::num(g_idx.size).c_str());
+    for (int i = 0; i &lt; 16; i++) printf(&quot;%02X &quot;, d[i]);
+    printf(&quot;\n  магия \&quot;%.4s\&quot;, версия %u, секций %u, флаги %u (бит 0 — стемминг)\n\nТаблица секций (по 24 байта):\n&quot;,
+           g_idx.data, rd32(g_idx.data + 4), rd32(g_idx.data + 8), rd32(g_idx.data + 12));
+    static const char *names[] = {&quot;&quot;, &quot;DOCS (прямой индекс)&quot;, &quot;DICT (словарь)&quot;, &quot;TERMSTR (строки термов)&quot;, &quot;POSTINGS (списки)&quot;};
+    for (uint32_t i = 0; i &lt; rd32(g_idx.data + 8); i++) {
+        const char *e = g_idx.data + HEADER_SIZE + i * SECTION_ENTRY_SIZE;
+        uint32_t t = rd32(e);
+        printf(&quot;  тип %u %s смещение %12s  размер %12s байт\n&quot;, t, tool::pad(t &lt;= 4 ? names[t] : &quot;?&quot;, 24).c_str(),
+               tool::num(rd64(e + 8)).c_str(), tool::num(rd64(e + 16)).c_str());
+    }
+    printf(&quot;\nДокументов %s, термов %s. Запись словаря: смещение строки (4), длина (2), резерв (2), df (4), резерв (4), смещение списка (8).\n&quot;,
+           tool::num(g_idx.nDocs).c_str(), tool::num(g_idx.nTerms).c_str());
+}
 
-class Idx:
-    def __init__(self, name=&#x27;index.bin&#x27;):
-        self.b = open(data(name), &#x27;rb&#x27;).read()
-        b = self.b
-        self.magic, self.version, self.nsec, self.flags = b[:4], *struct.unpack_from(&#x27;&lt;III&#x27;, b, 4)
-        self.secs = {}
-        for i in range(self.nsec):
-            t, _, off, size = struct.unpack_from(&#x27;&lt;IIQQ&#x27;, b, 16 + 24 * i)
-            self.secs[t] = (off, size)
-        self.docs = self.secs[1][0]; self.dict = self.secs[2][0]
-        self.ts = self.secs[3][0]; self.post = self.secs[4][0]
-        self.ndocs = struct.unpack_from(&#x27;&lt;I&#x27;, b, self.docs)[0]
-        self.nterms = struct.unpack_from(&#x27;&lt;I&#x27;, b, self.dict)[0]
+static void cmd_term(const std::string &amp;arg) {
+    if (!idx()) return;
+    std::string w = eng::normalize(arg.empty() ? &quot;вагон&quot; : arg, false);
+    long e = g_idx.find_term(w.data(), (int)w.size());
+    if (e &lt; 0) { printf(&quot;  терма «%s» нет в словаре\n&quot;, w.c_str()); return; }
+    Vec&lt;uint32_t&gt; p; g_idx.postings_of(e, p);
+    printf(&quot;  терм «%s»: запись словаря №%ld, df = %s (в стольких документах встречается)\n  первые номера документов:&quot;,
+           w.c_str(), e, tool::num(p.n).c_str());
+    for (size_t i = 0; i &lt; p.n &amp;&amp; i &lt; 15; i++) printf(&quot; %u&quot;, p[i]);
+    printf(&quot;%s\n  первые документы:\n&quot;, p.n &gt; 15 ? &quot; ...&quot; : &quot;&quot;);
+    for (size_t i = 0; i &lt; p.n &amp;&amp; i &lt; 3; i++) printf(&quot;    %u: %s\n&quot;, p[i], eng::title(g_idx, p[i]).c_str());
+    p.release();
+}
 
-    def term_at(self, i):
-        e = self.dict + 4 + 24 * i
-        soff, = struct.unpack_from(&#x27;&lt;I&#x27;, self.b, e); ln, = struct.unpack_from(&#x27;&lt;H&#x27;, self.b, e + 4)
-        df, = struct.unpack_from(&#x27;&lt;I&#x27;, self.b, e + 8); poff, = struct.unpack_from(&#x27;&lt;Q&#x27;, self.b, e + 16)
-        return self.b[self.ts + soff:self.ts + soff + ln].decode(&#x27;utf-8&#x27;), df, poff
+static void cmd_doc(const std::string &amp;arg) {
+    if (!idx()) return;
+    uint32_t d = arg.empty() ? 5 : (uint32_t)atol(arg.c_str());
+    if (d &gt;= g_idx.nDocs) { printf(&quot;  номера документов: 0..%u\n&quot;, g_idx.nDocs - 1); return; }
+    const char *r = g_idx.docs + rd64(g_idx.docs + 4 + 8ull * d);
+    static const char *src[] = {&quot;ruwiki&quot;, &quot;enwiki&quot;, &quot;gudok&quot;};
+    printf(&quot;  документ %u: источник %s, pageid %u\n  заголовок: %s\n  URL: %s\n&quot;, d, src[(unsigned char)r[0] % 3], rd32(r + 1),
+           eng::title(g_idx, d).c_str(), eng::url(g_idx, d).c_str());
+}
 
-    def find(self, w):
-        wb = w.encode(&#x27;utf-8&#x27;); lo, hi = 0, self.nterms - 1
-        while lo &lt;= hi:
-            m = (lo + hi) // 2
-            t = self.term_at(m)[0].encode(&#x27;utf-8&#x27;)
-            if t == wb:
-                return m
-            lo, hi = (m + 1, hi) if t &lt; wb else (lo, m - 1)
-        return -lo - 1
+static void cmd_dict(const std::string &amp;arg) {
+    if (!idx()) return;
+    std::string w = eng::normalize(arg.empty() ? &quot;вагон&quot; : arg, false);
+    long lo = 0, hi = (long)g_idx.nTerms;                     // первая запись &gt;= w (двоичный поиск)
+    while (lo &lt; hi) {
+        long m = (lo + hi) / 2;
+        std::string t = eng::term_at(g_idx, m);
+        if (cmp_bytes(t.data(), t.size(), w.data(), w.size()) &lt; 0) lo = m + 1; else hi = m;
+    }
+    printf(&quot;  словарь отсортирован побайтово; окрестность «%s»:\n&quot;, w.c_str());
+    for (long e = lo - 5 &lt; 0 ? 0 : lo - 5; e &lt; lo + 6 &amp;&amp; e &lt; (long)g_idx.nTerms; e++)
+        printf(&quot;  %s %8ld  %s df=%s\n&quot;, e == lo ? &quot;-&gt;&quot; : &quot;  &quot;, e, tool::pad(eng::term_at(g_idx, e), 24).c_str(), tool::num(eng::df_at(g_idx, e)).c_str());
+}
 
-    def postings(self, i, k=None):
-        _, df, poff = self.term_at(i)
-        k = df if k is None else min(k, df)
-        return list(struct.unpack_from(f&#x27;&lt;{k}I&#x27;, self.b, self.post + poff))
+static void cmd_build(const std::string &amp;) {
+    std::string ix = tool::quote(tool::path(&quot;bin/indexer.exe&quot;)), c = tool::quote(tool::path(&quot;data/corpus.tsv&quot;));
+    for (int s = 0; s &lt; 2; s++) {
+        printf(&quot;Строю %s...\n&quot;, s ? &quot;индекс основ&quot; : &quot;индекс словоформ&quot;);
+        std::string out = tool::run(&quot;\&quot;&quot; + ix + &quot; &quot; + c + &quot; &quot; + tool::quote(tool::path(s ? &quot;data/index_stem.bin&quot; : &quot;data/index.bin&quot;)) +
+                                    (s ? &quot; --stem&quot; : &quot;&quot;) + &quot;\&quot;&quot;);
+        std::string stats;                                     // строки статистики без прогресса «indexed N docs»
+        size_t p = 0;
+        while (p &lt; out.size()) {
+            size_t q = out.find(&#x27;\n&#x27;, p); if (q == std::string::npos) q = out.size();
+            std::string l = out.substr(p, q - p);
+            if (l.rfind(&quot;indexed&quot;, 0) != 0) stats += l + &quot;\n&quot;;
+            p = q + 1;
+        }
+        printf(&quot;%s\n&quot;, stats.c_str());
+        FILE *f = tool::open_file(tool::path(s ? &quot;data/index_stem_stats.txt&quot; : &quot;data/index_stats.txt&quot;), &quot;wb&quot;);
+        if (f) { fwrite(stats.data(), 1, stats.size(), f); fclose(f); }
+    }
+    g_loaded = false;
+}
 
-    def doc(self, d):
-        r = self.docs + struct.unpack_from(&#x27;&lt;Q&#x27;, self.b, self.docs + 4 + 8 * d)[0]
-        tl, = struct.unpack_from(&#x27;&lt;H&#x27;, self.b, r + 5)
-        title = self.b[r + 7:r + 7 + tl].decode(&#x27;utf-8&#x27;)
-        ul, = struct.unpack_from(&#x27;&lt;H&#x27;, self.b, r + 7 + tl)
-        url = self.b[r + 9 + tl:r + 9 + tl + ul].decode(&#x27;utf-8&#x27;)
-        return title, unquote(url)
-
-
-_idx = {}
-
-
-def idx():
-    if &#x27;i&#x27; not in _idx:
-        _idx[&#x27;i&#x27;] = Idx()
-    return _idx[&#x27;i&#x27;]
-
-
-def cmd_info(_):
-    v = dict(l.split(None, 1) for l in open(data(&#x27;index_stats.txt&#x27;), encoding=&#x27;utf-8&#x27;) if l.strip())
-    names = {&#x27;documents&#x27;: &#x27;документов&#x27;, &#x27;text_bytes&#x27;: &#x27;текст, байт&#x27;, &#x27;tokens&#x27;: &#x27;токенов&#x27;,
-             &#x27;avg_token_len&#x27;: &#x27;средняя длина токена&#x27;, &#x27;terms&#x27;: &#x27;термов (словарь)&#x27;, &#x27;avg_term_len&#x27;: &#x27;средняя длина терма&#x27;,
-             &#x27;postings&#x27;: &#x27;пар терм–документ&#x27;, &#x27;index_bytes&#x27;: &#x27;размер индекса, байт&#x27;,
-             &#x27;time_total_sec&#x27;: &#x27;время индексации, с&#x27;, &#x27;ms_per_doc&#x27;: &#x27;мс на документ&#x27;, &#x27;ms_per_kb&#x27;: &#x27;мс на КБ&#x27;}
-    table([(names.get(k, k), fmt(int(x)) if x.strip().isdigit() else x.strip()) for k, x in v.items()])
-
-
-def cmd_format(_):
-    i = idx(); b = i.b
-    print(f&#x27;Файл index.bin, {fmt(len(b))} байт. Все числа little-endian.\n&#x27;)
-    print(&#x27;Заголовок (16 байт):&#x27;)
-    table([(&#x27;0..3&#x27;, b[:4].hex(&#x27; &#x27;).upper(), f&#x27;сигнатура {i.magic.decode()}&#x27;),
-           (&#x27;4..7&#x27;, b[4:8].hex(&#x27; &#x27;).upper(), f&#x27;версия формата = {i.version}&#x27;),
-           (&#x27;8..11&#x27;, b[8:12].hex(&#x27; &#x27;).upper(), f&#x27;число секций = {i.nsec}&#x27;),
-           (&#x27;12..15&#x27;, b[12:16].hex(&#x27; &#x27;).upper(), f&#x27;флаги = {i.flags} (бит 0 — индекс основ: {&quot;да&quot; if i.flags &amp; 1 else &quot;нет&quot;})&#x27;)],
-          (&#x27;байты&#x27;, &#x27;значение (hex)&#x27;, &#x27;смысл&#x27;))
-    print(&#x27;\nТаблица секций (по 24 байта: тип u32, резерв u32, смещение u64, размер u64):&#x27;)
-    table([(t, SEC.get(t, &#x27;?&#x27;), fmt(o), fmt(s)) for t, (o, s) in sorted(i.secs.items())],
-          (&#x27;тип&#x27;, &#x27;секция&#x27;, &#x27;смещение&#x27;, &#x27;размер&#x27;))
-    print(f&#x27;\nDOCS: {fmt(i.ndocs)} документов; DICT: {fmt(i.nterms)} записей по 24 байта &#x27;
-          &#x27;(смещение строки u32, длина u16, ..., df u32, ..., смещение списка u64)&#x27;)
-
-
-def cmd_term(arg):
-    w = (arg or input(&#x27;терм: &#x27;)).strip().lower()
-    i = idx(); k = i.find(w)
-    if k &lt; 0:
-        print(f&#x27;«{w}» в словаре нет (место вставки — позиция {fmt(-k - 1)})&#x27;); return
-    t, df, poff = i.term_at(k)
-    p = i.postings(k, 10)
-    print(f&#x27;«{t}»: запись словаря №{fmt(k)}, df = {fmt(df)} документов, список по смещению {fmt(poff)}&#x27;)
-    print(&#x27;первые документы:&#x27;)
-    for d in p:
-        title, url = i.doc(d)
-        print(f&#x27;  {d:6}  {title}&#x27;)
-
-
-def cmd_doc(arg):
-    d = int(arg or input(&#x27;номер документа: &#x27;))
-    title, url = idx().doc(d)
-    print(f&#x27;документ {d}: {title}\n  {url}&#x27;)
-
-
-def cmd_dict(arg):
-    w = (arg or input(&#x27;терм: &#x27;)).strip().lower()
-    i = idx(); k = i.find(w); k = k if k &gt;= 0 else -k - 1
-    rows = []
-    for j in range(max(0, k - 5), min(i.nterms, k + 6)):
-        t, df, _ = i.term_at(j)
-        rows.append((fmt(j), (&#x27;-&gt; &#x27; if t == w else &#x27;   &#x27;) + t, fmt(df)))
-    table(rows, (&#x27;№&#x27;, &#x27;терм (словарь отсортирован по байтам UTF-8)&#x27;, &#x27;df&#x27;))
-
-
-def cmd_build(_):
-    out, _ = run(&#x27;indexer&#x27;, [data(&#x27;corpus.tsv&#x27;), os.path.join(DATA, &#x27;index.bin&#x27;)], timeout=1800)
-    open(os.path.join(DATA, &#x27;index_stats.txt&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;).write(out)
-    _idx.clear()
-    cmd_info(&#x27;&#x27;)
-
-
-if __name__ == &#x27;__main__&#x27;:
-    main(&#x27;ЛР7 «Булев индекс»&#x27;, [
-        (&#x27;info&#x27;, cmd_info, &#x27;статистика индексации&#x27;, None),
-        (&#x27;format&#x27;, cmd_format, &#x27;формат index.bin: заголовок и секции побайтово&#x27;, None),
-        (&#x27;term&#x27;, cmd_term, &#x27;терм: df и документы из его списка&#x27;, &#x27;терм&#x27;),
-        (&#x27;doc&#x27;, cmd_doc, &#x27;прямой индекс: документ по номеру&#x27;, &#x27;номер&#x27;),
-        (&#x27;dict&#x27;, cmd_dict, &#x27;соседи терма в отсортированном словаре&#x27;, &#x27;терм&#x27;),
-        (&#x27;build&#x27;, cmd_build, &#x27;пересобрать индекс (indexer.exe)&#x27;, None),
-    ])
+int main(int argc, char **argv) {
+    tool::init_console();
+    return tool::main_loop(&quot;ЛР7 «Булев индекс»&quot;, {
+        {&quot;info&quot;, &quot;статистика индексации&quot;, &quot;&quot;, cmd_info},
+        {&quot;format&quot;, &quot;разбор файла index.bin побайтово&quot;, &quot;&quot;, cmd_format},
+        {&quot;term&quot;, &quot;posting-лист терма (df и документы)&quot;, &quot;слово&quot;, cmd_term},
+        {&quot;doc&quot;, &quot;прямой индекс: документ по номеру&quot;, &quot;номер документа&quot;, cmd_doc},
+        {&quot;dict&quot;, &quot;соседи терма в отсортированном словаре&quot;, &quot;слово&quot;, cmd_dict},
+        {&quot;build&quot;, &quot;пересобрать индексы (indexer.exe)&quot;, &quot;&quot;, cmd_build},
+    }, tool::args(argc, argv));
+}
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
 <script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>

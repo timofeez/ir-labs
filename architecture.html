@@ -92,7 +92,7 @@ gudok.py: sitemap → HTML статей → gudok_raw.jsonl.gz ─────�
 <td>очистка разметки, метаданные, статистика корпуса</td>
 </tr>
 <tr>
-<td><code>corpus.py</code>, <code>lab1.py</code></td>
+<td><code>corpus.py</code>, <code>lab1.exe</code></td>
 <td>консольный просмотр корпуса</td>
 </tr>
 </tbody>
@@ -150,7 +150,7 @@ gudok.py: sitemap → HTML статей → gudok_raw.jsonl.gz ─────�
 <td>запуск трёх узлов и инициализация кластера</td>
 </tr>
 <tr>
-<td><code>lab2.py</code></td>
+<td><code>lab2.exe</code></td>
 <td>утилита: кластер, статистика, демонстрация отказа узла</td>
 </tr>
 </tbody>
@@ -215,6 +215,18 @@ TERM AND LP TERM OR TERM RP AND NOT TERM
    ├── test_lab8_search.cpp    ─► bin/test_lab8_search.exe
    └── test_full_corpus.cpp    ─► bin/test_full_corpus.exe
 CMakeLists.txt: gtest_discover_tests → каждый TEST — отдельный тест CTest (29)
+
+Утилиты (C++): tools/tool.h (UTF-8 ввод/вывод, меню) + tools/engine.h (подключает search.cpp)
+   ├── tools/lab3.cpp ... tools/lab8.cpp  ─► bin/lab3.exe ... bin/lab8.exe
+   lab1/tools/lab1.cpp ─► lab1/bin/lab1.exe   (корпус: JSONL, очистка вики-разметки)
+   lab2/tools/lab2.cpp ─► lab2/bin/lab2.exe   (кластер через cockroach sql, нормализация URL, robots.txt)
+Тесты ЛР1/ЛР2: lab1/tests/test_lab1.cpp (14), lab2/tests/test_lab2.cpp (20)
+
+Утилиты (C++): tools/tool.h (UTF-8 ввод/вывод, меню) + tools/engine.h (подключает search.cpp)
+   ├── tools/lab3.cpp ... tools/lab8.cpp  ─► bin/lab3.exe ... bin/lab8.exe
+   lab1/tools/lab1.cpp ─► lab1/bin/lab1.exe   (корпус: JSONL, очистка вики-разметки)
+   lab2/tools/lab2.cpp ─► lab2/bin/lab2.exe   (кластер через cockroach sql, нормализация URL, robots.txt)
+Тесты ЛР1/ЛР2: lab1/tests/test_lab1.cpp (14), lab2/tests/test_lab2.cpp (20)
 </code></pre>
 <table>
 <thead>
