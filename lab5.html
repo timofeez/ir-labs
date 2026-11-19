@@ -323,7 +323,7 @@ $\log f$ по $\log(r+\rho)$. Перебираем ρ на сетке и для 
 <h2 id="8">8. Тесты<a class="headerlink" href="#8" title="Permanent link">#</a></h2>
 <p>GoogleTest <code>Lab5_TermFreq.sort_by_freq_descending</code> (сортировка), <code>DataStructures.term_table_hash_and_rehash</code>
 (хеш-таблица на 100 000 термов с перехешированием) и все тесты токенизатора (ЛР3).</p>
-<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — sort_by_freq_descending <span class="ln">строки 241–248</span></div><pre><code class="language-cpp">TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab5_termfreq.cpp — sort_by_freq_descending <span class="ln">строки 4–11</span></div><pre><code class="language-cpp">TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
     uint64_t freq[] = {5, 100, 1, 42, 100, 7};
     uint32_t ids[] = {0, 1, 2, 3, 4, 5};
     g_freq = freq;

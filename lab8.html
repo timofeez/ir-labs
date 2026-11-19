@@ -463,7 +463,7 @@ if __name__ == &#x27;__main__&#x27;:
    словоформ, и для индекса основ.</li>
 <li><strong>Веб-сервис</strong> — вручную в браузере: выдача, «следующие 50».</li>
 </ol>
-<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — search_boolean_operators <span class="ln">строки 363–373</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_boolean_operators) {
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab8_search.cpp — search_boolean_operators <span class="ln">строки 39–49</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_boolean_operators) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
     CHECK_QUERY(idx, &quot;красный автомобиль&quot;, 0, 1);              // пробел = И
     CHECK_QUERY(idx, &quot;красный &amp;&amp; автомобиль&quot;, 0, 1);
@@ -475,7 +475,7 @@ if __name__ == &#x27;__main__&#x27;:
     CHECK_QUERY(idx, &quot;!(руки || красный)&quot;, 0, 0, 4);
 }</code></pre></div>
 
-<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — search_tolerant_parser <span class="ln">строки 382–390</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_tolerant_parser) {
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab8_search.cpp — search_tolerant_parser <span class="ln">строки 58–66</span></div><pre><code class="language-cpp">TEST(Lab8_Search, search_tolerant_parser) {
     Index idx; ASSERT_TRUE(idx.load(plain_index()));
     CHECK_QUERY(idx, &quot;((красный&quot;, 0, 1, 5);                  // незакрытые скобки
     CHECK_QUERY(idx, &quot;красный ) автомобиль&quot;, 0, 1);          // лишняя скобка

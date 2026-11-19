@@ -58,7 +58,7 @@
 <p><strong>GoogleTest</strong> — фреймворк юнит-тестов от Google: тест описывается макросом <code>TEST(Группа, Имя)</code>,
 проверки — <code>EXPECT_EQ</code>, <code>EXPECT_TRUE</code>, <code>ASSERT_TRUE</code> (ASSERT прерывает тест при неудаче, EXPECT —
 нет), <code>GTEST_SKIP()</code> пропускает тест (например, если нет полного корпуса).</p>
-<p><strong>CTest</strong> — запускатель тестов из CMake. В <code>CMakeLists.txt</code> строка <code>gtest_discover_tests(gtests …)</code>
+<p><strong>CTest</strong> — запускатель тестов из CMake. В <code>CMakeLists.txt</code> строка <code>gtest_discover_tests(${t} …)</code> (в цикле по файлам тестов)
 регистрирует <strong>каждый</strong> <code>TEST</code> отдельным тестом CTest — в выводе видно каждый тест-кейс:</p>
 <pre><code> 1/29 Test  #1: Lab3_Tokenizer.utf8_decode_ascii_cyrillic_and_broken ...   Passed    0.01 sec
  ...
@@ -66,7 +66,7 @@
 29/29 Test #29: FullCorpus.StemIndexMatchesReferenceOn300Queries .......   Passed    9.86 sec
 100% tests passed out of 29
 </code></pre>
-<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(40 строк)</span></summary><pre><code class="language-plaintext"># Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
+<details class="file"><summary>lab_boolean/CMakeLists.txt <span class="ln">(40 строк)</span></summary><pre><code class="language-plaintext">﻿# Сборка поисковой системы (ЛР3–8) и тестов на GoogleTest; тесты запускаются через CTest.
 #
 #   cmake --preset default          (настройка: Ninja + clang из toolchain/*.cmd)
 #   cmake --build --preset default  (сборка программ и тестов)
@@ -95,25 +95,25 @@ set(INSTALL_GTEST OFF CACHE BOOL &quot;&quot; FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL &quot;&quot; FORCE)
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 
-add_executable(gtests tests/gtests.cpp)
-target_link_libraries(gtests GTest::gtest_main)
-set_target_properties(gtests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-
+# Юнит-тесты: по отдельному файлу и программе на каждую лабораторную (tests/test_*.cpp)
 enable_testing()
 include(GoogleTest)
-# каждый TEST из gtests.cpp становится отдельным тестом CTest; рабочая папка — lab_boolean
-# (тесты читают tests/mini.tsv и, для FullCorpus, data/corpus.tsv + индексы)
-gtest_discover_tests(gtests WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_TIMEOUT 60
-                     PROPERTIES TIMEOUT 600)
+foreach(t test_lab3_tokenizer test_lab4_stemming test_lab5_termfreq test_lab7_index test_lab8_search test_full_corpus)
+  add_executable(${t} tests/${t}.cpp)
+  target_link_libraries(${t} GTest::gtest_main)
+  set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+  # каждый TEST становится отдельным тестом CTest; рабочая папка — lab_boolean
+  gtest_discover_tests(${t} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_TIMEOUT 60 PROPERTIES TIMEOUT 600)
+endforeach()
 </code></pre></details>
 
 <p>Сборка и запуск — только CMake и CTest, без каких-либо скриптов-обёрток:</p>
 <pre><code>cmake --preset default            # настройка (Ninja, C++17)
-cmake --build --preset default    # сборка программ и bin/gtests.exe
+cmake --build --preset default    # сборка программ и bin/test_*.exe
 ctest --preset default            # все 29 тестов -&gt; 100% tests passed out of 29
 ctest --preset default -R Lab8    # только тесты поиска
 ctest --preset default -N         # список тестов
-bin\gtests.exe --gtest_filter=Lab3_*   # прямой запуск GoogleTest с подробным выводом
+bin\test_lab3_tokenizer.exe           # прямой запуск тестов одной лабы
 </code></pre>
 <p>Пресеты описаны в <code>CMakePresets.json</code>. Пресет <code>default</code> использует компилятор clang из пакета
 <code>ziglang</code> (файлы <code>toolchain/zig-*.cmd</code>), т.к. на машине не установлены Visual Studio/MinGW; пресет <code>gcc</code>
@@ -206,7 +206,7 @@ bin\gtests.exe --gtest_filter=Lab3_*   # прямой запуск GoogleTest с
 рекурсивно, наличие терма — двоичным поиском. В эталоне нет ни списков документов, ни операций
 пересечения/объединения, поэтому ошибка в индексе или поиске не может «совпасть» с ошибкой эталона.
 Проверено, что тест <strong>умеет падать</strong>: на подменённом индексе совпало только 17 из 50 запросов.</p>
-<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — full_corpus <span class="ln">строки 485–568</span></div><pre><code class="language-cpp">static int full_corpus(const char *corpus, const char *indexPath, bool useStem, int nq) {
+<div class="code"><div class="code-title">lab_boolean/tests/test_full_corpus.cpp — full_corpus <span class="ln">строки 85–168</span></div><pre><code class="language-cpp">static int full_corpus(const char *corpus, const char *indexPath, bool useStem, int nq) {
     int g_checks = 0, g_failed_checks = 0;
     printf(&quot;Full-corpus check: %s vs %s%s, %d random queries\n&quot;, corpus, indexPath,
            useStem ? &quot; (stemmed)&quot; : &quot;&quot;, nq);
@@ -292,18 +292,14 @@ bin\gtests.exe --gtest_filter=Lab3_*   # прямой запуск GoogleTest с
 }</code></pre></div>
 
 <h2 id="_5">Полный файл тестов<a class="headerlink" href="#_5" title="Permanent link">#</a></h2>
-<details class="file"><summary>lab_boolean/tests/gtests.cpp <span class="ln">(583 строк)</span></summary><pre><code class="language-cpp">// Юнит-тесты на C++ (GoogleTest) для поисковой системы: ЛР3 токенизация, ЛР4 стемминг,
-// ЛР5 подсчёт частот, ЛР7 индекс, ЛР8 поиск + проверка на ПОЛНОМ корпусе.
+<details class="file"><summary>lab_boolean/tests/test_common.h <span class="ln">(107 строк)</span></summary><pre><code class="language-cpp">// Общая часть юнит-тестов (GoogleTest): подключение исходников поисковой системы и
+// вспомогательные функции. Каждый файл test_labN_*.cpp включает этот заголовок и собирается
+// в отдельную программу (bin/test_lab3.exe, ...), поэтому повторных определений нет.
 //
 // Исходники программ подключаются напрямую (их main() переименовываются), поэтому тестируются
 // сами функции: next_token, stem::stem, TermTable, merge_sort_terms, op_and/op_or, парсер запросов...
 // STL используется только в тестах (GoogleTest сам на нём построен); код поисковой системы — без STL.
-//
-// Сборка и запуск — CMake + CTest (см. CMakeLists.txt):
-//   cmake -S . -B build -G Ninja   &amp;&amp;   cmake --build build   &amp;&amp;   ctest --test-dir build -V
-// или просто:  python lab_tests.py
-// Отдельные тесты:  build\gtests.exe --gtest_filter=Lab3_*      (только токенизатор)
-// Полный корпус:    build\gtests.exe --gtest_filter=FullCorpus.*  (нужны data\corpus.tsv и индексы)
+#pragma once
 #include &lt;gtest/gtest.h&gt;
 #include &lt;string&gt;
 
@@ -402,6 +398,11 @@ static bool g_plain_built = false, g_stem_built = false;
 static const char *plain_index() { if (!g_plain_built) g_plain_built = build_index(TMP_PLAIN, false); return TMP_PLAIN; }
 static const char *stem_index() { if (!g_stem_built) g_stem_built = build_index(TMP_STEM, true); return TMP_STEM; }
 
+</code></pre></details>
+
+<details class="file"><summary>lab_boolean/tests/test_lab3_tokenizer.cpp <span class="ln">(77 строк)</span></summary><pre><code class="language-cpp">// ЛР3 — токенизация: UTF-8, классы символов, нижний регистр, правила токенизатора.
+#include &quot;test_common.h&quot;
+
 // ================================================================ ЛР3: UTF-8 и токенизация
 TEST(Lab3_Tokenizer, utf8_decode_ascii_cyrillic_and_broken) {
     const unsigned char s[] = {&#x27;A&#x27;, 0xD0, 0x96, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x9A, 0x82, 0x80};
@@ -475,6 +476,66 @@ TEST(Lab3_Tokenizer, tokenizer_length_limit_and_char_count) {
     CHECK_EQ(len, 10);                            // 5 букв кириллицы = 10 байт
     CHECK_EQ(chars, 5);
 }
+</code></pre></details>
+
+<details class="file"><summary>lab_boolean/tests/test_lab4_stemming.cpp <span class="ln">(42 строк)</span></summary><pre><code class="language-cpp">// ЛР4 — стемминг: русский Snowball-Портер, английский Портер, индекс основ.
+#include &quot;test_common.h&quot;
+
+// ================================================================ ЛР4: стемминг
+TEST(Lab4_Stemming, stem_russian) {
+    char out[128]; int n;
+    n = stem_of(&quot;электровозы&quot;, out);   CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;электровозов&quot;, out);  CHECK_STR(out, n, &quot;электровоз&quot;);
+    n = stem_of(&quot;станциями&quot;, out);     CHECK_STR(out, n, &quot;станц&quot;);
+    n = stem_of(&quot;руками&quot;, out);        CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;руки&quot;, out);          CHECK_STR(out, n, &quot;рук&quot;);
+    n = stem_of(&quot;автомобилем&quot;, out);   CHECK_STR(out, n, &quot;автомобил&quot;);
+    n = stem_of(&quot;автомобиль&quot;, out);    CHECK_STR(out, n, &quot;автомобил&quot;);
+}
+
+TEST(Lab4_Stemming, stem_english_porter) {
+    char out[128]; int n;
+    n = stem_of(&quot;locomotives&quot;, out);   CHECK_STR(out, n, &quot;locomot&quot;);
+    n = stem_of(&quot;running&quot;, out);       CHECK_STR(out, n, &quot;run&quot;);
+    n = stem_of(&quot;railways&quot;, out);      CHECK_STR(out, n, &quot;railwai&quot;);
+    n = stem_of(&quot;news&quot;, out);          CHECK_STR(out, n, &quot;new&quot;);      // пересечение, разобрано в отчёте ЛР4
+}
+
+TEST(Lab4_Stemming, stem_mixed_and_numbers_unchanged) {
+    char out[128]; int n;
+    n = stem_of(&quot;вл80&quot;, out);          CHECK_STR(out, n, &quot;вл80&quot;);
+    n = stem_of(&quot;2026&quot;, out);          CHECK_STR(out, n, &quot;2026&quot;);
+}
+
+
+// ================================================================ ЛР4: индекс основ + поиск
+TEST(Lab4_Stemming, stem_index_flag_and_search) {
+    CHECK(build_index(TMP_STEM, true)); g_stem_built = true;
+    Index idx; ASSERT_TRUE(idx.load(stem_index()));
+    CHECK(idx.stemmed);
+    CHECK_EQ(rd32(idx.data + 12) &amp; FLAG_STEMMED, FLAG_STEMMED);
+    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);   // другая словоформа находит те же документы
+    CHECK_QUERY(idx, &quot;руками&quot;, 0, 2, 3, 5);
+    CHECK_QUERY(idx, &quot;руками &amp;&amp; !ногами&quot;, 0, 2, 5);
+    CHECK(idx.find_term(&quot;автомобил&quot;, (int)strlen(&quot;автомобил&quot;)) &gt;= 0);
+}
+</code></pre></details>
+
+<details class="file"><summary>lab_boolean/tests/test_lab5_termfreq.cpp <span class="ln">(12 строк)</span></summary><pre><code class="language-cpp">// ЛР5 — закон Ципфа: сортировка термов по убыванию частоты.
+#include &quot;test_common.h&quot;
+
+TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
+    uint64_t freq[] = {5, 100, 1, 42, 100, 7};
+    uint32_t ids[] = {0, 1, 2, 3, 4, 5};
+    g_freq = freq;
+    sort_by_freq(ids, 6);
+    for (int i = 1; i &lt; 6; i++) CHECK(freq[ids[i - 1]] &gt;= freq[ids[i]]);
+    CHECK_EQ(freq[ids[0]], 100); CHECK_EQ(ids[5], 2);
+}
+</code></pre></details>
+
+<details class="file"><summary>lab_boolean/tests/test_lab7_index.cpp <span class="ln">(112 строк)</span></summary><pre><code class="language-cpp">// ЛР7 — индекс: свои структуры данных (Vec, хеш-таблица), сортировка словаря, построение индекса.
+#include &quot;test_common.h&quot;
 
 // ================================================================ свои структуры данных
 TEST(DataStructures, vec_push_grow_append) {
@@ -532,40 +593,6 @@ TEST(Lab7_Index, merge_sort_terms_sorted_and_stable) {
     CHECK_STR(tt.pool.a + tt.off[ids[N - 1]], tt.len[ids[N - 1]], &quot;яма&quot;);
 }
 
-TEST(Lab5_TermFreq, sort_by_freq_descending) {     // сортировка частот из termfreq (ЛР5)
-    uint64_t freq[] = {5, 100, 1, 42, 100, 7};
-    uint32_t ids[] = {0, 1, 2, 3, 4, 5};
-    g_freq = freq;
-    sort_by_freq(ids, 6);
-    for (int i = 1; i &lt; 6; i++) CHECK(freq[ids[i - 1]] &gt;= freq[ids[i]]);
-    CHECK_EQ(freq[ids[0]], 100); CHECK_EQ(ids[5], 2);
-}
-
-// ================================================================ ЛР4: стемминг
-TEST(Lab4_Stemming, stem_russian) {
-    char out[128]; int n;
-    n = stem_of(&quot;электровозы&quot;, out);   CHECK_STR(out, n, &quot;электровоз&quot;);
-    n = stem_of(&quot;электровозов&quot;, out);  CHECK_STR(out, n, &quot;электровоз&quot;);
-    n = stem_of(&quot;станциями&quot;, out);     CHECK_STR(out, n, &quot;станц&quot;);
-    n = stem_of(&quot;руками&quot;, out);        CHECK_STR(out, n, &quot;рук&quot;);
-    n = stem_of(&quot;руки&quot;, out);          CHECK_STR(out, n, &quot;рук&quot;);
-    n = stem_of(&quot;автомобилем&quot;, out);   CHECK_STR(out, n, &quot;автомобил&quot;);
-    n = stem_of(&quot;автомобиль&quot;, out);    CHECK_STR(out, n, &quot;автомобил&quot;);
-}
-
-TEST(Lab4_Stemming, stem_english_porter) {
-    char out[128]; int n;
-    n = stem_of(&quot;locomotives&quot;, out);   CHECK_STR(out, n, &quot;locomot&quot;);
-    n = stem_of(&quot;running&quot;, out);       CHECK_STR(out, n, &quot;run&quot;);
-    n = stem_of(&quot;railways&quot;, out);      CHECK_STR(out, n, &quot;railwai&quot;);
-    n = stem_of(&quot;news&quot;, out);          CHECK_STR(out, n, &quot;new&quot;);      // пересечение, разобрано в отчёте ЛР4
-}
-
-TEST(Lab4_Stemming, stem_mixed_and_numbers_unchanged) {
-    char out[128]; int n;
-    n = stem_of(&quot;вл80&quot;, out);          CHECK_STR(out, n, &quot;вл80&quot;);
-    n = stem_of(&quot;2026&quot;, out);          CHECK_STR(out, n, &quot;2026&quot;);
-}
 
 // ================================================================ ЛР7: индекс (на мини-корпусе tests/mini.tsv)
 // Документы мини-корпуса: 0 МАИ, 1 Красный автомобиль, 2 Жёлтый автомобиль (+руки),
@@ -618,6 +645,10 @@ TEST(Lab7_Index, index_normalization_lowercase_yo_accent) {
     CHECK(idx.find_term(&quot;габарит&quot;, (int)strlen(&quot;габарит&quot;)) &gt;= 0);  // Габари́т
     CHECK(idx.find_term(&quot;Красный&quot;, (int)strlen(&quot;Красный&quot;)) &lt; 0);   // в индексе только нижний регистр
 }
+</code></pre></details>
+
+<details class="file"><summary>lab_boolean/tests/test_lab8_search.cpp <span class="ln">(67 строк)</span></summary><pre><code class="language-cpp">// ЛР8 — булев поиск: операции над списками, лексер, парсер, выполнение запросов.
+#include &quot;test_common.h&quot;
 
 // ================================================================ ЛР8: операции над списками и поиск
 TEST(Lab8_Search, list_operations) {
@@ -682,18 +713,10 @@ TEST(Lab8_Search, search_tolerant_parser) {
     CHECK_QUERY(idx, &quot;   &quot;, 0);                              // пустой запрос
     CHECK_QUERY(idx, &quot;!&quot;, 0);
 }
+</code></pre></details>
 
-// ================================================================ ЛР4: индекс основ + поиск
-TEST(Lab4_Stemming, stem_index_flag_and_search) {
-    CHECK(build_index(TMP_STEM, true)); g_stem_built = true;
-    Index idx; ASSERT_TRUE(idx.load(stem_index()));
-    CHECK(idx.stemmed);
-    CHECK_EQ(rd32(idx.data + 12) &amp; FLAG_STEMMED, FLAG_STEMMED);
-    CHECK_QUERY(idx, &quot;автомобилем&quot;, 0, 1, 2);   // другая словоформа находит те же документы
-    CHECK_QUERY(idx, &quot;руками&quot;, 0, 2, 3, 5);
-    CHECK_QUERY(idx, &quot;руками &amp;&amp; !ногами&quot;, 0, 2, 5);
-    CHECK(idx.find_term(&quot;автомобил&quot;, (int)strlen(&quot;автомобил&quot;)) &gt;= 0);
-}
+<details class="file"><summary>lab_boolean/tests/test_full_corpus.cpp <span class="ln">(183 строк)</span></summary><pre><code class="language-cpp">// Проверка индекса и поиска на ПОЛНОМ корпусе (65 509 документов) против перебора.
+#include &quot;test_common.h&quot;
 
 // ================================================================ проверка на ПОЛНОМ корпусе
 // unit_tests --full data\corpus.tsv data\index.bin [--stem] [N]

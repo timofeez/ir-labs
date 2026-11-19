@@ -405,7 +405,7 @@ O(1) кроме буфера. <strong>Оптимальна ли скорость
 </tr>
 </tbody>
 </table>
-<div class="code"><div class="code-title">lab_boolean/tests/gtests.cpp — tokenizer_known_bad_cases <span class="ln">строки 162–171</span></div><pre><code class="language-cpp">TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {   // поведение, описанное в отчёте ЛР3 как недостатки
+<div class="code"><div class="code-title">lab_boolean/tests/test_lab3_tokenizer.cpp — tokenizer_known_bad_cases <span class="ln">строки 55–64</span></div><pre><code class="language-cpp">TEST(Lab3_Tokenizer, tokenizer_known_bad_cases) {   // поведение, описанное в отчёте ЛР3 как недостатки
     char out[512]; int n;
     n = tokens_joined(&quot;ВЛ-80&quot;, out);             CHECK_STR(out, n, &quot;вл 80&quot;);
     n = tokens_joined(&quot;Санкт-Петербург&quot;, out);   CHECK_STR(out, n, &quot;санкт петербург&quot;);
