@@ -8,7 +8,7 @@
 <script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
 </head><body>
-<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="algorithms.html">Алгоритмы</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html" class=on>Весь код</a></nav>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="architecture.html">Архитектура</a><a href="algorithms.html">Алгоритмы</a><a href="annotated.html">Код построчно</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html" class=on>Весь код</a></nav>
 <main><aside class="toc"><b>На странице</b><div class="toc">
 <ul>
 <li><a href="#1-lab1-python">ЛР1 — lab1 (Python)</a></li>
@@ -26,7 +26,7 @@
 <p>Полные исходники всех трёх проектов; к каждому файлу — пояснение, что он делает (нажмите на файл, чтобы раскрыть код). Подробный разбор ключевых фрагментов — на страницах лабораторных. Корпус и базы данных не
 включены — они большие и восстанавливаются скриптами.</p>
 <h2 id="1-lab1-python">ЛР1 — <code>lab1</code> (Python)<a class="headerlink" href="#1-lab1-python" title="Permanent link">#</a></h2>
-<p><strong>Обход сайтов-источников (ЛР1).</strong> Получает списки статей Википедии (категории «Железнодорожный транспорт» и подкатегории, через API MediaWiki) и ссылки на новости «Гудка» из sitemap. Соблюдает robots.txt и задержку между запросами. Результат — список URL для скачивания.</p>
+<p><strong>Обход сайтов-источников (ЛР1).</strong> Обходит в ширину дерево категорий Википедии («Железнодорожный транспорт» / «Rail transport») через API MediaWiki и собирает pageid и заголовки всех статей. Результат — <code>*_titles.tsv</code>.</p>
 <details class="file"><summary>lab1/src/crawl.py <span class="ln">(68 строк)</span></summary><pre><code class="language-python">import json, os, sys, time
 import requests
 
@@ -95,7 +95,7 @@ if __name__ == &#x27;__main__&#x27;:
     with open(os.path.join(out, &#x27;crawl_stats.json&#x27;), &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
 </code></pre></details>
-<p><strong>Скачивание документов.</strong> Идёт по списку URL, скачивает HTML (с повторами при ошибках сети), сохраняет сырой документ и метаданные (URL, источник, дата), чтобы корпус можно было пересобрать без повторного обхода.</p>
+<p><strong>Скачивание документов.</strong> По списку pageid скачивает через API вики-разметку статей пачками по 50 (с повторами при ошибках) и дописывает в <code>*_raw.jsonl</code>; после обрыва продолжает с места остановки.</p>
 <details class="file"><summary>lab1/src/download_all.py <span class="ln">(39 строк)</span></summary><pre><code class="language-python">import json, os, sys
 from crawl import api, SOURCES, OUT
 
@@ -135,7 +135,7 @@ if __name__ == &#x27;__main__&#x27;:
     for n in SOURCES:
         run(n, out)
 </code></pre></details>
-<p><strong>Парсер сайта «Гудок».</strong> Разбор страницы новости: заголовок, дата, текст статьи без меню, рекламы и комментариев.</p>
+<p><strong>Парсер сайта «Гудок».</strong> Берёт адреса статей из карты сайта (sitemap), сортирует по свежести и скачивает HTML статей с паузой между запросами в <code>gudok_raw.jsonl.gz</code>.</p>
 <details class="file"><summary>lab1/src/gudok.py <span class="ln">(91 строк)</span></summary><pre><code class="language-python">import gzip, json, os, re, sys, time
 import requests
 from bs4 import BeautifulSoup
@@ -227,7 +227,7 @@ if __name__ == &#x27;__main__&#x27;:
     out = sys.argv[2] if len(sys.argv) &gt; 2 else OUT
     main(limit, out)
 </code></pre></details>
-<p><strong>Извлечение текста из HTML.</strong> Удаляет теги, скрипты, стили, служебные блоки Википедии (навигация, сноски, шаблоны), нормализует пробелы. Это и есть «текст документа», который потом токенизируется.</p>
+<p><strong>Извлечение текста из HTML.</strong> Википедия: удаляет из вики-разметки шаблоны, сноски, таблицы, файлы, служебные разделы, оставляет текст ссылок. «Гудок»: вырезает блок статьи из HTML, убирает рубрику и подпись автора. Считает статистику корпуса.</p>
 <details class="file"><summary>lab1/src/extract.py <span class="ln">(147 строк)</span></summary><pre><code class="language-python">import gzip, json, os, re, sys
 from bs4 import BeautifulSoup
 
@@ -375,7 +375,7 @@ def main(data):
 if __name__ == &#x27;__main__&#x27;:
     main(sys.argv[1] if len(sys.argv) &gt; 1 else DATA)
 </code></pre></details>
-<p><strong>Сборка корпуса и статистика.</strong> Собирает очищенные документы в JSONL (файл на источник), считает число документов, объём сырых и текстовых данных, средний размер — цифры из таблицы отчёта ЛР1.</p>
+<p><strong>Сборка корпуса и статистика.</strong> Консольный просмотр корпуса: статистика, поиск по заголовку, очищенный и сырой текст документа, случайный документ.</p>
 <details class="file"><summary>lab1/src/corpus.py <span class="ln">(71 строк)</span></summary><pre><code class="language-python">import gzip, json, os, random, sys
 
 USAGE = &quot;&quot;&quot;Консольная утилита для просмотра корпуса.
@@ -6430,7 +6430,7 @@ python tests\run_tests.py                            тесты утилит к�
 
 <h2 id="_3">Сайт и отчёт<a class="headerlink" href="#_3" title="Permanent link">#</a></h2>
 <p>Генератор этого сайта: Markdown + вставка кода прямо из исходников.</p>
-<details class="file"><summary>site_src/make_site.py <span class="ln">(157 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генератор сайта с теорией и кодом для GitHub Pages.
+<details class="file"><summary>site_src/make_site.py <span class="ln">(192 строк)</span></summary><pre><code class="language-python">&quot;&quot;&quot;Генератор сайта с теорией и кодом для GitHub Pages.
 
 Исходники страниц — Markdown в site_src/*.md. Внутри можно вставлять код прямо из проекта:
   @@code lab1/src/extract.py::clean@@        — функция / класс / метод по имени (Python и C++)
@@ -6458,7 +6458,9 @@ PAGES = [  # (файл .md, html, заголовок в меню)
     (&#x27;lab5.md&#x27;, &#x27;lab5.html&#x27;, &#x27;ЛР5 Ципф&#x27;),
     (&#x27;lab7.md&#x27;, &#x27;lab7.html&#x27;, &#x27;ЛР7 Индекс&#x27;),
     (&#x27;lab8.md&#x27;, &#x27;lab8.html&#x27;, &#x27;ЛР8 Поиск&#x27;),
+    (&#x27;architecture.md&#x27;, &#x27;architecture.html&#x27;, &#x27;Архитектура&#x27;),
     (&#x27;algorithms.md&#x27;, &#x27;algorithms.html&#x27;, &#x27;Алгоритмы&#x27;),
+    (&#x27;annotated.md&#x27;, &#x27;annotated.html&#x27;, &#x27;Код построчно&#x27;),
     (&#x27;tests.md&#x27;, &#x27;tests.html&#x27;, &#x27;Тесты&#x27;),
     (&#x27;defense.md&#x27;, &#x27;defense.html&#x27;, &#x27;Защита&#x27;),
     (&#x27;code.md&#x27;, &#x27;code.html&#x27;, &#x27;Весь код&#x27;),
@@ -6541,6 +6543,39 @@ def expand(md):
         rel = m.group(1)
         return block(read(rel), LANG.get(os.path.splitext(rel)[1], &#x27;plaintext&#x27;), rel, collapse=True)
 
+    def annot(m):
+        # код с комментарием к каждой строке: site_src/annot/&lt;путь&gt;.txt, строки «номер: комментарий»
+        rel = m.group(1)
+        src = read(rel).splitlines()
+        notes = {}
+        ap = os.path.join(SRC, &#x27;annot&#x27;, rel.replace(&#x27;/&#x27;, os.sep) + &#x27;.txt&#x27;)
+        for l in open(ap, encoding=&#x27;utf-8&#x27;):
+            n, _, c = l.partition(&#x27;:&#x27;)
+            if n.strip().isdigit():
+                notes[int(n)] = c.strip()
+        auto = {&#x27;}&#x27;: &#x27;Конец блока.&#x27;, &#x27;};&#x27;: &#x27;Конец объявления структуры.&#x27;, &#x27;})&#x27;: &#x27;Конец вызова.&#x27;, &#x27;)&#x27;: &#x27;Конец выражения.&#x27;,
+                &#x27;]&#x27;: &#x27;Конец списка.&#x27;, &#x27;}}&#x27;: &#x27;Конец словаря.&#x27;, &#x27;&quot;&quot;&quot;&#x27;: &#x27;Конец строки документации.&#x27;, &#x27;//&#x27;: &#x27;(пустая строка комментария)&#x27;,
+                &#x27;#else&#x27;: &#x27;Иначе (условная компиляция).&#x27;, &#x27;#endif&#x27;: &#x27;Конец условной компиляции.&#x27;, &#x27;},&#x27;: &#x27;Конец элемента.&#x27;,
+                &#x27;}  // namespace stem&#x27;: &#x27;Конец пространства имён.&#x27;}
+        for i, l in enumerate(src, 1):
+            s = l.strip()
+            if i not in notes and (s in auto or (s.startswith(&#x27;}&#x27;) and s.endswith(&#x27;}&#x27;) and len(s) &lt;= 3)):
+                notes[i] = auto.get(s, &#x27;Конец блока.&#x27;)
+            elif i not in notes and s.startswith(&#x27;//&#x27;) and len(s) &gt; 2:
+                notes[i] = &#x27;Комментарий (пояснение в тексте строки).&#x27;
+            elif i not in notes and s.startswith(&#x27;#&#x27;) and not s.startswith(&#x27;#include&#x27;) and rel.endswith(&quot;.py&quot;):
+                notes[i] = &#x27;Комментарий (пояснение в тексте строки).&#x27;
+        missing = [i for i, l in enumerate(src, 1) if l.strip() and i not in notes]
+        extra = [i for i in notes if i &gt; len(src) or not src[i - 1].strip()]
+        if missing or extra:
+            print(f&#x27;  {rel}: без комментария строки {missing[:15]}, комментарий к пустой/лишней {extra[:15]}&#x27;)
+        lang = LANG.get(os.path.splitext(rel)[1], &#x27;plaintext&#x27;)
+        rows = &#x27;&#x27;.join(f&#x27;&lt;tr&gt;&lt;td class=&quot;n&quot;&gt;{i}&lt;/td&gt;&lt;td class=&quot;c&quot;&gt;&lt;code class=&quot;language-{lang}&quot;&gt;{html.escape(l) or &quot; &quot;}&lt;/code&gt;&lt;/td&gt;&#x27;
+                       f&#x27;&lt;td class=&quot;m&quot;&gt;{html.escape(notes.get(i, &quot;&quot;))}&lt;/td&gt;&lt;/tr&gt;&#x27; for i, l in enumerate(src, 1))
+        return (f&#x27;&lt;details class=&quot;file annot&quot;&gt;&lt;summary&gt;{html.escape(rel)} &lt;span class=&quot;ln&quot;&gt;({len(src)} строк, &#x27;
+                f&#x27;комментарий к каждой)&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;annot-wrap&quot;&gt;&lt;table class=&quot;annot&quot;&gt;{rows}&lt;/table&gt;&lt;/div&gt;&lt;/details&gt;&#x27;)
+
+    md = re.sub(r&#x27;@@annot ([^@]+?)@@&#x27;, annot, md)
     md = re.sub(r&#x27;@@code ([^@]+?)@@&#x27;, code, md)
     md = re.sub(r&#x27;@@lines ([^:@]+):(\d+)-(\d+)@@&#x27;, lines, md)
     md = re.sub(r&#x27;@@file ([^@]+?)@@&#x27;, file, md)
@@ -6560,7 +6595,7 @@ TEMPLATE = &#x27;&#x27;&#x27;&lt;!doctype html&gt;
 &lt;nav&gt;&lt;div class=&quot;brand&quot;&gt;ИП · Железнодорожный транспорт&lt;/div&gt;{nav}&lt;/nav&gt;
 &lt;main&gt;{toc}{body}
 &lt;footer&gt;Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)&lt;/footer&gt;&lt;/main&gt;
-&lt;script&gt;hljs.highlightAll();&lt;/script&gt;
+&lt;script&gt;hljs.highlightAll();document.querySelectorAll(&#x27;td.c code&#x27;).forEach(e=&gt;hljs.highlightElement(e));&lt;/script&gt;
 &lt;/body&gt;&lt;/html&gt;
 &#x27;&#x27;&#x27;
 
@@ -6699,5 +6734,5 @@ if __name__ == &#x27;__main__&#x27;:
     main()
 </code></pre></details>
 <footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
-<script>hljs.highlightAll();</script>
+<script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>
 </body></html>

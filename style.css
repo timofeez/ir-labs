@@ -46,3 +46,11 @@ blockquote p { margin: 6px 0; }
 @media (max-width: 900px) { .toc { float: none; width: auto; margin: 0 0 18px; } }
 footer { margin-top: 60px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
 img { max-width: 100%; }
+.annot-wrap { overflow-x: auto; }
+table.annot { border-collapse: collapse; width: 100%; margin: 0; font-size: 13px; }
+table.annot td { border: none; border-bottom: 1px solid var(--line); padding: 1px 8px; vertical-align: top; }
+table.annot td.n { color: var(--muted); text-align: right; width: 1%; font: 12px Consolas, monospace; user-select: none; }
+table.annot td.c { white-space: pre; width: 55%; background: var(--code-bg); }
+table.annot td.c code { background: transparent !important; padding: 0; font-size: 12.5px; white-space: pre; }
+table.annot td.m { color: var(--fg); font-size: 13px; min-width: 220px; background: var(--note); }
+@media (max-width: 760px) { table.annot td.c { width: auto; } }

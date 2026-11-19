@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Архитектура — Информационный поиск</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']]}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head><body>
+<nav><div class="brand">ИП · Железнодорожный транспорт</div><a href="index.html">Главная</a><a href="lab1.html">ЛР1 Корпус</a><a href="lab2.html">ЛР2 Робот</a><a href="lab3.html">ЛР3 Токенизация</a><a href="lab4.html">ЛР4 Стемминг</a><a href="lab5.html">ЛР5 Ципф</a><a href="lab7.html">ЛР7 Индекс</a><a href="lab8.html">ЛР8 Поиск</a><a href="architecture.html" class=on>Архитектура</a><a href="algorithms.html">Алгоритмы</a><a href="annotated.html">Код построчно</a><a href="tests.html">Тесты</a><a href="defense.html">Защита</a><a href="code.html">Весь код</a></nav>
+<main><aside class="toc"><b>На странице</b><div class="toc">
+<ul>
+<li><a href="#_2">Общая схема: от сайтов до поиска</a></li>
+<li><a href="#1">ЛР1 — сбор корпуса</a></li>
+<li><a href="#2">ЛР2 — поисковый робот и распределённая БД</a></li>
+<li><a href="#38-c">ЛР3–8 — поисковая система на C++</a><ul>
+<li><a href="#_3">Модули</a></li>
+<li><a href="#7">Конвейер индексации (ЛР7)</a></li>
+<li><a href="#8">Конвейер поиска (ЛР8)</a></li>
+<li><a href="#_4">Тесты</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</aside><h1 id="_1">Архитектура<a class="headerlink" href="#_1" title="Permanent link">#</a></h1>
+<p>Как устроены проекты: из каких частей состоят, как данные проходят от сайтов до результата поиска,
+какой файл за что отвечает. Построчный разбор кода — на странице <a href="annotated.html">Код построчно</a>.</p>
+<h2 id="_2">Общая схема: от сайтов до поиска<a class="headerlink" href="#_2" title="Permanent link">#</a></h2>
+<pre><code>  Википедия (ru, en)            газета «Гудок»
+   API MediaWiki                  sitemap.xml + HTML
+        │                              │
+        ▼                              ▼
+ ┌──────────────── ЛР1: lab1 (Python) ────────────────┐
+ │ crawl.py ─► download_all.py        gudok.py         │
+ │   (список статей)  (вики-разметка)   (HTML статей)  │
+ │              └────────► extract.py ◄────┘           │
+ │                 очистка → *_text.jsonl (65 509 док.)│
+ └──────────────────────────┬──────────────────────────┘
+                            │                 ┌──── ЛР2: lab2 (Python) ─────┐
+                            │                 │ robot.py ─► db.py ─► кластер│
+                            │                 │ CockroachDB (3 узла)        │
+                            │                 │ documents / frontier        │
+                            │                 └─────────────────────────────┘
+                            ▼
+ ┌──────────── ЛР3–8: lab_boolean (C++ без STL) ───────────────────────────┐
+ │ prepare.py ─► data/corpus.tsv                                           │
+ │                   │                                                     │
+ │      ┌────────────┼──────────────┬───────────────┐                      │
+ │      ▼            ▼              ▼               ▼                      │
+ │  tokenize      stemtest       termfreq        indexer ──► index.bin     │
+ │  (ЛР3)         (ЛР4)          (ЛР5)           (ЛР7)       index_stem.bin│
+ │      └──── common.h: Vec, TermTable, UTF-8, next_token ────┘     │      │
+ │                 stem.h: стеммер Портера (ЛР4)                   ▼      │
+ │                                         search (ЛР8) ◄── запрос        │
+ │                                           ▲                             │
+ │                              web/server.py (веб-интерфейс, ЛР8)         │
+ └─────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<p>Принцип: каждая следующая работа использует результат предыдущей. Корпус ЛР1 — вход для
+поисковой системы; правила токенизации (ЛР3) и стемминга (ЛР4) одни и те же в индексаторе,
+частотном анализе и поиске, потому что находятся в общих заголовочных файлах.</p>
+<h2 id="1">ЛР1 — сбор корпуса<a class="headerlink" href="#1" title="Permanent link">#</a></h2>
+<pre><code>crawl.py                download_all.py              extract.py                corpus.py
+BFS по категориям  ──►  тексты статей пачками  ──►   wikitext / HTML → текст   просмотр, статистика
+*_titles.tsv            по 50 через API             *_text.jsonl
+                        *_raw.jsonl                 corpus_stats.json
+gudok.py: sitemap → HTML статей → gudok_raw.jsonl.gz ─────┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Компонент</th>
+<th>Ответственность</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>crawl.py</code></td>
+<td>обход дерева категорий в ширину, список pageid статей</td>
+</tr>
+<tr>
+<td><code>download_all.py</code></td>
+<td>скачивание вики-разметки, продолжение после обрыва</td>
+</tr>
+<tr>
+<td><code>gudok.py</code></td>
+<td>список статей из карты сайта, скачивание HTML</td>
+</tr>
+<tr>
+<td><code>extract.py</code></td>
+<td>очистка разметки, метаданные, статистика корпуса</td>
+</tr>
+<tr>
+<td><code>corpus.py</code>, <code>lab1.py</code></td>
+<td>консольный просмотр корпуса</td>
+</tr>
+</tbody>
+</table>
+<p>Хранение — файлы JSONL (одна строка — один документ): их можно дописывать, и при обрыве
+скачивание продолжается с последней целой строки.</p>
+<h2 id="2">ЛР2 — поисковый робот и распределённая БД<a class="headerlink" href="#2" title="Permanent link">#</a></h2>
+<pre><code>                       ┌───────────── robot.py ─────────────┐
+ config.yaml ────────► │ seed → crawl_frontier → recrawl     │
+                       │   │        │  allowed (robots.txt)  │
+                       │   │        │  get (задержка, повтор)│
+                       │   │        │  normalize_url         │
+                       │   │        │  duplicate_of (хеш)    │
+                       └───┼────────┼────────────────────────┘
+                           ▼        ▼
+                       db.py: connect_any (первый живой узел), reconnect
+                           │  SQL (протокол PostgreSQL)
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                 ▼
+     узел 1 :26257     узел 2 :26258     узел 3 :26259
+         └──── Raft: каждый диапазон в 3 копиях ────┘
+     таблица documents — 5 диапазонов (шардов) по ключу url
+     таблица frontier  — очередь URL, состояние обхода
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Компонент</th>
+<th>Ответственность</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Robot.seed</code></td>
+<td>стартовые категории / адреса из sitemap → очередь</td>
+</tr>
+<tr>
+<td><code>Robot.crawl_frontier</code></td>
+<td>берёт следующий URL, скачивает, сохраняет, отмечает состояние</td>
+</tr>
+<tr>
+<td><code>Robot.process_category</code></td>
+<td>достаёт из страницы категории подкатегории и статьи</td>
+</tr>
+<tr>
+<td><code>Robot.recrawl</code></td>
+<td>проверка изменений: условный GET / lastmod, сравнение хеша</td>
+</tr>
+<tr>
+<td><code>db.py</code></td>
+<td>создание базы и таблиц, подключение к живому узлу</td>
+</tr>
+<tr>
+<td><code>start_cluster.bat</code></td>
+<td>запуск трёх узлов и инициализация кластера</td>
+</tr>
+<tr>
+<td><code>lab2.py</code></td>
+<td>утилита: кластер, статистика, демонстрация отказа узла</td>
+</tr>
+</tbody>
+</table>
+<p>Ключевое решение — <strong>всё состояние в БД</strong>: очередь (<code>frontier</code>) и документы (<code>documents</code>).
+После каждой страницы делается <code>commit</code>, поэтому робот можно остановить в любой момент и продолжить.
+Распределённость: данные шардированы на диапазоны и реплицированы на 3 узла; падение одного узла
+не останавливает работу (большинство 2 из 3).</p>
+<h2 id="38-c">ЛР3–8 — поисковая система на C++<a class="headerlink" href="#38-c" title="Permanent link">#</a></h2>
+<h3 id="_3">Модули<a class="headerlink" href="#_3" title="Permanent link">#</a></h3>
+<pre><code>common.h ─── Vec&lt;T&gt;         динамический массив (вместо std::vector)
+         ├── LineReader     быстрое чтение строк большого файла
+         ├── utf8_decode / utf8_encode, char_class, to_lower
+         ├── next_token     токенизатор  ◄── ЛР3
+         ├── TermTable      хеш-таблица термов (FNV-1a, открытая адресация)
+         └── формат index.bin: константы, rd16/rd32/rd64, cmp_bytes
+stem.h  ──── stem::stem → stem_ru (Snowball) / stem_en (Портер)  ◄── ЛР4
+
+tokenize.cpp  ─ common.h                  токены и статистика      (ЛР3)
+stemtest.cpp  ─ common.h + stem.h         слово → основа           (ЛР4)
+termfreq.cpp  ─ common.h + stem.h         частоты, ранги           (ЛР5)
+indexer.cpp   ─ common.h + stem.h         корпус → index.bin       (ЛР7)
+search.cpp    ─ common.h + stem.h         index.bin + запрос → документы (ЛР8)
+</code></pre>
+<h3 id="7">Конвейер индексации (ЛР7)<a class="headerlink" href="#7" title="Permanent link">#</a></h3>
+<pre><code>corpus.tsv ─► LineReader ─► разбор 5 полей ─► прямой индекс (заголовок, URL)
+                                  │
+                                  ▼
+                 next_token ─► TermTable.get_or_add ─► [stem::stem] ─► id терма
+                                  │
+                       lastDoc: пара (терм, документ) один раз
+                                  ▼
+                 pairs ─► сортировка подсчётом ─► posting-листы
+                 словарь ─► сортировка слиянием
+                                  ▼
+                index.bin: HEADER │ DOCS │ DICT │ TERMSTR │ POSTINGS
+</code></pre>
+<h3 id="8">Конвейер поиска (ЛР8)<a class="headerlink" href="#8" title="Permanent link">#</a></h3>
+<pre><code>запрос &quot;электровоз (вл80 || чс2) !музей&quot;
+   │
+   ▼ lex: токены; слово → next_token → [stem] → find_term (двоичный поиск)
+TERM AND LP TERM OR TERM RP AND NOT TERM
+   │
+   ▼ Parser: рекурсивный спуск (or → and → unary)
+        AND
+       /    \
+    AND      NOT
+   /   \       \
+ TERM   OR     TERM
+       /  \
+    TERM  TERM
+   │
+   ▼ eval: op_or / op_and / op_and_not над отсортированными списками
+список документов ─► doc_info ─► заголовок + URL
+</code></pre>
+<h3 id="_4">Тесты<a class="headerlink" href="#_4" title="Permanent link">#</a></h3>
+<pre><code>tests/test_common.h  ── подключает indexer.cpp, search.cpp, termfreq.cpp (main переименован)
+   ├── test_lab3_tokenizer.cpp ─► bin/test_lab3_tokenizer.exe
+   ├── test_lab4_stemming.cpp  ─► bin/test_lab4_stemming.exe
+   ├── test_lab5_termfreq.cpp  ─► bin/test_lab5_termfreq.exe
+   ├── test_lab7_index.cpp     ─► bin/test_lab7_index.exe
+   ├── test_lab8_search.cpp    ─► bin/test_lab8_search.exe
+   └── test_full_corpus.cpp    ─► bin/test_full_corpus.exe
+CMakeLists.txt: gtest_discover_tests → каждый TEST — отдельный тест CTest (29)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Решение</th>
+<th>Почему</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Без STL, свои <code>Vec</code> и <code>TermTable</code></td>
+<td>требование лабораторных; полный контроль памяти</td>
+</tr>
+<tr>
+<td>Общие <code>common.h</code> и <code>stem.h</code></td>
+<td>одинаковая токенизация и стемминг при индексации и поиске</td>
+</tr>
+<tr>
+<td>Свой бинарный формат</td>
+<td>индекс загружается одним чтением файла, без разбора</td>
+</tr>
+<tr>
+<td>Отсортированные posting-листы</td>
+<td>И/ИЛИ/НЕ за линейное время методом двух указателей</td>
+</tr>
+<tr>
+<td>Отсортированный словарь</td>
+<td>поиск терма двоичным поиском, O(log T)</td>
+</tr>
+<tr>
+<td>Отдельный процесс <code>search</code> для веб-сервиса</td>
+<td>индекс загружается один раз, запросы идут через stdin/stdout</td>
+</tr>
+</tbody>
+</table>
+<footer>Григорьев Тимофей Андреевич, М8О-408Б-23 · курс «Информационный поиск» (МАИ)</footer></main>
+<script>hljs.highlightAll();document.querySelectorAll('td.c code').forEach(e=>hljs.highlightElement(e));</script>
+</body></html>
